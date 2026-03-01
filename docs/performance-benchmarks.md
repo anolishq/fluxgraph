@@ -95,6 +95,23 @@ Tick benchmark output additionally tracks measured heap allocations during the t
 2. issue summary (errors/warnings)
 3. per-check findings with metric keys and threshold context
 
+Scenario-versioned keys are used for regression checks, e.g.:
+
+1. `scenario.tick.simple.v1.avg_tick_us`
+2. `scenario.tick.complex.v1.avg_tick_us`
+3. `scenario.tick.simple.v1.alloc_per_tick`
+4. `scenario.tick.complex.v1.alloc_per_tick`
+
+Baseline promotion command:
+
+```bash
+python scripts/promote_benchmark_baseline.py \
+  --results artifacts/benchmarks/<run>/benchmark_results.json \
+  --policy benchmarks/policy/bench_policy.json \
+  --profile ci-hosted \
+  --output benchmarks/policy/baselines/ci-hosted.windows-2022.json
+```
+
 ## Evidence Rules
 
 For any published performance claim, attach:
@@ -119,6 +136,6 @@ Recommended:
 
 ## Next Phase 2 Steps
 
-1. Define numeric regression thresholds per workload class.
-2. Introduce automated baseline comparison tooling.
-3. Add a dedicated perf CI lane with artifact upload and threshold evaluation.
+1. Calibrate thresholds using several hosted-runner samples (reduce false positives while preserving sensitivity).
+2. Provision and commit a true `ci-dedicated` baseline from stable hardware.
+3. Add trend reporting (time series comparison across benchmark-evidence workflow runs).

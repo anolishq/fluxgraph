@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "description": "Replace values with a validated baseline run from stable hardware.",
+    "description": "Template for dedicated-runner strict baseline. Populate from a validated stable-host run.",
     "source_artifact": "artifacts/benchmarks/<timestamp>_<preset>/benchmark_results.json"
   },
   "metrics": {

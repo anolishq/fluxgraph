@@ -173,6 +173,66 @@ def parse_metrics(target: str, stdout_text: str) -> Dict[str, float]:
     return metrics
 
 
+def build_scenarios(target: str, metrics: Dict[str, float]) -> List[Dict[str, object]]:
+    scenarios: List[Dict[str, object]] = []
+
+    if target == "benchmark_signal_store":
+        if "read_duration_ms" in metrics:
+            scenarios.append(
+                {
+                    "id": "signal_store.read.v1",
+                    "metrics": {"duration_ms": float(metrics["read_duration_ms"])},
+                }
+            )
+        if "write_duration_ms" in metrics:
+            scenarios.append(
+                {
+                    "id": "signal_store.write.v1",
+                    "metrics": {"duration_ms": float(metrics["write_duration_ms"])},
+                }
+            )
+    elif target == "benchmark_namespace":
+        if "intern_duration_ms" in metrics:
+            scenarios.append(
+                {
+                    "id": "namespace.intern.v1",
+                    "metrics": {"duration_ms": float(metrics["intern_duration_ms"])},
+                }
+            )
+        if "resolve_duration_ms" in metrics:
+            scenarios.append(
+                {
+                    "id": "namespace.resolve.v1",
+                    "metrics": {"duration_ms": float(metrics["resolve_duration_ms"])},
+                }
+            )
+    elif target == "benchmark_tick":
+        if "simple_avg_tick_us" in metrics:
+            scenarios.append(
+                {
+                    "id": "tick.simple.v1",
+                    "metrics": {
+                        "avg_tick_us": float(metrics["simple_avg_tick_us"]),
+                        "allocations": float(metrics.get("simple_allocations", 0.0)),
+                        "alloc_per_tick": float(metrics.get("simple_alloc_per_tick", 0.0)),
+                    },
+                }
+            )
+        if "complex_avg_tick_us" in metrics:
+            scenarios.append(
+                {
+                    "id": "tick.complex.v1",
+                    "metrics": {
+                        "avg_tick_us": float(metrics["complex_avg_tick_us"]),
+                        "allocations": float(metrics.get("complex_allocations", 0.0)),
+                        "alloc_per_tick": float(metrics.get("complex_alloc_per_tick", 0.0)),
+                    },
+                }
+            )
+
+    return scenarios
+
+
 def git_metadata(repo_root: Path) -> Dict[str, object]:
     commit = run_cmd(["git", "rev-parse", "HEAD"], cwd=repo_root)
     short = run_cmd(["git", "rev-parse", "--short", "HEAD"], cwd=repo_root)
@@ -289,6 +349,7 @@ def main() -> int:
 
         status = parse_status(stdout_text)
         metrics = parse_metrics(target, stdout_text)
+        scenarios = build_scenarios(target, metrics)
         run_records.append(
             {
                 "target": target,
@@ -302,6 +363,7 @@ def main() -> int:
                 "status": status["status"],
                 "status_lines": status["status_lines"],
                 "metrics": metrics,
+                "scenarios": scenarios,
             }
         )
 
@@ -318,6 +380,7 @@ def main() -> int:
         "git": git_metadata(repo_root),
         "targets_requested": targets,
         "fail_on_status": args.fail_on_status,
+        "benchmark_schema_version": 2,
     }
 
     status_failures = [r for r in run_records if r.get("status") == "fail"]
@@ -327,6 +390,7 @@ def main() -> int:
         "total": len(run_records),
         "status_failures": len(status_failures),
         "execution_failures": len(execution_failures),
+        "scenario_count": sum(len(r.get("scenarios", [])) for r in run_records),
     }
 
     result = {

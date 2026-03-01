@@ -68,6 +68,24 @@ jobs:
             }
           }
 
+          if ($baseline -eq "") {
+            if ($profile -eq "ci-hosted") {
+              $candidate = "benchmarks/policy/baselines/ci-hosted.windows-2022.json"
+              if (Test-Path $candidate) {
+                $baseline = $candidate
+              }
+            }
+            elseif ($profile -eq "ci-dedicated") {
+              $candidate = "benchmarks/policy/baselines/ci-dedicated.windows-2022.json"
+              if (Test-Path $candidate) {
+                $baseline = $candidate
+              }
+              else {
+                throw "ci-dedicated profile requires a dedicated baseline file. Provide baseline_path input or commit $candidate."
+              }
+            }
+          }
+
           $benchDir = "artifacts/benchmarks/${{ github.run_id }}_${{ github.run_attempt }}_ci-windows-release"
 
           "profile=$profile" >> $env:GITHUB_OUTPUT

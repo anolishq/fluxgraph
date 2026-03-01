@@ -25,6 +25,34 @@ def flatten_metrics_from_results(doc: Dict[str, object]) -> Dict[str, float]:
         for key, value in bench_metrics.items():
             if isinstance(key, str) and _is_number(value):
                 metrics[f"{target}.{key}"] = float(value)
+
+        scenarios = bench.get("scenarios")
+        if isinstance(scenarios, list):
+            for scenario in scenarios:
+                if not isinstance(scenario, dict):
+                    continue
+                scenario_id = scenario.get("id")
+                scenario_metrics = scenario.get("metrics")
+                if not isinstance(scenario_id, str) or not isinstance(
+                    scenario_metrics, dict
+                ):
+                    continue
+                for key, value in scenario_metrics.items():
+                    if isinstance(key, str) and _is_number(value):
+                        metrics[f"scenario.{scenario_id}.{key}"] = float(value)
+
+    # Backward-compatible aliases for pre-scenario benchmark artifacts.
+    legacy_aliases = {
+        "benchmark_tick.simple_avg_tick_us": "scenario.tick.simple.v1.avg_tick_us",
+        "benchmark_tick.simple_allocations": "scenario.tick.simple.v1.allocations",
+        "benchmark_tick.simple_alloc_per_tick": "scenario.tick.simple.v1.alloc_per_tick",
+        "benchmark_tick.complex_avg_tick_us": "scenario.tick.complex.v1.avg_tick_us",
+        "benchmark_tick.complex_allocations": "scenario.tick.complex.v1.allocations",
+        "benchmark_tick.complex_alloc_per_tick": "scenario.tick.complex.v1.alloc_per_tick",
+    }
+    for src_key, dst_key in legacy_aliases.items():
+        if src_key in metrics and dst_key not in metrics:
+            metrics[dst_key] = float(metrics[src_key])
     return metrics
 
 
@@ -192,9 +220,12 @@ def evaluate(
                 actual = float(result_metrics[key])
                 baseline = float(baseline_metrics[key])
                 if baseline <= 0:
+                    invalid_baseline_severity = (
+                        "error" if require_baseline or enforce_fail_threshold else "warning"
+                    )
                     add_issue(
                         issues,
-                        severity="warning",
+                        severity=invalid_baseline_severity,
                         check="latency_regression",
                         metric_key=key,
                         actual=actual,

@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "promoted_at_utc": "2026-03-01T20:08:13.398446+00:00",
+    "profile": "ci-hosted",
+    "source_results": "D:\\repos_feast\\fluxgraph\\artifacts\\benchmarks\\20260301T200739Z_dev-windows-release\\benchmark_results.json",
+    "source": {
+      "timestamp_utc": "2026-03-01T20:07:51.413379+00:00",
+      "preset": "dev-windows-release",
+      "config": "Release",
+      "platform": "Windows-11-10.0.26200-SP0",
+      "hostname": "CKB_PC",
+      "benchmark_schema_version": 2,
+      "git": {
+        "commit": "94aa8397458e079a748079a2279fd2cef4423551",
+        "commit_short": "94aa839"
+      }
+    }
+  },
+  "metrics": {
+    "scenario.tick.complex.v1.alloc_per_tick": 0.0,
+    "scenario.tick.complex.v1.avg_tick_us": 114.67,
+    "scenario.tick.simple.v1.alloc_per_tick": 0.0,
+    "scenario.tick.simple.v1.avg_tick_us": 0.375
+  }
+}

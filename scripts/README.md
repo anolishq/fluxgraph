@@ -55,6 +55,10 @@ Artifacts are written under `artifacts/benchmarks/<timestamp>_<preset>/` with:
 - `*.stdout.log` and `*.stderr.log`
 - configure/build logs when build is enabled
 
+Promote a run to baseline:
+
+- `python scripts/promote_benchmark_baseline.py --results artifacts/benchmarks/<dir>/benchmark_results.json --policy benchmarks/policy/bench_policy.json --profile ci-hosted --output benchmarks/policy/baselines/ci-hosted.windows-2022.json`
+
 ## Common Presets
 
 - `dev-debug`

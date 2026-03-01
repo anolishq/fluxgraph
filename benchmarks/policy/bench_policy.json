@@ -9,8 +9,8 @@
           "severity": "warning",
           "max_value": 0.0,
           "metric_keys": [
-            "benchmark_tick.simple_alloc_per_tick",
-            "benchmark_tick.complex_alloc_per_tick"
+            "scenario.tick.simple.v1.alloc_per_tick",
+            "scenario.tick.complex.v1.alloc_per_tick"
           ]
         },
         "latency_regression": {
@@ -22,8 +22,8 @@
           "missing_metric_severity": "warning",
           "missing_baseline_metric_severity": "warning",
           "metric_keys": [
-            "benchmark_tick.simple_avg_tick_us",
-            "benchmark_tick.complex_avg_tick_us"
+            "scenario.tick.simple.v1.avg_tick_us",
+            "scenario.tick.complex.v1.avg_tick_us"
           ]
         }
       }
@@ -36,8 +36,8 @@
           "severity": "warning",
           "max_value": 0.0,
           "metric_keys": [
-            "benchmark_tick.simple_alloc_per_tick",
-            "benchmark_tick.complex_alloc_per_tick"
+            "scenario.tick.simple.v1.alloc_per_tick",
+            "scenario.tick.complex.v1.alloc_per_tick"
           ]
         },
         "latency_regression": {
@@ -49,8 +49,8 @@
           "missing_metric_severity": "warning",
           "missing_baseline_metric_severity": "warning",
           "metric_keys": [
-            "benchmark_tick.simple_avg_tick_us",
-            "benchmark_tick.complex_avg_tick_us"
+            "scenario.tick.simple.v1.avg_tick_us",
+            "scenario.tick.complex.v1.avg_tick_us"
           ]
         }
       }
@@ -63,8 +63,8 @@
           "severity": "error",
           "max_value": 0.0,
           "metric_keys": [
-            "benchmark_tick.simple_alloc_per_tick",
-            "benchmark_tick.complex_alloc_per_tick"
+            "scenario.tick.simple.v1.alloc_per_tick",
+            "scenario.tick.complex.v1.alloc_per_tick"
           ]
         },
         "latency_regression": {
@@ -76,8 +76,8 @@
           "missing_metric_severity": "error",
           "missing_baseline_metric_severity": "error",
           "metric_keys": [
-            "benchmark_tick.simple_avg_tick_us",
-            "benchmark_tick.complex_avg_tick_us"
+            "scenario.tick.simple.v1.avg_tick_us",
+            "scenario.tick.complex.v1.avg_tick_us"
           ]
         }
       }
