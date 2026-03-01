@@ -111,6 +111,68 @@ def parse_status(stdout_text: str) -> Dict[str, object]:
     return {"status": overall, "status_lines": lines}
 
 
+def parse_metrics(target: str, stdout_text: str) -> Dict[str, float]:
+    metrics: Dict[str, float] = {}
+
+    if target == "benchmark_signal_store":
+        read_match = re.search(
+            r"SignalStore Reads:.*?Duration:\s*([0-9]+)\s*ms",
+            stdout_text,
+            flags=re.DOTALL,
+        )
+        write_match = re.search(
+            r"SignalStore Writes:.*?Duration:\s*([0-9]+)\s*ms",
+            stdout_text,
+            flags=re.DOTALL,
+        )
+        if read_match:
+            metrics["read_duration_ms"] = float(read_match.group(1))
+        if write_match:
+            metrics["write_duration_ms"] = float(write_match.group(1))
+
+    elif target == "benchmark_namespace":
+        intern_match = re.search(
+            r"Namespace Intern:.*?Duration:\s*([0-9]+)\s*ms",
+            stdout_text,
+            flags=re.DOTALL,
+        )
+        resolve_match = re.search(
+            r"Namespace Resolve:.*?Duration:\s*([0-9]+)\s*ms",
+            stdout_text,
+            flags=re.DOTALL,
+        )
+        if intern_match:
+            metrics["intern_duration_ms"] = float(intern_match.group(1))
+        if resolve_match:
+            metrics["resolve_duration_ms"] = float(resolve_match.group(1))
+
+    elif target == "benchmark_tick":
+        simple_match = re.search(
+            r"Simple Graph.*?Avg/tick:\s*([0-9.]+)\s*us.*?"
+            r"Allocations:\s*([0-9]+).*?"
+            r"Alloc/tick:\s*([0-9.]+)",
+            stdout_text,
+            flags=re.DOTALL,
+        )
+        complex_match = re.search(
+            r"Complex Graph.*?Avg/tick:\s*([0-9.]+)\s*us.*?"
+            r"Allocations:\s*([0-9]+).*?"
+            r"Alloc/tick:\s*([0-9.]+)",
+            stdout_text,
+            flags=re.DOTALL,
+        )
+        if simple_match:
+            metrics["simple_avg_tick_us"] = float(simple_match.group(1))
+            metrics["simple_allocations"] = float(simple_match.group(2))
+            metrics["simple_alloc_per_tick"] = float(simple_match.group(3))
+        if complex_match:
+            metrics["complex_avg_tick_us"] = float(complex_match.group(1))
+            metrics["complex_allocations"] = float(complex_match.group(2))
+            metrics["complex_alloc_per_tick"] = float(complex_match.group(3))
+
+    return metrics
+
+
 def git_metadata(repo_root: Path) -> Dict[str, object]:
     commit = run_cmd(["git", "rev-parse", "HEAD"], cwd=repo_root)
     short = run_cmd(["git", "rev-parse", "--short", "HEAD"], cwd=repo_root)
@@ -226,6 +288,7 @@ def main() -> int:
         err_path.write_text(stderr_text, encoding="utf-8")
 
         status = parse_status(stdout_text)
+        metrics = parse_metrics(target, stdout_text)
         run_records.append(
             {
                 "target": target,
@@ -238,6 +301,7 @@ def main() -> int:
                 "stderr_log": err_path.name,
                 "status": status["status"],
                 "status_lines": status["status_lines"],
+                "metrics": metrics,
             }
         )
 

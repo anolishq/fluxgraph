@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - server protected-write rejection
   - server `--dt` timestep behavior
   - SignalStore unit-declaration behavior
+- Benchmark evidence tooling for Phase 2:
+  - policy profiles (`local`, `ci-hosted`, `ci-dedicated`)
+  - benchmark evaluation script (`scripts/evaluate_benchmarks.py`)
+  - benchmark evidence CI workflow with artifact upload (`.github/workflows/benchmark-evidence.yml`)
 
 ### Fixed
 

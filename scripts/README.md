@@ -43,10 +43,15 @@ Options:
 - `--include-optional` / `-IncludeOptional`: include JSON/YAML loader benchmarks.
 - `--no-build` / `-NoBuild`: run existing binaries without configure/build.
 - `--fail-on-status` / `-FailOnStatus`: return non-zero when benchmark reports `Status: FAIL`.
+- `--policy-profile` / `-PolicyProfile`: benchmark policy profile (`local`, `ci-hosted`, `ci-dedicated`).
+- `--policy-file` / `-PolicyFile`: policy JSON path (default: `benchmarks/policy/bench_policy.json`).
+- `--baseline` / `-Baseline`: optional baseline JSON for latency regression checks.
+- `--no-evaluate` / `-NoEvaluate`: skip policy evaluation stage.
 
 Artifacts are written under `artifacts/benchmarks/<timestamp>_<preset>/` with:
 
 - `benchmark_results.json` (manifest + metadata + per-benchmark status)
+- `benchmark_evaluation.json` (policy evaluation summary)
 - `*.stdout.log` and `*.stderr.log`
 - configure/build logs when build is enabled
 

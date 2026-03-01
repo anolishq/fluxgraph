@@ -1,0 +1,10 @@
+{
+  "metadata": {
+    "description": "Replace values with a validated baseline run from stable hardware.",
+    "source_artifact": "artifacts/benchmarks/<timestamp>_<preset>/benchmark_results.json"
+  },
+  "metrics": {
+    "benchmark_tick.simple_avg_tick_us": 0.0,
+    "benchmark_tick.complex_avg_tick_us": 0.0
+  }
+}

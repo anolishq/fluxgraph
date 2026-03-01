@@ -2,11 +2,80 @@
 #include "fluxgraph/core/signal_store.hpp"
 #include "fluxgraph/engine.hpp"
 #include "fluxgraph/graph/compiler.hpp"
+#include <atomic>
 #include <chrono>
+#include <cstdint>
+#include <cstdlib>
 #include <iostream>
+#include <new>
 
 using namespace fluxgraph;
 using namespace std::chrono;
+
+namespace {
+std::atomic<bool> g_count_allocations{false};
+std::atomic<std::uint64_t> g_allocation_count{0};
+
+class AllocationCountScope {
+public:
+  AllocationCountScope() {
+    g_allocation_count.store(0, std::memory_order_relaxed);
+    g_count_allocations.store(true, std::memory_order_relaxed);
+  }
+
+  std::uint64_t stop() {
+    g_count_allocations.store(false, std::memory_order_relaxed);
+    return g_allocation_count.load(std::memory_order_relaxed);
+  }
+};
+} // namespace
+
+void *operator new(std::size_t size) {
+  if (size == 0) {
+    size = 1;
+  }
+  if (void *ptr = std::malloc(size)) {
+    if (g_count_allocations.load(std::memory_order_relaxed)) {
+      g_allocation_count.fetch_add(1, std::memory_order_relaxed);
+    }
+    return ptr;
+  }
+  throw std::bad_alloc();
+}
+
+void *operator new[](std::size_t size) {
+  if (size == 0) {
+    size = 1;
+  }
+  if (void *ptr = std::malloc(size)) {
+    if (g_count_allocations.load(std::memory_order_relaxed)) {
+      g_allocation_count.fetch_add(1, std::memory_order_relaxed);
+    }
+    return ptr;
+  }
+  throw std::bad_alloc();
+}
+
+void *operator new(std::size_t size, const std::nothrow_t &) noexcept {
+  try {
+    return ::operator new(size);
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+void *operator new[](std::size_t size, const std::nothrow_t &) noexcept {
+  try {
+    return ::operator new[](size);
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+void operator delete(void *ptr) noexcept { std::free(ptr); }
+void operator delete[](void *ptr) noexcept { std::free(ptr); }
+void operator delete(void *ptr, std::size_t) noexcept { std::free(ptr); }
+void operator delete[](void *ptr, std::size_t) noexcept { std::free(ptr); }
 
 void benchmark_simple_graph() {
   // Simple graph: 10 signals, 5 edges, 1 model
@@ -60,6 +129,7 @@ void benchmark_simple_graph() {
 
   // Benchmark: 1000 ticks
   const int num_ticks = 1000;
+  AllocationCountScope alloc_scope;
   auto start = high_resolution_clock::now();
 
   for (int i = 0; i < num_ticks; ++i) {
@@ -67,15 +137,23 @@ void benchmark_simple_graph() {
   }
 
   auto end = high_resolution_clock::now();
+  std::uint64_t allocations = alloc_scope.stop();
   auto duration_us = duration_cast<microseconds>(end - start).count();
   double avg_us = static_cast<double>(duration_us) / num_ticks;
+  double allocs_per_tick =
+      static_cast<double>(allocations) / static_cast<double>(num_ticks);
 
   std::cout << "Simple Graph (10 signals, 5 edges, 1 model):\n";
   std::cout << "  Ticks:      " << num_ticks << "\n";
   std::cout << "  Duration:   " << duration_us << " us\n";
   std::cout << "  Avg/tick:   " << avg_us << " us\n";
-  std::cout << "  Target:     <1000 us (1 ms)\n";
+  std::cout << "  Target:     <1000 us (1 ms) [latency]\n";
   std::cout << "  Status:     " << (avg_us < 1000 ? "PASS" : "FAIL") << "\n\n";
+  std::cout << "  Allocations: " << allocations << "\n";
+  std::cout << "  Alloc/tick:  " << allocs_per_tick << "\n";
+  std::cout << "  Target:      0 allocations/tick [memory]\n";
+  std::cout << "  Status:      " << (allocations == 0 ? "PASS" : "FAIL")
+            << "\n\n";
 }
 
 void benchmark_complex_graph() {
@@ -137,6 +215,7 @@ void benchmark_complex_graph() {
 
   // Benchmark: 100 ticks (fewer for complex graph)
   const int num_ticks = 100;
+  AllocationCountScope alloc_scope;
   auto start = high_resolution_clock::now();
 
   for (int i = 0; i < num_ticks; ++i) {
@@ -144,15 +223,23 @@ void benchmark_complex_graph() {
   }
 
   auto end = high_resolution_clock::now();
+  std::uint64_t allocations = alloc_scope.stop();
   auto duration_us = duration_cast<microseconds>(end - start).count();
   double avg_us = static_cast<double>(duration_us) / num_ticks;
+  double allocs_per_tick =
+      static_cast<double>(allocations) / static_cast<double>(num_ticks);
 
   std::cout << "Complex Graph (1000 signals, 500 edges, 10 models):\n";
   std::cout << "  Ticks:      " << num_ticks << "\n";
   std::cout << "  Duration:   " << duration_us << " us\n";
   std::cout << "  Avg/tick:   " << avg_us << " us\n";
-  std::cout << "  Target:     <10000 us (10 ms)\n";
+  std::cout << "  Target:     <10000 us (10 ms) [latency]\n";
   std::cout << "  Status:     " << (avg_us < 10000 ? "PASS" : "FAIL") << "\n\n";
+  std::cout << "  Allocations: " << allocations << "\n";
+  std::cout << "  Alloc/tick:  " << allocs_per_tick << "\n";
+  std::cout << "  Target:      0 allocations/tick [memory]\n";
+  std::cout << "  Status:      " << (allocations == 0 ? "PASS" : "FAIL")
+            << "\n\n";
 }
 
 int main() {

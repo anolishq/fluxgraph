@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "profiles": {
+    "local": {
+      "description": "Developer workstation profile. Collect evidence and surface regressions without noisy latency hard-fails.",
+      "checks": {
+        "tick_alloc_per_tick": {
+          "enabled": true,
+          "severity": "warning",
+          "max_value": 0.0,
+          "metric_keys": [
+            "benchmark_tick.simple_alloc_per_tick",
+            "benchmark_tick.complex_alloc_per_tick"
+          ]
+        },
+        "latency_regression": {
+          "enabled": false,
+          "warn_pct": 20.0,
+          "fail_pct": 50.0,
+          "require_baseline": false,
+          "enforce_fail_threshold": false,
+          "missing_metric_severity": "warning",
+          "missing_baseline_metric_severity": "warning",
+          "metric_keys": [
+            "benchmark_tick.simple_avg_tick_us",
+            "benchmark_tick.complex_avg_tick_us"
+          ]
+        }
+      }
+    },
+    "ci-hosted": {
+      "description": "GitHub-hosted runner profile. Allocation regressions and latency drift are tracked as warnings due host variance.",
+      "checks": {
+        "tick_alloc_per_tick": {
+          "enabled": true,
+          "severity": "warning",
+          "max_value": 0.0,
+          "metric_keys": [
+            "benchmark_tick.simple_alloc_per_tick",
+            "benchmark_tick.complex_alloc_per_tick"
+          ]
+        },
+        "latency_regression": {
+          "enabled": true,
+          "warn_pct": 20.0,
+          "fail_pct": 50.0,
+          "require_baseline": false,
+          "enforce_fail_threshold": false,
+          "missing_metric_severity": "warning",
+          "missing_baseline_metric_severity": "warning",
+          "metric_keys": [
+            "benchmark_tick.simple_avg_tick_us",
+            "benchmark_tick.complex_avg_tick_us"
+          ]
+        }
+      }
+    },
+    "ci-dedicated": {
+      "description": "Dedicated stable hardware profile for release/publication evidence gating.",
+      "checks": {
+        "tick_alloc_per_tick": {
+          "enabled": true,
+          "severity": "error",
+          "max_value": 0.0,
+          "metric_keys": [
+            "benchmark_tick.simple_alloc_per_tick",
+            "benchmark_tick.complex_alloc_per_tick"
+          ]
+        },
+        "latency_regression": {
+          "enabled": true,
+          "warn_pct": 10.0,
+          "fail_pct": 20.0,
+          "require_baseline": true,
+          "enforce_fail_threshold": true,
+          "missing_metric_severity": "error",
+          "missing_baseline_metric_severity": "error",
+          "metric_keys": [
+            "benchmark_tick.simple_avg_tick_us",
+            "benchmark_tick.complex_avg_tick_us"
+          ]
+        }
+      }
+    }
+  }
+}
