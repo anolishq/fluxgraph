@@ -33,9 +33,7 @@ def flatten_metrics_from_results(doc: Dict[str, object]) -> Dict[str, float]:
                     continue
                 scenario_id = scenario.get("id")
                 scenario_metrics = scenario.get("metrics")
-                if not isinstance(scenario_id, str) or not isinstance(
-                    scenario_metrics, dict
-                ):
+                if not isinstance(scenario_id, str) or not isinstance(scenario_metrics, dict):
                     continue
                 for key, value in scenario_metrics.items():
                     if isinstance(key, str) and _is_number(value):
@@ -174,9 +172,7 @@ def evaluate(
         fail_pct = float(latency_cfg.get("fail_pct", 50.0))
         require_baseline = bool(latency_cfg.get("require_baseline", False))
         enforce_fail_threshold = bool(latency_cfg.get("enforce_fail_threshold", False))
-        missing_metric_severity = str(
-            latency_cfg.get("missing_metric_severity", "error")
-        )
+        missing_metric_severity = str(latency_cfg.get("missing_metric_severity", "error"))
         missing_baseline_metric_severity = str(
             latency_cfg.get(
                 "missing_baseline_metric_severity",
@@ -220,9 +216,7 @@ def evaluate(
                 actual = float(result_metrics[key])
                 baseline = float(baseline_metrics[key])
                 if baseline <= 0:
-                    invalid_baseline_severity = (
-                        "error" if require_baseline or enforce_fail_threshold else "warning"
-                    )
+                    invalid_baseline_severity = "error" if require_baseline or enforce_fail_threshold else "warning"
                     add_issue(
                         issues,
                         severity=invalid_baseline_severity,
@@ -244,10 +238,7 @@ def evaluate(
                         metric_key=key,
                         actual=actual,
                         expected=baseline,
-                        message=(
-                            f"Latency regression {delta_pct:.2f}% exceeds fail threshold "
-                            f"{fail_pct:.2f}%"
-                        ),
+                        message=(f"Latency regression {delta_pct:.2f}% exceeds fail threshold {fail_pct:.2f}%"),
                     )
                 elif delta_pct > warn_pct:
                     add_issue(
@@ -257,10 +248,7 @@ def evaluate(
                         metric_key=key,
                         actual=actual,
                         expected=baseline,
-                        message=(
-                            f"Latency regression {delta_pct:.2f}% exceeds warning threshold "
-                            f"{warn_pct:.2f}%"
-                        ),
+                        message=(f"Latency regression {delta_pct:.2f}% exceeds warning threshold {warn_pct:.2f}%"),
                     )
 
     errors = [i for i in issues if i.get("severity") == "error"]
@@ -303,9 +291,7 @@ def main() -> int:
     profiles = policy_doc.get("profiles", {})
     if not isinstance(profiles, dict) or args.profile not in profiles:
         available = ", ".join(sorted(profiles.keys())) if isinstance(profiles, dict) else ""
-        raise ValueError(
-            f"Unknown profile '{args.profile}'. Available profiles: {available}"
-        )
+        raise ValueError(f"Unknown profile '{args.profile}'. Available profiles: {available}")
 
     profile = profiles[args.profile]
     if not isinstance(profile, dict):

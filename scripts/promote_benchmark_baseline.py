@@ -16,9 +16,7 @@ def collect_policy_metric_keys(policy: Dict[str, object], profile_name: str) -> 
     profiles = policy.get("profiles", {})
     if not isinstance(profiles, dict) or profile_name not in profiles:
         available = ", ".join(sorted(profiles.keys())) if isinstance(profiles, dict) else ""
-        raise ValueError(
-            f"Unknown profile '{profile_name}'. Available profiles: {available}"
-        )
+        raise ValueError(f"Unknown profile '{profile_name}'. Available profiles: {available}")
 
     profile = profiles[profile_name]
     if not isinstance(profile, dict):
@@ -56,9 +54,7 @@ def pick_metrics(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Promote benchmark_results.json into a baseline JSON"
-    )
+    parser = argparse.ArgumentParser(description="Promote benchmark_results.json into a baseline JSON")
     parser.add_argument("--results", required=True, help="Path to benchmark_results.json")
     parser.add_argument("--policy", required=True, help="Path to benchmark policy JSON")
     parser.add_argument("--profile", required=True, help="Policy profile name")
@@ -89,8 +85,7 @@ def main() -> int:
 
     if not selected_metrics:
         raise ValueError(
-            "No metrics selected for baseline. Ensure results contain policy metric keys "
-            "or use --include-all-metrics."
+            "No metrics selected for baseline. Ensure results contain policy metric keys or use --include-all-metrics."
         )
 
     metadata = {

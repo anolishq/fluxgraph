@@ -66,9 +66,7 @@ def resolve_build_dir(repo_root: Path, preset: str, override: Optional[Path]) ->
     return (repo_root / "build" / preset).resolve()
 
 
-def pick_executable(
-    build_dir: Path, target: str, config: Optional[str]
-) -> Optional[Path]:
+def pick_executable(build_dir: Path, target: str, config: Optional[str]) -> Optional[Path]:
     ext = ".exe" if os.name == "nt" else ""
 
     direct_candidates = [
@@ -84,9 +82,7 @@ def pick_executable(
 
     pattern = f"**/{target}{ext}"
     candidates = [
-        p
-        for p in build_dir.glob(pattern)
-        if p.is_file() and os.access(p, os.X_OK) and "CMakeFiles" not in p.parts
+        p for p in build_dir.glob(pattern) if p.is_file() and os.access(p, os.X_OK) and "CMakeFiles" not in p.parts
     ]
     if not candidates:
         return None
@@ -256,7 +252,9 @@ def default_output_dir(repo_root: Path, preset: str) -> Path:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run FluxGraph benchmarks and collect artifacts.")
     parser.add_argument("--preset", default=("dev-windows-release" if os.name == "nt" else "dev-release"))
-    parser.add_argument("--config", default=None, help="Build configuration for multi-config generators (e.g., Release)")
+    parser.add_argument(
+        "--config", default=None, help="Build configuration for multi-config generators (e.g., Release)"
+    )
     parser.add_argument("--build-dir", default=None, help="Override build directory")
     parser.add_argument("--output-dir", default=None, help="Artifact output directory")
     parser.add_argument("--no-build", action="store_true", help="Skip configure/build and run existing binaries")
@@ -402,11 +400,7 @@ def main() -> int:
     result_file = output_dir / "benchmark_results.json"
     result_file.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
 
-    missing_required = [
-        r["target"]
-        for r in run_records
-        if r.get("skipped") and r.get("target") in BENCHMARK_TARGETS
-    ]
+    missing_required = [r["target"] for r in run_records if r.get("skipped") and r.get("target") in BENCHMARK_TARGETS]
 
     print(f"Benchmark artifacts written to: {output_dir}")
     print(f"Results manifest: {result_file}")
