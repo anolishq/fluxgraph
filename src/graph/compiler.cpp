@@ -12,10 +12,12 @@
 #include <cctype>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <regex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace fluxgraph {
 
@@ -137,10 +139,231 @@ compile_condition_expr(const std::string &expr, SignalNamespace &signal_ns,
   };
 }
 
+struct FactoryRegistry {
+  std::mutex mutex;
+  bool defaults_registered = false;
+  std::unordered_map<std::string, GraphCompiler::TransformFactory>
+      transform_factories;
+  std::unordered_map<std::string, GraphCompiler::ModelFactory> model_factories;
+};
+
+FactoryRegistry &factory_registry() {
+  static FactoryRegistry registry;
+  return registry;
+}
+
+void ensure_default_factories_registered_locked(FactoryRegistry &registry) {
+  if (registry.defaults_registered) {
+    return;
+  }
+
+  registry.transform_factories.emplace(
+      "linear", [](const TransformSpec &spec) -> std::unique_ptr<ITransform> {
+        const std::string context = "transform[linear]";
+        double scale = as_double(require_param(spec.params, "scale", context),
+                                 context + "/scale");
+        double offset = as_double(require_param(spec.params, "offset", context),
+                                  context + "/offset");
+        double clamp_min = -std::numeric_limits<double>::infinity();
+        double clamp_max = std::numeric_limits<double>::infinity();
+
+        if (auto it = spec.params.find("clamp_min"); it != spec.params.end()) {
+          clamp_min = as_double(it->second, context + "/clamp_min");
+        }
+        if (auto it = spec.params.find("clamp_max"); it != spec.params.end()) {
+          clamp_max = as_double(it->second, context + "/clamp_max");
+        }
+
+        return std::make_unique<LinearTransform>(scale, offset, clamp_min,
+                                                 clamp_max);
+      });
+
+  registry.transform_factories.emplace(
+      "first_order_lag",
+      [](const TransformSpec &spec) -> std::unique_ptr<ITransform> {
+        const std::string context = "transform[first_order_lag]";
+        double tau_s = as_double(require_param(spec.params, "tau_s", context),
+                                 context + "/tau_s");
+        return std::make_unique<FirstOrderLagTransform>(tau_s);
+      });
+
+  registry.transform_factories.emplace(
+      "delay", [](const TransformSpec &spec) -> std::unique_ptr<ITransform> {
+        const std::string context = "transform[delay]";
+        double delay_sec = as_double(require_param(spec.params, "delay_sec", context),
+                                     context + "/delay_sec");
+        return std::make_unique<DelayTransform>(delay_sec);
+      });
+
+  registry.transform_factories.emplace(
+      "noise", [](const TransformSpec &spec) -> std::unique_ptr<ITransform> {
+        const std::string context = "transform[noise]";
+        double amplitude =
+            as_double(require_param(spec.params, "amplitude", context),
+                      context + "/amplitude");
+        uint32_t seed = 0U;
+        if (auto it = spec.params.find("seed"); it != spec.params.end()) {
+          seed = static_cast<uint32_t>(as_int64(it->second, context + "/seed"));
+        }
+        return std::make_unique<NoiseTransform>(amplitude, seed);
+      });
+
+  registry.transform_factories.emplace(
+      "saturation",
+      [](const TransformSpec &spec) -> std::unique_ptr<ITransform> {
+        const std::string context = "transform[saturation]";
+        double min_val = 0.0;
+        double max_val = 0.0;
+        if (auto it = spec.params.find("min"); it != spec.params.end()) {
+          min_val = as_double(it->second, context + "/min");
+        } else {
+          min_val = as_double(require_param(spec.params, "min_value", context),
+                              context + "/min_value");
+        }
+
+        if (auto it = spec.params.find("max"); it != spec.params.end()) {
+          max_val = as_double(it->second, context + "/max");
+        } else {
+          max_val = as_double(require_param(spec.params, "max_value", context),
+                              context + "/max_value");
+        }
+        return std::make_unique<SaturationTransform>(min_val, max_val);
+      });
+
+  registry.transform_factories.emplace(
+      "deadband",
+      [](const TransformSpec &spec) -> std::unique_ptr<ITransform> {
+        const std::string context = "transform[deadband]";
+        double threshold =
+            as_double(require_param(spec.params, "threshold", context),
+                      context + "/threshold");
+        return std::make_unique<DeadbandTransform>(threshold);
+      });
+
+  registry.transform_factories.emplace(
+      "rate_limiter",
+      [](const TransformSpec &spec) -> std::unique_ptr<ITransform> {
+        const std::string context = "transform[rate_limiter]";
+        double max_rate = 0.0;
+        if (auto it = spec.params.find("max_rate_per_sec");
+            it != spec.params.end()) {
+          max_rate = as_double(it->second, context + "/max_rate_per_sec");
+        } else {
+          max_rate = as_double(require_param(spec.params, "max_rate", context),
+                               context + "/max_rate");
+        }
+        return std::make_unique<RateLimiterTransform>(max_rate);
+      });
+
+  registry.transform_factories.emplace(
+      "moving_average",
+      [](const TransformSpec &spec) -> std::unique_ptr<ITransform> {
+        const std::string context = "transform[moving_average]";
+        int64_t window_size_raw =
+            as_int64(require_param(spec.params, "window_size", context),
+                     context + "/window_size");
+        if (window_size_raw <= 0) {
+          throw std::runtime_error("Invalid parameter at " + context +
+                                   "/window_size: expected >= 1");
+        }
+        size_t window_size = static_cast<size_t>(window_size_raw);
+        return std::make_unique<MovingAverageTransform>(window_size);
+      });
+
+  registry.model_factories.emplace(
+      "thermal_mass",
+      [](const ModelSpec &spec, SignalNamespace &ns) -> std::unique_ptr<IModel> {
+        const std::string context = "model[" + spec.id + ":thermal_mass]";
+        double thermal_mass =
+            as_double(require_param(spec.params, "thermal_mass", context),
+                      context + "/thermal_mass");
+        double heat_transfer_coeff =
+            as_double(require_param(spec.params, "heat_transfer_coeff", context),
+                      context + "/heat_transfer_coeff");
+        double initial_temp =
+            as_double(require_param(spec.params, "initial_temp", context),
+                      context + "/initial_temp");
+        std::string temp_path =
+            as_string(require_param(spec.params, "temp_signal", context),
+                      context + "/temp_signal");
+        std::string power_path =
+            as_string(require_param(spec.params, "power_signal", context),
+                      context + "/power_signal");
+        std::string ambient_path =
+            as_string(require_param(spec.params, "ambient_signal", context),
+                      context + "/ambient_signal");
+
+        return std::make_unique<ThermalMassModel>(
+            spec.id, thermal_mass, heat_transfer_coeff, initial_temp, temp_path,
+            power_path, ambient_path, ns);
+      });
+
+  registry.defaults_registered = true;
+}
+
+void validate_registration_request(const std::string &type, bool has_factory,
+                                   const std::string &kind) {
+  if (trim_copy(type).empty()) {
+    throw std::invalid_argument("GraphCompiler: " + kind +
+                                " type must be non-empty");
+  }
+  if (!has_factory) {
+    throw std::invalid_argument("GraphCompiler: " + kind +
+                                " factory must be valid");
+  }
+}
+
 } // namespace
 
 GraphCompiler::GraphCompiler() = default;
 GraphCompiler::~GraphCompiler() = default;
+
+void GraphCompiler::register_transform_factory(const std::string &type,
+                                               TransformFactory factory) {
+  validate_registration_request(type, static_cast<bool>(factory), "transform");
+
+  auto &registry = factory_registry();
+  std::lock_guard<std::mutex> lock(registry.mutex);
+  ensure_default_factories_registered_locked(registry);
+
+  auto [_, inserted] = registry.transform_factories.emplace(type, std::move(factory));
+  if (!inserted) {
+    throw std::runtime_error("GraphCompiler: transform factory already "
+                             "registered for type '" +
+                             type + "'");
+  }
+}
+
+void GraphCompiler::register_model_factory(const std::string &type,
+                                           ModelFactory factory) {
+  validate_registration_request(type, static_cast<bool>(factory), "model");
+
+  auto &registry = factory_registry();
+  std::lock_guard<std::mutex> lock(registry.mutex);
+  ensure_default_factories_registered_locked(registry);
+
+  auto [_, inserted] = registry.model_factories.emplace(type, std::move(factory));
+  if (!inserted) {
+    throw std::runtime_error("GraphCompiler: model factory already registered "
+                             "for type '" +
+                             type + "'");
+  }
+}
+
+bool GraphCompiler::is_transform_registered(const std::string &type) {
+  auto &registry = factory_registry();
+  std::lock_guard<std::mutex> lock(registry.mutex);
+  ensure_default_factories_registered_locked(registry);
+  return registry.transform_factories.find(type) !=
+         registry.transform_factories.end();
+}
+
+bool GraphCompiler::is_model_registered(const std::string &type) {
+  auto &registry = factory_registry();
+  std::lock_guard<std::mutex> lock(registry.mutex);
+  ensure_default_factories_registered_locked(registry);
+  return registry.model_factories.find(type) != registry.model_factories.end();
+}
 
 CompiledProgram GraphCompiler::compile(const GraphSpec &spec,
                                        SignalNamespace &signal_ns,
@@ -183,13 +406,24 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec,
     register_writer(edge.target, "edge_target");
   }
 
-  for (const auto &model_spec : spec.models) {
-    if (model_spec.type == "thermal_mass") {
-      const std::string temp_path = as_string(
-          require_param(model_spec.params, "temp_signal",
-                        "model[" + model_spec.id + ":" + model_spec.type + "]"),
-          "model[" + model_spec.id + ":" + model_spec.type + "]/temp_signal");
-      register_writer(signal_ns.intern(temp_path), "model_output");
+  for (size_t model_index = 0; model_index < program.models.size();
+       ++model_index) {
+    const auto &model = program.models[model_index];
+    const auto output_ids = model->output_signal_ids();
+    for (SignalId output_id : output_ids) {
+      if (output_id == INVALID_SIGNAL) {
+        throw std::runtime_error(
+            "Model output_signal_ids() returned INVALID_SIGNAL for model[" +
+            std::to_string(model_index) + ":" + model->describe() + "]");
+      }
+      if (output_id >= signal_ns.size()) {
+        throw std::runtime_error(
+            "Model output_signal_ids() returned non-interned signal id " +
+            std::to_string(output_id) + " for model[" +
+            std::to_string(model_index) + ":" + model->describe() + "]");
+      }
+      register_writer(output_id, "model_output[" + std::to_string(model_index) +
+                                     ":" + model->describe() + "]");
     }
   }
 
@@ -233,120 +467,47 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec,
 }
 
 ITransform *GraphCompiler::parse_transform(const TransformSpec &spec) {
-  const std::string &type = spec.type;
-  const std::string context = "transform[" + type + "]";
+  TransformFactory factory;
+  {
+    auto &registry = factory_registry();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    ensure_default_factories_registered_locked(registry);
 
-  if (type == "linear") {
-    double scale = as_double(require_param(spec.params, "scale", context),
-                             context + "/scale");
-    double offset = as_double(require_param(spec.params, "offset", context),
-                              context + "/offset");
-    double clamp_min = -std::numeric_limits<double>::infinity();
-    double clamp_max = std::numeric_limits<double>::infinity();
-
-    if (auto it = spec.params.find("clamp_min"); it != spec.params.end()) {
-      clamp_min = as_double(it->second, context + "/clamp_min");
+    auto it = registry.transform_factories.find(spec.type);
+    if (it == registry.transform_factories.end()) {
+      throw std::runtime_error("Unknown transform type: " + spec.type);
     }
-    if (auto it = spec.params.find("clamp_max"); it != spec.params.end()) {
-      clamp_max = as_double(it->second, context + "/clamp_max");
-    }
-
-    return new LinearTransform(scale, offset, clamp_min, clamp_max);
-  } else if (type == "first_order_lag") {
-    double tau_s = as_double(require_param(spec.params, "tau_s", context),
-                             context + "/tau_s");
-    return new FirstOrderLagTransform(tau_s);
-  } else if (type == "delay") {
-    double delay_sec =
-        as_double(require_param(spec.params, "delay_sec", context),
-                  context + "/delay_sec");
-    return new DelayTransform(delay_sec);
-  } else if (type == "noise") {
-    double amplitude =
-        as_double(require_param(spec.params, "amplitude", context),
-                  context + "/amplitude");
-    uint32_t seed = 0U;
-    if (auto it = spec.params.find("seed"); it != spec.params.end()) {
-      seed = static_cast<uint32_t>(as_int64(it->second, context + "/seed"));
-    }
-    return new NoiseTransform(amplitude, seed);
-  } else if (type == "saturation") {
-    double min_val = 0.0;
-    double max_val = 0.0;
-    if (auto it = spec.params.find("min"); it != spec.params.end()) {
-      min_val = as_double(it->second, context + "/min");
-    } else {
-      min_val = as_double(require_param(spec.params, "min_value", context),
-                          context + "/min_value");
-    }
-
-    if (auto it = spec.params.find("max"); it != spec.params.end()) {
-      max_val = as_double(it->second, context + "/max");
-    } else {
-      max_val = as_double(require_param(spec.params, "max_value", context),
-                          context + "/max_value");
-    }
-    return new SaturationTransform(min_val, max_val);
-  } else if (type == "deadband") {
-    double threshold =
-        as_double(require_param(spec.params, "threshold", context),
-                  context + "/threshold");
-    return new DeadbandTransform(threshold);
-  } else if (type == "rate_limiter") {
-    double max_rate = 0.0;
-    if (auto it = spec.params.find("max_rate_per_sec");
-        it != spec.params.end()) {
-      max_rate = as_double(it->second, context + "/max_rate_per_sec");
-    } else {
-      max_rate = as_double(require_param(spec.params, "max_rate", context),
-                           context + "/max_rate");
-    }
-    return new RateLimiterTransform(max_rate);
-  } else if (type == "moving_average") {
-    int64_t window_size_raw =
-        as_int64(require_param(spec.params, "window_size", context),
-                 context + "/window_size");
-    if (window_size_raw <= 0) {
-      throw std::runtime_error("Invalid parameter at " + context +
-                               "/window_size: expected >= 1");
-    }
-    size_t window_size = static_cast<size_t>(window_size_raw);
-    return new MovingAverageTransform(window_size);
-  } else {
-    throw std::runtime_error("Unknown transform type: " + type);
+    factory = it->second;
   }
+
+  auto transform = factory(spec);
+  if (!transform) {
+    throw std::runtime_error("Transform factory returned null for type '" +
+                             spec.type + "'");
+  }
+  return transform.release();
 }
 
 IModel *GraphCompiler::parse_model(const ModelSpec &spec, SignalNamespace &ns) {
-  const std::string &type = spec.type;
-  const std::string context = "model[" + spec.id + ":" + type + "]";
+  ModelFactory factory;
+  {
+    auto &registry = factory_registry();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    ensure_default_factories_registered_locked(registry);
 
-  if (type == "thermal_mass") {
-    double thermal_mass =
-        as_double(require_param(spec.params, "thermal_mass", context),
-                  context + "/thermal_mass");
-    double heat_transfer_coeff =
-        as_double(require_param(spec.params, "heat_transfer_coeff", context),
-                  context + "/heat_transfer_coeff");
-    double initial_temp =
-        as_double(require_param(spec.params, "initial_temp", context),
-                  context + "/initial_temp");
-    std::string temp_path =
-        as_string(require_param(spec.params, "temp_signal", context),
-                  context + "/temp_signal");
-    std::string power_path =
-        as_string(require_param(spec.params, "power_signal", context),
-                  context + "/power_signal");
-    std::string ambient_path =
-        as_string(require_param(spec.params, "ambient_signal", context),
-                  context + "/ambient_signal");
-
-    return new ThermalMassModel(spec.id, thermal_mass, heat_transfer_coeff,
-                                initial_temp, temp_path, power_path,
-                                ambient_path, ns);
-  } else {
-    throw std::runtime_error("Unknown model type: " + type);
+    auto it = registry.model_factories.find(spec.type);
+    if (it == registry.model_factories.end()) {
+      throw std::runtime_error("Unknown model type: " + spec.type);
+    }
+    factory = it->second;
   }
+
+  auto model = factory(spec, ns);
+  if (!model) {
+    throw std::runtime_error("Model factory returned null for type '" +
+                             spec.type + "'");
+  }
+  return model.release();
 }
 
 void GraphCompiler::topological_sort(std::vector<CompiledEdge> &edges) {

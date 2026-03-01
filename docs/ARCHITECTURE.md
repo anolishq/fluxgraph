@@ -420,6 +420,7 @@ class MyModel : public IModel {
     void reset() override { ... }
     double compute_stability_limit() const override { ... }
     std::string describe() const override { ... }
+    std::vector<SignalId> output_signal_ids() const override { ... }
 };
 ```
 

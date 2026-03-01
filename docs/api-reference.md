@@ -477,6 +477,7 @@ public:
     virtual void reset() = 0;
     virtual double compute_stability_limit() const = 0;
     virtual std::string describe() const = 0;
+    virtual std::vector<SignalId> output_signal_ids() const = 0;
     virtual ~IModel() = default;
 };
 ```
@@ -485,6 +486,7 @@ public:
 **reset()** - Reset to initial state
 **compute_stability_limit()** - Return maximum stable dt for numerical integration
 **describe()** - Return human-readable description
+**output_signal_ids()** - Declare every signal written by tick() for compile-time single-writer validation (must be interned IDs, never `INVALID_SIGNAL`)
 
 ### ThermalMassModel
 

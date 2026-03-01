@@ -4,8 +4,56 @@
 #include "fluxgraph/graph/compiler.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 using namespace fluxgraph;
+
+namespace {
+
+class DeterministicCustomTransform : public ITransform {
+public:
+  explicit DeterministicCustomTransform(double gain) : gain_(gain) {}
+
+  double apply(double input, double /*dt*/) override { return input * gain_; }
+  void reset() override {}
+  ITransform *clone() const override {
+    return new DeterministicCustomTransform(*this);
+  }
+
+private:
+  double gain_ = 1.0;
+};
+
+double variant_to_double(const Variant &value) {
+  if (std::holds_alternative<double>(value)) {
+    return std::get<double>(value);
+  }
+  if (std::holds_alternative<int64_t>(value)) {
+    return static_cast<double>(std::get<int64_t>(value));
+  }
+  throw std::runtime_error("Expected numeric variant");
+}
+
+void register_custom_deterministic_transform() {
+  const std::string type = "test.deterministic.custom_gain";
+  if (GraphCompiler::is_transform_registered(type)) {
+    return;
+  }
+
+  GraphCompiler::register_transform_factory(
+      type, [](const TransformSpec &spec) -> std::unique_ptr<ITransform> {
+        auto gain_it = spec.params.find("gain");
+        if (gain_it == spec.params.end()) {
+          throw std::runtime_error("Missing parameter: gain");
+        }
+        return std::make_unique<DeterministicCustomTransform>(
+            variant_to_double(gain_it->second));
+      });
+}
+
+} // namespace
 
 TEST(DeterminismTest, SameInputSameOutput) {
   // Verify that identical input sequences produce identical outputs
@@ -206,4 +254,64 @@ TEST(DeterminismTest, ResetRestoresInitialState) {
   double temp_after_reset = store.read_value(temp_id);
 
   EXPECT_DOUBLE_EQ(temp_after_reset, temp_initial);
+}
+
+TEST(DeterminismTest, RegisteredCustomTransformIsDeterministic) {
+  register_custom_deterministic_transform();
+
+  auto build_graph = []() {
+    GraphSpec spec;
+
+    EdgeSpec edge;
+    edge.source_path = "sensor.in";
+    edge.target_path = "sensor.out";
+    edge.transform.type = "test.deterministic.custom_gain";
+    edge.transform.params["gain"] = 1.25;
+    spec.edges.push_back(edge);
+
+    return spec;
+  };
+
+  SignalNamespace ns1;
+  FunctionNamespace fn1;
+  SignalStore store1;
+  Engine engine1;
+  GraphCompiler compiler1;
+  auto program1 = compiler1.compile(build_graph(), ns1, fn1);
+  engine1.load(std::move(program1));
+
+  SignalNamespace ns2;
+  FunctionNamespace fn2;
+  SignalStore store2;
+  Engine engine2;
+  GraphCompiler compiler2;
+  auto program2 = compiler2.compile(build_graph(), ns2, fn2);
+  engine2.load(std::move(program2));
+
+  const SignalId in1 = ns1.resolve("sensor.in");
+  const SignalId out1 = ns1.resolve("sensor.out");
+  const SignalId in2 = ns2.resolve("sensor.in");
+  const SignalId out2 = ns2.resolve("sensor.out");
+
+  std::vector<double> run1;
+  std::vector<double> run2;
+  run1.reserve(200);
+  run2.reserve(200);
+
+  for (int i = 0; i < 200; ++i) {
+    const double input = static_cast<double>((i % 7) - 3) * 0.5;
+    store1.write(in1, input, "dimensionless");
+    store2.write(in2, input, "dimensionless");
+
+    engine1.tick(0.1, store1);
+    engine2.tick(0.1, store2);
+
+    run1.push_back(store1.read_value(out1));
+    run2.push_back(store2.read_value(out2));
+  }
+
+  ASSERT_EQ(run1.size(), run2.size());
+  for (size_t i = 0; i < run1.size(); ++i) {
+    EXPECT_DOUBLE_EQ(run1[i], run2[i]) << "Mismatch at tick " << i;
+  }
 }

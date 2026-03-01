@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace fluxgraph {
@@ -43,8 +44,33 @@ struct CompiledProgram {
 /// Compiles GraphSpec into executable CompiledProgram
 class GraphCompiler {
 public:
+  using TransformFactory = std::function<std::unique_ptr<ITransform>(
+      const TransformSpec &)>;
+  using ModelFactory = std::function<std::unique_ptr<IModel>(
+      const ModelSpec &, SignalNamespace &)>;
+
   GraphCompiler();
   ~GraphCompiler();
+
+  /// Register transform factory by type.
+  /// Lifecycle contract:
+  /// - type must be non-empty
+  /// - factory must be valid (non-empty std::function)
+  /// - duplicate type registration is rejected
+  static void register_transform_factory(const std::string &type,
+                                         TransformFactory factory);
+
+  /// Register model factory by type.
+  /// Lifecycle contract:
+  /// - type must be non-empty
+  /// - factory must be valid (non-empty std::function)
+  /// - duplicate type registration is rejected
+  static void register_model_factory(const std::string &type,
+                                     ModelFactory factory);
+
+  /// Query whether a transform/model type is currently registered.
+  static bool is_transform_registered(const std::string &type);
+  static bool is_model_registered(const std::string &type);
 
   /// Compile a graph specification
   /// @param spec Graph specification (POD)

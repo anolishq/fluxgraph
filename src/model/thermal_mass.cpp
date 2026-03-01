@@ -55,4 +55,8 @@ std::string ThermalMassModel::describe() const {
   return oss.str();
 }
 
+std::vector<SignalId> ThermalMassModel::output_signal_ids() const {
+  return {temp_signal_};
+}
+
 } // namespace fluxgraph

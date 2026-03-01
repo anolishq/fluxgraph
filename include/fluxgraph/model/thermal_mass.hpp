@@ -3,6 +3,7 @@
 #include "fluxgraph/core/namespace.hpp"
 #include "fluxgraph/model/interface.hpp"
 #include <string>
+#include <vector>
 
 namespace fluxgraph {
 
@@ -40,6 +41,7 @@ public:
   double compute_stability_limit() const override;
 
   std::string describe() const override;
+  std::vector<SignalId> output_signal_ids() const override;
 
 private:
   std::string id_;

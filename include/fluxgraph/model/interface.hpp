@@ -2,6 +2,7 @@
 
 #include "fluxgraph/core/signal_store.hpp"
 #include <string>
+#include <vector>
 
 namespace fluxgraph {
 
@@ -26,6 +27,10 @@ public:
 
   /// Get human-readable description of model
   virtual std::string describe() const = 0;
+
+  /// Return all signals written by this model during tick().
+  /// Used by compile-time ownership checks to enforce single-writer semantics.
+  virtual std::vector<SignalId> output_signal_ids() const = 0;
 };
 
 } // namespace fluxgraph

@@ -679,6 +679,10 @@ public:
     std::string describe() const override {
         return "Motor model with inertia";
     }
+
+    std::vector<fluxgraph::SignalId> output_signal_ids() const override {
+        return {m_speed_id};
+    }
 };
 ```
 
