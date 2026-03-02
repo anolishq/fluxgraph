@@ -1,0 +1,121 @@
+name: Benchmark Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      policy_profile:
+        description: Policy profile for evaluation
+        required: false
+        default: ci-hosted
+        type: choice
+        options:
+          - ci-hosted
+          - ci-dedicated
+      include_optional:
+        description: Include JSON/YAML loader benchmarks
+        required: false
+        default: false
+        type: boolean
+      baseline_path:
+        description: Optional baseline JSON path (repo-relative)
+        required: false
+        default: ""
+        type: string
+  schedule:
+    - cron: "0 7 * * 1"
+
+env:
+  VCPKG_COMMIT: "66c0373dc7fca549e5803087b9487edfe3aca0a1"
+
+jobs:
+  windows-benchmark:
+    name: Windows benchmark evidence
+    runs-on: windows-2022
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+          doNotCache: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve benchmark options
+        id: opts
+        shell: pwsh
+        run: |
+          $profile = "ci-hosted"
+          $includeOptional = "false"
+          $baseline = ""
+
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            if ("${{ github.event.inputs.policy_profile }}" -ne "") {
+              $profile = "${{ github.event.inputs.policy_profile }}"
+            }
+            if ("${{ github.event.inputs.include_optional }}" -eq "true") {
+              $includeOptional = "true"
+            }
+            if ("${{ github.event.inputs.baseline_path }}" -ne "") {
+              $baseline = "${{ github.event.inputs.baseline_path }}"
+            }
+          }
+
+          if ($baseline -eq "") {
+            if ($profile -eq "ci-hosted") {
+              $candidate = "benchmarks/policy/baselines/ci-hosted.windows-2022.json"
+              if (Test-Path $candidate) {
+                $baseline = $candidate
+              }
+            }
+            elseif ($profile -eq "ci-dedicated") {
+              $candidate = "benchmarks/policy/baselines/ci-dedicated.windows-2022.json"
+              if (Test-Path $candidate) {
+                $baseline = $candidate
+              }
+              else {
+                throw "ci-dedicated profile requires a dedicated baseline file. Provide baseline_path input or commit $candidate."
+              }
+            }
+          }
+
+          $benchDir = "artifacts/benchmarks/${{ github.run_id }}_${{ github.run_attempt }}_ci-windows-release"
+
+          "profile=$profile" >> $env:GITHUB_OUTPUT
+          "include_optional=$includeOptional" >> $env:GITHUB_OUTPUT
+          "baseline=$baseline" >> $env:GITHUB_OUTPUT
+          "bench_dir=$benchDir" >> $env:GITHUB_OUTPUT
+
+      - name: Run benchmark suite + policy evaluation
+        shell: pwsh
+        run: |
+          $params = @{
+            Preset = "ci-windows-release"
+            Config = "Release"
+            OutputDir = "${{ steps.opts.outputs.bench_dir }}"
+            PolicyProfile = "${{ steps.opts.outputs.profile }}"
+          }
+
+          if ("${{ steps.opts.outputs.include_optional }}" -eq "true") {
+            $params["IncludeOptional"] = $true
+          }
+
+          if ("${{ steps.opts.outputs.baseline }}" -ne "") {
+            $params["Baseline"] = "${{ steps.opts.outputs.baseline }}"
+          }
+
+          .\scripts\bench.ps1 @params
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-evidence-windows-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.opts.outputs.bench_dir }}
+          if-no-files-found: error
