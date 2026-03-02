@@ -58,8 +58,10 @@ void print_usage() {
                "Options:\n"
                "  --output-json <path>   Write JSON results file\n"
                "  --output-csv <path>    Write CSV results file\n"
-               "  --duration-s <value>   Simulation duration in seconds (default: 10)\n"
-               "  --dt-values <list>     Comma-separated dt values (default: 0.4,0.2,0.1,0.05,0.025)\n"
+               "  --duration-s <value>   Simulation duration in seconds "
+               "(default: 10)\n"
+               "  --dt-values <list>     Comma-separated dt values (default: "
+               "0.4,0.2,0.1,0.05,0.025)\n"
                "  --help                 Show this help\n";
 }
 
@@ -352,11 +354,14 @@ void write_json(const std::string &path, double duration_s,
     out << "    {\n";
     out << "      \"id\": \"" << json_escape(scenario.config.id) << "\",\n";
     out << "      \"parameters\": {\n";
-    out << "        \"thermal_mass\": " << scenario.config.thermal_mass << ",\n";
-    out << "        \"heat_transfer_coeff\": " << scenario.config.heat_transfer_coeff
+    out << "        \"thermal_mass\": " << scenario.config.thermal_mass
         << ",\n";
-    out << "        \"initial_temp\": " << scenario.config.initial_temp << ",\n";
-    out << "        \"ambient_temp\": " << scenario.config.ambient_temp << ",\n";
+    out << "        \"heat_transfer_coeff\": "
+        << scenario.config.heat_transfer_coeff << ",\n";
+    out << "        \"initial_temp\": " << scenario.config.initial_temp
+        << ",\n";
+    out << "        \"ambient_temp\": " << scenario.config.ambient_temp
+        << ",\n";
     out << "        \"power\": " << scenario.config.power << "\n";
     out << "      },\n";
     out << "      \"methods\": [\n";
@@ -365,7 +370,8 @@ void write_json(const std::string &path, double duration_s,
       const auto &method = scenario.methods[mi];
       out << "        {\n";
       out << "          \"name\": \"" << json_escape(method.method) << "\",\n";
-      out << "          \"observed_order_l2\": " << method.observed_order_l2 << ",\n";
+      out << "          \"observed_order_l2\": " << method.observed_order_l2
+          << ",\n";
       out << "          \"observed_order_linf\": " << method.observed_order_linf
           << ",\n";
       out << "          \"points\": [\n";
@@ -377,7 +383,8 @@ void write_json(const std::string &path, double duration_s,
         out << "              \"steps\": " << point.steps << ",\n";
         out << "              \"l2_error\": " << point.l2_error << ",\n";
         out << "              \"linf_error\": " << point.linf_error << ",\n";
-        out << "              \"final_abs_error\": " << point.final_abs_error << "\n";
+        out << "              \"final_abs_error\": " << point.final_abs_error
+            << "\n";
         out << "            }";
         if (pi + 1 < method.points.size()) {
           out << ",";
@@ -448,9 +455,9 @@ int main(int argc, char **argv) {
   for (const auto &scenario : scenarios) {
     ScenarioResult scenario_result;
     scenario_result.config = scenario;
-    scenario_result.methods.push_back(run_method(
-        scenario, ThermalIntegrationMethod::ForwardEuler, opts.dt_values,
-        opts.duration_s));
+    scenario_result.methods.push_back(
+        run_method(scenario, ThermalIntegrationMethod::ForwardEuler,
+                   opts.dt_values, opts.duration_s));
     scenario_result.methods.push_back(
         run_method(scenario, ThermalIntegrationMethod::Rk4, opts.dt_values,
                    opts.duration_s));
