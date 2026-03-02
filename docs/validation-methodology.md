@@ -4,6 +4,7 @@
 
 This document defines the validation protocol used to support Phase 3
 numerical claims for FluxGraph model integration behavior.
+Phase-level criteria mapping is documented in `docs/phase3-evidence.md`.
 
 ## Systems Under Test
 
