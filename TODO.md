@@ -2,6 +2,7 @@
 
 ## CI / Quality
 
+- [ ] Setup precommit hooks for relevant tooling
 - [ ] Add `ENABLE_TSAN` CMake option and Linux TSAN validation for embedded + server modes.
 - [ ] Add fuzzing targets for YAML/JSON loaders and RPC request parsing surfaces.
 - [ ] Add valgrind leak-analysis jobs for server lifecycle and embedded examples.
