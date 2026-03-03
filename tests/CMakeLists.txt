@@ -28,11 +28,16 @@ target_link_libraries(fluxgraph_tests
     PRIVATE GTest::gtest_main
 )
 
+target_compile_definitions(fluxgraph_tests PRIVATE
+    FLUXGRAPH_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+
 if(FLUXGRAPH_BUILD_DIAGRAM_TOOL)
     target_sources(fluxgraph_tests PRIVATE
         unit/viz_format_test.cpp
         unit/viz_graphviz_renderer_test.cpp
         unit/viz_dot_emitter_test.cpp
+        unit/viz_dot_golden_test.cpp
     )
     target_link_libraries(fluxgraph_tests PRIVATE fluxgraph_viz_core)
 endif()
@@ -66,6 +71,17 @@ if(FLUXGRAPH_YAML_ENABLED)
     gtest_discover_tests(yaml_loader_test
         DISCOVERY_MODE POST_BUILD
         DISCOVERY_TIMEOUT 60
+    )
+endif()
+
+if(FLUXGRAPH_BUILD_DIAGRAM_TOOL AND FLUXGRAPH_JSON_ENABLED)
+    add_test(
+        NAME integration.diagram_cli_json_dot
+        COMMAND ${CMAKE_COMMAND}
+            -DCLI=$<TARGET_FILE:fluxgraph_diagram>
+            -DINPUT=${CMAKE_SOURCE_DIR}/examples/03_json_graph/graph.json
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/diagram-tests
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/diagram_cli_e2e.cmake
     )
 endif()
 

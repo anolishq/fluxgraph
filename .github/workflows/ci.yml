@@ -104,6 +104,9 @@ jobs:
           - lane: core-only
             preset: ci-linux-release
             grpc_integration: false
+          - lane: diagram-dot
+            preset: ci-linux-release-diagram
+            grpc_integration: false
           - lane: json
             preset: ci-linux-release-json
             grpc_integration: false
@@ -193,3 +196,37 @@ jobs:
 
       - name: Run C++ tests
         run: ctest --preset ci-windows-release
+
+  diagram-render-smoke:
+    name: Diagram Render Smoke (advisory)
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++ graphviz
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+          doNotCache: false
+
+      - name: Configure diagram preset
+        run: cmake --preset ci-linux-release-diagram
+
+      - name: Build diagram tool
+        run: cmake --build --preset ci-linux-release-diagram --target fluxgraph_diagram --parallel
+
+      - name: Render SVG smoke output
+        run: |
+          set -euo pipefail
+          BIN="./build/ci-linux-release-diagram/tools/fluxgraph-diagram"
+          OUT="$RUNNER_TEMP/graph-smoke.svg"
+          "$BIN" --in ./examples/03_json_graph/graph.json --out "$OUT" --format svg
+          test -s "$OUT"

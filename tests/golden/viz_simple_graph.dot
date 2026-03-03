@@ -1,0 +1,8 @@
+digraph fluxgraph {
+  rankdir="LR";
+  "model:m0" [label="model: m0\nthermal_mass", shape="box"];
+  "rule:rule-1" [label="rule: rule-1\nif output.signal > 10", shape="note"];
+  "signal:input.signal" [label="input.signal", shape="ellipse"];
+  "signal:output.signal" [label="output.signal", shape="ellipse"];
+  "signal:input.signal" -> "signal:output.signal" [label="linear(offset=1, scale=2)", transform_type="linear"];
+}

@@ -96,6 +96,13 @@
       }
     },
     {
+      "name": "ci-linux-release-diagram",
+      "inherits": "ci-linux-release-json",
+      "cacheVariables": {
+        "FLUXGRAPH_BUILD_DIAGRAM_TOOL": "ON"
+      }
+    },
+    {
       "name": "ci-linux-release-server",
       "inherits": "ci-linux-release",
       "binaryDir": "${sourceDir}/build-server",
@@ -162,6 +169,10 @@
     {
       "name": "ci-linux-release-yaml",
       "configurePreset": "ci-linux-release-yaml"
+    },
+    {
+      "name": "ci-linux-release-diagram",
+      "configurePreset": "ci-linux-release-diagram"
     },
     {
       "name": "ci-linux-release-server",
@@ -234,6 +245,13 @@
     {
       "name": "ci-linux-release-yaml",
       "configurePreset": "ci-linux-release-yaml",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-linux-release-diagram",
+      "configurePreset": "ci-linux-release-diagram",
       "output": {
         "outputOnFailure": true
       }

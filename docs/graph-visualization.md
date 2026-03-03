@@ -120,8 +120,9 @@ Planning source for claim-evidence governance: `working/archive/claim_evidence_m
 
 Visualization claims and expected evidence for this phase:
 
-1. "Deterministic DOT output": unit tests + golden fixtures.
-2. "Core isolation": build verification with tool flag OFF.
-3. "Optional rendering": advisory CI smoke render lane.
+1. "Deterministic DOT output": `tests/unit/viz_dot_emitter_test.cpp` and `tests/unit/viz_dot_golden_test.cpp`.
+2. "CLI DOT determinism end-to-end": `tests/integration/diagram_cli_e2e.cmake` (registered as `integration.diagram_cli_json_dot`).
+3. "Core isolation": default presets keep `FLUXGRAPH_BUILD_DIAGRAM_TOOL=OFF`.
+4. "Optional rendering": advisory GitHub Actions job `diagram-render-smoke` in `.github/workflows/ci.yml`.
 
-This section must be updated with concrete test references once implementation lands.
+This mapping is the baseline evidence package for the Phase 4 visualization surface.
