@@ -100,9 +100,10 @@ public:
   /// - duplicate type registration is rejected
   static void register_model_factory(const std::string &type,
                                      ModelFactory factory);
-  static void register_model_factory_with_signature(
-      const std::string &type, ModelFactory factory,
-      const ModelSignature &signature);
+  static void
+  register_model_factory_with_signature(const std::string &type,
+                                        ModelFactory factory,
+                                        const ModelSignature &signature);
 
   /// Query whether a transform/model type is currently registered.
   static bool is_transform_registered(const std::string &type);

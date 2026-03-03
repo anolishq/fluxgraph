@@ -174,6 +174,45 @@ jobs:
       - name: Run tests
         run: ctest --preset "${{ matrix.preset }}"
 
+  strict-dimensional-validation:
+    name: Strict dimensional validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++ python3
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+          doNotCache: false
+
+      - name: Run strict dimensional validation
+        id: dimensional
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT_DIR="artifacts/dimensional-validation/${{ github.run_id }}_${{ github.run_attempt }}_ci-linux-release"
+          python3 scripts/run_dimensional_validation.py \
+            --preset ci-linux-release \
+            --output-dir "$OUT_DIR" \
+            --enforce
+          echo "out_dir=$OUT_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Upload strict-dimensional artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: strict-dimensional-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.dimensional.outputs.out_dir }}
+          if-no-files-found: error
+
   windows-core:
     name: Windows core-only
     runs-on: windows-2022

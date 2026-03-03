@@ -24,21 +24,18 @@ UnitRegistry::UnitRegistry() {
     return v;
   };
 
-  units_.emplace("dimensionless", UnitDef{"dimensionless", {}, 1.0, 0.0,
-                                          UnitKind::generic});
+  units_.emplace("dimensionless",
+                 UnitDef{"dimensionless", {}, 1.0, 0.0, UnitKind::generic});
   units_.emplace("W", UnitDef{"W", dim(1, 2, -3, 0, 0, 0, 0), 1.0, 0.0,
                               UnitKind::generic});
   units_.emplace("K", UnitDef{"K", dim(0, 0, 0, 0, 1, 0, 0), 1.0, 0.0,
                               UnitKind::absolute_temp});
-  units_.emplace("degC",
-                 UnitDef{"degC", dim(0, 0, 0, 0, 1, 0, 0), 1.0, 273.15,
+  units_.emplace("degC", UnitDef{"degC", dim(0, 0, 0, 0, 1, 0, 0), 1.0, 273.15,
                                  UnitKind::absolute_temp});
-  units_.emplace("delta_K",
-                 UnitDef{"delta_K", dim(0, 0, 0, 0, 1, 0, 0), 1.0, 0.0,
-                         UnitKind::delta_temp});
-  units_.emplace("delta_degC",
-                 UnitDef{"delta_degC", dim(0, 0, 0, 0, 1, 0, 0), 1.0, 0.0,
-                         UnitKind::delta_temp});
+  units_.emplace("delta_K", UnitDef{"delta_K", dim(0, 0, 0, 0, 1, 0, 0), 1.0,
+                                    0.0, UnitKind::delta_temp});
+  units_.emplace("delta_degC", UnitDef{"delta_degC", dim(0, 0, 0, 0, 1, 0, 0),
+                                       1.0, 0.0, UnitKind::delta_temp});
   units_.emplace("J/K", UnitDef{"J/K", dim(1, 2, -2, 0, -1, 0, 0), 1.0, 0.0,
                                 UnitKind::generic});
   units_.emplace("W/K", UnitDef{"W/K", dim(1, 2, -3, 0, -1, 0, 0), 1.0, 0.0,
@@ -69,8 +66,9 @@ bool UnitRegistry::are_dimensionally_compatible(
   return lhs != nullptr && rhs != nullptr && lhs->dimension == rhs->dimension;
 }
 
-UnitConversion UnitRegistry::resolve_conversion(
-    const std::string &from_symbol, const std::string &to_symbol) const {
+UnitConversion
+UnitRegistry::resolve_conversion(const std::string &from_symbol,
+                                 const std::string &to_symbol) const {
   const UnitDef *from = find(from_symbol);
   if (from == nullptr) {
     throw std::runtime_error("Unknown unit symbol: '" + from_symbol + "'");
@@ -95,8 +93,9 @@ UnitConversion UnitRegistry::resolve_conversion(
        to->kind == UnitKind::delta_temp) ||
       (from->kind == UnitKind::delta_temp &&
        to->kind == UnitKind::absolute_temp)) {
-    throw std::runtime_error("Disallowed absolute/delta temperature conversion: '" +
-                             from_symbol + "' -> '" + to_symbol + "'");
+    throw std::runtime_error(
+        "Disallowed absolute/delta temperature conversion: '" + from_symbol +
+        "' -> '" + to_symbol + "'");
   }
 
   UnitConversion conversion;

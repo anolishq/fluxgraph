@@ -179,11 +179,11 @@ void validate_registration_request(const std::string &type, bool has_factory,
   }
 }
 
-void register_builtin_transform(
-    FactoryRegistry &registry, const std::string &type,
-    GraphCompiler::TransformFactory factory,
-    TransformSignature::Contract contract =
-        TransformSignature::Contract::preserve) {
+void register_builtin_transform(FactoryRegistry &registry,
+                                const std::string &type,
+                                GraphCompiler::TransformFactory factory,
+                                TransformSignature::Contract contract =
+                                    TransformSignature::Contract::preserve) {
   TransformRegistryEntry entry;
   entry.factory = std::move(factory);
   entry.has_signature = true;
@@ -328,12 +328,12 @@ void ensure_default_factories_registered_locked(FactoryRegistry &registry) {
       registry, "unit_convert",
       [](const TransformSpec &spec) -> std::unique_ptr<ITransform> {
         const std::string context = "transform[unit_convert]";
-        double resolved_scale = as_double(
-            require_param(spec.params, "__resolved_scale", context),
-            context + "/__resolved_scale");
-        double resolved_offset = as_double(
-            require_param(spec.params, "__resolved_offset", context),
-            context + "/__resolved_offset");
+        double resolved_scale =
+            as_double(require_param(spec.params, "__resolved_scale", context),
+                      context + "/__resolved_scale");
+        double resolved_offset =
+            as_double(require_param(spec.params, "__resolved_offset", context),
+                      context + "/__resolved_offset");
         return std::make_unique<UnitConvertTransform>(resolved_scale,
                                                       resolved_offset);
       },
@@ -390,8 +390,9 @@ void ensure_default_factories_registered_locked(FactoryRegistry &registry) {
   registry.defaults_registered = true;
 }
 
-const TransformRegistryEntry &resolve_transform_entry_or_throw(
-    FactoryRegistry &registry, const std::string &type) {
+const TransformRegistryEntry &
+resolve_transform_entry_or_throw(FactoryRegistry &registry,
+                                 const std::string &type) {
   auto it = registry.transform_factories.find(type);
   if (it == registry.transform_factories.end()) {
     throw std::runtime_error("Unknown transform type: " + type);
@@ -399,8 +400,9 @@ const TransformRegistryEntry &resolve_transform_entry_or_throw(
   return it->second;
 }
 
-const ModelRegistryEntry &resolve_model_entry_or_throw(FactoryRegistry &registry,
-                                                        const std::string &type) {
+const ModelRegistryEntry &
+resolve_model_entry_or_throw(FactoryRegistry &registry,
+                             const std::string &type) {
   auto it = registry.model_factories.find(type);
   if (it == registry.model_factories.end()) {
     throw std::runtime_error("Unknown model type: " + type);
@@ -408,7 +410,8 @@ const ModelRegistryEntry &resolve_model_entry_or_throw(FactoryRegistry &registry
   return it->second;
 }
 
-void emit_warning(const CompilationOptions &options, const std::string &message) {
+void emit_warning(const CompilationOptions &options,
+                  const std::string &message) {
   if (options.warning_handler) {
     options.warning_handler(message);
   }
@@ -455,7 +458,8 @@ void GraphCompiler::register_transform_factory(const std::string &type,
   TransformRegistryEntry entry;
   entry.factory = std::move(factory);
 
-  auto [_, inserted] = registry.transform_factories.emplace(type, std::move(entry));
+  auto [_, inserted] =
+      registry.transform_factories.emplace(type, std::move(entry));
   if (!inserted) {
     throw std::runtime_error("GraphCompiler: transform factory already "
                              "registered for type '" +
@@ -477,7 +481,8 @@ void GraphCompiler::register_transform_factory_with_signature(
   entry.has_signature = true;
   entry.signature = signature;
 
-  auto [_, inserted] = registry.transform_factories.emplace(type, std::move(entry));
+  auto [_, inserted] =
+      registry.transform_factories.emplace(type, std::move(entry));
   if (!inserted) {
     throw std::runtime_error("GraphCompiler: transform factory already "
                              "registered for type '" +
@@ -578,16 +583,18 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec,
     const SignalId id = signal_ns.intern(signal_spec.path);
     const auto existing = signal_contracts.find(id);
     if (existing != signal_contracts.end() && existing->second != unit) {
-      throw std::runtime_error("GraphCompiler: duplicate signal contract for '" +
-                               signal_spec.path + "' with conflicting units ('" +
-                               existing->second + "' vs '" + unit + "')");
+      throw std::runtime_error(
+          "GraphCompiler: duplicate signal contract for '" + signal_spec.path +
+          "' with conflicting units ('" + existing->second + "' vs '" + unit +
+          "')");
     }
 
     if (!is_unit_known(unit_registry, unit)) {
       if (strict) {
-        throw std::runtime_error("GraphCompiler: unknown unit symbol in signals "
-                                 "contract for path '" +
-                                 signal_spec.path + "': '" + unit + "'");
+        throw std::runtime_error(
+            "GraphCompiler: unknown unit symbol in signals "
+            "contract for path '" +
+            signal_spec.path + "': '" + unit + "'");
       }
       emit_warning(options,
                    "GraphCompiler: unknown unit symbol in permissive mode for "
@@ -605,7 +612,8 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec,
 
     for (size_t i = 0; i < spec.models.size(); ++i) {
       const auto &model_spec = spec.models[i];
-      const auto &entry = resolve_model_entry_or_throw(registry, model_spec.type);
+      const auto &entry =
+          resolve_model_entry_or_throw(registry, model_spec.type);
       if (strict && !entry.has_signature) {
         throw std::runtime_error(
             "GraphCompiler: strict mode requires signature metadata for model "
@@ -621,21 +629,20 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec,
             continue;
           }
 
-          const std::string path =
-              as_string(param_it->second,
-                        "model[" + model_spec.id + ":" + model_spec.type +
-                            "]/{" + param_name + "}");
+          const std::string path = as_string(
+              param_it->second, "model[" + model_spec.id + ":" +
+                                    model_spec.type + "]/{" + param_name + "}");
           const SignalId id = signal_ns.intern(path);
           const std::string actual_unit =
               resolve_signal_contract_or_empty(signal_contracts, id);
 
           if (actual_unit.empty()) {
             if (strict) {
-              throw std::runtime_error(
-                  "GraphCompiler: strict mode requires declared signal contract "
-                  "for model '" +
-                  model_spec.id + "' parameter '" + param_name + "' (path '" +
-                  path + "')");
+              throw std::runtime_error("GraphCompiler: strict mode requires "
+                                       "declared signal contract "
+                                       "for model '" +
+                                       model_spec.id + "' parameter '" +
+                                       param_name + "' (path '" + path + "')");
             }
             continue;
           }
@@ -643,8 +650,8 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec,
           if (actual_unit != expected_unit) {
             const std::string message =
                 "GraphCompiler: model '" + model_spec.id + "' parameter '" +
-                param_name + "' expects unit '" + expected_unit + "' but found '" +
-                actual_unit + "'";
+                param_name + "' expects unit '" + expected_unit +
+                "' but found '" + actual_unit + "'";
             if (strict) {
               throw std::runtime_error(message);
             }
@@ -681,15 +688,15 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec,
       throw std::runtime_error(
           "GraphCompiler: strict mode requires declared source signal contract "
           "for edge[" +
-          std::to_string(edge_index) + "] ('" + edge_spec.source_path + "' -> '" +
-          edge_spec.target_path + "')");
+          std::to_string(edge_index) + "] ('" + edge_spec.source_path +
+          "' -> '" + edge_spec.target_path + "')");
     }
     if (strict && target_unit.empty()) {
       throw std::runtime_error(
           "GraphCompiler: strict mode requires declared target signal contract "
           "for edge[" +
-          std::to_string(edge_index) + "] ('" + edge_spec.source_path + "' -> '" +
-          edge_spec.target_path + "')");
+          std::to_string(edge_index) + "] ('" + edge_spec.source_path +
+          "' -> '" + edge_spec.target_path + "')");
     }
 
     TransformRegistryEntry transform_entry;
@@ -697,8 +704,8 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec,
       auto &registry = factory_registry();
       std::lock_guard<std::mutex> lock(registry.mutex);
       ensure_default_factories_registered_locked(registry);
-      const auto &entry = resolve_transform_entry_or_throw(
-          registry, edge_spec.transform.type);
+      const auto &entry =
+          resolve_transform_entry_or_throw(registry, edge_spec.transform.type);
       transform_entry = entry;
     }
 
@@ -713,23 +720,25 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec,
     TransformSpec resolved_transform_spec = edge_spec.transform;
 
     const bool both_declared = !source_unit.empty() && !target_unit.empty();
-    const bool both_known = both_declared && is_unit_known(unit_registry, source_unit) &&
+    const bool both_known = both_declared &&
+                            is_unit_known(unit_registry, source_unit) &&
                             is_unit_known(unit_registry, target_unit);
 
     const TransformSignature::Contract contract =
-        transform_entry.has_signature
-            ? transform_entry.signature.contract
-            : TransformSignature::Contract::preserve;
+        transform_entry.has_signature ? transform_entry.signature.contract
+                                      : TransformSignature::Contract::preserve;
 
     if (contract == TransformSignature::Contract::unit_convert) {
-      const std::string edge_context = "edge[" + std::to_string(edge_index) + "]";
+      const std::string edge_context =
+          "edge[" + std::to_string(edge_index) + "]";
 
       const std::string to_unit = as_string(
           require_param(edge_spec.transform.params, "to_unit", edge_context),
           edge_context + "/transform/params/to_unit");
       if (!is_unit_known(unit_registry, to_unit)) {
-        const std::string message = "GraphCompiler: unit_convert unknown to_unit '" +
-                                    to_unit + "' at " + edge_context;
+        const std::string message =
+            "GraphCompiler: unit_convert unknown to_unit '" + to_unit +
+            "' at " + edge_context;
         if (strict) {
           throw std::runtime_error(message);
         }
@@ -739,16 +748,16 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec,
       std::string from_assertion;
       if (auto it = edge_spec.transform.params.find("from_unit");
           it != edge_spec.transform.params.end()) {
-        from_assertion = as_string(it->second,
-                                   edge_context + "/transform/params/from_unit");
+        from_assertion =
+            as_string(it->second, edge_context + "/transform/params/from_unit");
       }
 
       if (!from_assertion.empty() && !source_unit.empty() &&
           from_assertion != source_unit) {
         const std::string message =
-            "GraphCompiler: unit_convert from_unit assertion '" + from_assertion +
-            "' does not match declared source unit '" + source_unit + "' at " +
-            edge_context;
+            "GraphCompiler: unit_convert from_unit assertion '" +
+            from_assertion + "' does not match declared source unit '" +
+            source_unit + "' at " + edge_context;
         if (strict) {
           throw std::runtime_error(message);
         }
@@ -807,14 +816,15 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec,
               "']; use unit_convert");
         }
 
-        if (!strict && !has_compatible_dimension_and_kind(unit_registry, source_unit,
-                                                           target_unit)) {
+        if (!strict && !has_compatible_dimension_and_kind(
+                           unit_registry, source_unit, target_unit)) {
           emit_warning(options,
                        "GraphCompiler: permissive linear boundary warning on "
                        "edge['" +
                            edge_spec.source_path + "' -> '" +
                            edge_spec.target_path + "'] (source unit '" +
-                           source_unit + "', target unit '" + target_unit + "')");
+                           source_unit + "', target unit '" + target_unit +
+                           "')");
         }
       } else {
         if (!has_compatible_dimension_and_kind(unit_registry, source_unit,
@@ -831,11 +841,12 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec,
       }
     } else if (!strict && both_declared &&
                contract == TransformSignature::Contract::linear_conditioning) {
-      emit_warning(options,
-                   "GraphCompiler: permissive linear boundary warning could not "
-                   "fully validate units on edge['" +
-                       edge_spec.source_path + "' -> '" + edge_spec.target_path +
-                       "'] because one or both units are unknown to registry");
+      emit_warning(
+          options,
+          "GraphCompiler: permissive linear boundary warning could not "
+          "fully validate units on edge['" +
+              edge_spec.source_path + "' -> '" + edge_spec.target_path +
+              "'] because one or both units are unknown to registry");
     }
 
     ITransform *tf = parse_transform(resolved_transform_spec);
@@ -898,7 +909,8 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec,
             "rule LHS signal '" +
             signal_path + "' in rule '" + rule_spec.id + "'");
       }
-      if (strict && !lhs_unit.empty() && !is_unit_known(unit_registry, lhs_unit)) {
+      if (strict && !lhs_unit.empty() &&
+          !is_unit_known(unit_registry, lhs_unit)) {
         throw std::runtime_error(
             "GraphCompiler: strict mode rule LHS signal '" + signal_path +
             "' uses unknown unit symbol '" + lhs_unit + "'");
@@ -925,11 +937,10 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec,
   for (const auto &[id, unit] : signal_contracts) {
     program.signal_unit_contracts.emplace_back(id, unit);
   }
-  std::sort(program.signal_unit_contracts.begin(),
-            program.signal_unit_contracts.end(),
-            [](const auto &lhs, const auto &rhs) {
-              return lhs.first < rhs.first;
-            });
+  std::sort(
+      program.signal_unit_contracts.begin(),
+      program.signal_unit_contracts.end(),
+      [](const auto &lhs, const auto &rhs) { return lhs.first < rhs.first; });
 
   program.required_signal_capacity = signal_ns.size();
 

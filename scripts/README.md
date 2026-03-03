@@ -81,6 +81,27 @@ Artifacts are written under `artifacts/validation/<timestamp>_<preset>/`:
 - `validation_evaluation.json` (threshold checks + run metadata)
 - `validation.stdout.log`, `validation.stderr.log`
 
+## Dimensional Validation
+
+Run strict dimensional contract regression tests and emit machine-readable evidence:
+
+- Linux/macOS: `python3 scripts/run_dimensional_validation.py --preset dev-release --enforce`
+- Windows: `python scripts/run_dimensional_validation.py --preset dev-windows-release --config Release --enforce`
+
+Options:
+
+- `--regex`: CTest regex selecting dimensional validation tests.
+- `--target`: build target containing selected tests (default: `fluxgraph_tests`).
+- `--no-build`: skip configure/build and run against existing binaries.
+- `--enforce`: fail when selected tests fail or zero tests are selected.
+
+Artifacts are written under `artifacts/dimensional-validation/<timestamp>_<preset>/`:
+
+- `dimensional_validation_junit.xml` (machine-readable test report)
+- `dimensional_validation_evaluation.json` (run metadata + pass/fail summary)
+- `ctest_dimensional.stdout.log`, `ctest_dimensional.stderr.log`
+- configure/build logs when build is enabled
+
 ## Common Presets
 
 - `dev-debug`

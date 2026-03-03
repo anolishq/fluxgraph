@@ -1,0 +1,82 @@
+name: Dimensional Validation Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      preset:
+        description: CMake/CTest preset
+        required: false
+        default: ci-linux-release
+        type: string
+      regex:
+        description: Optional CTest regex override
+        required: false
+        default: ""
+        type: string
+  schedule:
+    - cron: "45 7 * * 1"
+
+env:
+  VCPKG_COMMIT: "66c0373dc7fca549e5803087b9487edfe3aca0a1"
+
+jobs:
+  linux-dimensional-validation:
+    name: Linux dimensional validation evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++ python3
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+          doNotCache: false
+
+      - name: Resolve options
+        id: opts
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRESET="ci-linux-release"
+          REGEX=""
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ -n "${{ github.event.inputs.preset }}" ]]; then
+              PRESET="${{ github.event.inputs.preset }}"
+            fi
+            if [[ -n "${{ github.event.inputs.regex }}" ]]; then
+              REGEX="${{ github.event.inputs.regex }}"
+            fi
+          fi
+          OUT_DIR="artifacts/dimensional-validation/${{ github.run_id }}_${{ github.run_attempt }}_${PRESET}"
+          echo "preset=${PRESET}" >> "$GITHUB_OUTPUT"
+          echo "regex=${REGEX}" >> "$GITHUB_OUTPUT"
+          echo "out_dir=${OUT_DIR}" >> "$GITHUB_OUTPUT"
+
+      - name: Run dimensional validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARGS=(
+            "--preset" "${{ steps.opts.outputs.preset }}"
+            "--output-dir" "${{ steps.opts.outputs.out_dir }}"
+            "--enforce"
+          )
+          if [[ -n "${{ steps.opts.outputs.regex }}" ]]; then
+            ARGS+=("--regex" "${{ steps.opts.outputs.regex }}")
+          fi
+          python3 scripts/run_dimensional_validation.py "${ARGS[@]}"
+
+      - name: Upload dimensional artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dimensional-validation-evidence-linux-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.opts.outputs.out_dir }}
+          if-no-files-found: error

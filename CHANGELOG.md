@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `DimensionalPolicy::permissive`
   - `DimensionalPolicy::strict`
 - Strict-mode rule-threshold validation now requires declared LHS signal unit contracts.
+- CI now includes a required strict-dimensional-validation lane with artifact upload.
 
 ### Added
 
@@ -69,6 +70,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - target-contract edge write behavior
   - JSON/YAML loader `signals` parsing
   - `unit_convert` transform behavior
+- Dimensional validation automation:
+  - `scripts/run_dimensional_validation.py` for strict test evidence generation
+  - scheduled/dispatch evidence workflow (`.github/workflows/dimensional-validation-evidence.yml`)
 
 ### Fixed
 
