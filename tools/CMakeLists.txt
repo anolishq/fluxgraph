@@ -1,5 +1,7 @@
 add_library(fluxgraph_viz_core STATIC
     viz_core/dot_emitter.cpp
+    viz_core/format.cpp
+    viz_core/graphviz_renderer.cpp
 )
 
 target_include_directories(fluxgraph_viz_core PUBLIC
@@ -42,4 +44,3 @@ install(TARGETS fluxgraph_viz_core
 install(TARGETS fluxgraph_diagram
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
-

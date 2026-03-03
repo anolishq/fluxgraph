@@ -62,6 +62,19 @@ Dependency/build/CI governance: [docs/dependencies.md](docs/dependencies.md).
 
 Dependencies are resolved via vcpkg manifests and `find_package(...)` (no FetchContent drift in CI).
 
+### Diagram Tool (Optional)
+
+With `FLUXGRAPH_BUILD_DIAGRAM_TOOL=ON`, `fluxgraph-diagram` can emit DOT and optional rendered images:
+
+```bash
+./build/dev-release/tools/fluxgraph-diagram \
+  --in ./examples/03_json_graph/graph.json \
+  --out ./graph.svg \
+  --format svg
+```
+
+See [docs/graph-visualization.md](docs/graph-visualization.md) for full contract and flags.
+
 ### Using FluxGraph
 
 See [`examples/`](examples/) for complete usage patterns. Here's a minimal example:

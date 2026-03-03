@@ -1,6 +1,6 @@
-# Graph Visualization Contract (Phase 4 Stub)
+# Graph Visualization Contract
 
-**Status:** Phase 4 contract; Sprint 4.2 DOT baseline implemented.  
+**Status:** Phase 4 contract; Sprint 4.3 renderer integration implemented.  
 **Purpose:** lock the visualization interface and behavior before coding to prevent drift in tests and CLI behavior.
 
 ## 1. Scope
@@ -86,15 +86,20 @@ No reliance on container insertion order is allowed for canonical DOT output.
 
 ## 7. CLI Contract Phasing
 
-Sprint 4.2 baseline:
+Supported CLI flags:
 
-1. DOT output is supported.
-2. If `--format` is supplied with `svg` or `png`, CLI returns explicit unsupported-format error.
+1. `--in <path>`: required graph input (`.json`, `.yaml`, `.yml`)
+2. `--out <path>`: required output artifact path
+3. `--format dot|svg|png`: output format (default `dot`)
+4. `--dot-bin <path>`: optional Graphviz `dot` binary override (default `dot`)
+5. `--dot-out <path>`: optional DOT path to persist canonical DOT when rendering image output
 
-Sprint 4.3 extension:
+Behavior:
 
-1. Enable `--format svg|png` via Graphviz CLI invocation.
-2. If renderer is unavailable or fails, return renderer error with actionable message.
+1. `--format dot` writes canonical DOT to `--out`.
+2. `--format svg|png` first emits DOT, then invokes Graphviz CLI for image output.
+3. Graphviz invocation failures are explicit and include command context.
+4. For image outputs, `--dot-out` (if provided) must differ from `--out`.
 
 Exit code contract (planned):
 
@@ -106,8 +111,8 @@ Exit code contract (planned):
 Current implementation status:
 
 1. DOT emission is implemented.
-2. Non-DOT `--format` values return unsupported-format errors.
-3. Renderer invocation is deferred to Sprint 4.3.
+2. SVG/PNG rendering via Graphviz CLI is implemented.
+3. `--dot-bin` and `--dot-out` are implemented.
 
 ## 8. Evidence and Governance Mapping
 

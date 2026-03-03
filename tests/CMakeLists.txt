@@ -30,6 +30,8 @@ target_link_libraries(fluxgraph_tests
 
 if(FLUXGRAPH_BUILD_DIAGRAM_TOOL)
     target_sources(fluxgraph_tests PRIVATE
+        unit/viz_format_test.cpp
+        unit/viz_graphviz_renderer_test.cpp
         unit/viz_dot_emitter_test.cpp
     )
     target_link_libraries(fluxgraph_tests PRIVATE fluxgraph_viz_core)
