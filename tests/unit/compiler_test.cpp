@@ -688,3 +688,267 @@ TEST(GraphCompilerTest, StabilityValidationWithExpectedDt) {
   EXPECT_THROW(compiler.compile(spec, signal_ns, func_ns, 0.1),
                std::runtime_error);
 }
+
+TEST(GraphCompilerTest, StrictModeRejectsUndeclaredEdgeContracts) {
+  GraphSpec spec;
+  EdgeSpec edge;
+  edge.source_path = "sensor.temp";
+  edge.target_path = "controller.temp";
+  edge.transform.type = "linear";
+  edge.transform.params["scale"] = 1.0;
+  edge.transform.params["offset"] = 0.0;
+  spec.edges.push_back(edge);
+
+  SignalNamespace signal_ns;
+  FunctionNamespace func_ns;
+  GraphCompiler compiler;
+  CompilationOptions options;
+  options.dimensional_policy = DimensionalPolicy::strict;
+
+  EXPECT_THROW(compiler.compile(spec, signal_ns, func_ns, options),
+               std::runtime_error);
+}
+
+TEST(GraphCompilerTest, StrictModeRejectsLinearUnitBoundaryCrossing) {
+  GraphSpec spec;
+  spec.signals.push_back({"sensor.temp_c", "degC"});
+  spec.signals.push_back({"sensor.temp_k", "K"});
+
+  EdgeSpec edge;
+  edge.source_path = "sensor.temp_c";
+  edge.target_path = "sensor.temp_k";
+  edge.transform.type = "linear";
+  edge.transform.params["scale"] = 1.0;
+  edge.transform.params["offset"] = 273.15;
+  spec.edges.push_back(edge);
+
+  SignalNamespace signal_ns;
+  FunctionNamespace func_ns;
+  GraphCompiler compiler;
+  CompilationOptions options;
+  options.dimensional_policy = DimensionalPolicy::strict;
+
+  EXPECT_THROW(compiler.compile(spec, signal_ns, func_ns, options),
+               std::runtime_error);
+}
+
+TEST(GraphCompilerTest, StrictModeAllowsUnitConvertWithDeclaredContracts) {
+  GraphSpec spec;
+  spec.signals.push_back({"sensor.temp_c", "degC"});
+  spec.signals.push_back({"sensor.temp_k", "K"});
+
+  EdgeSpec edge;
+  edge.source_path = "sensor.temp_c";
+  edge.target_path = "sensor.temp_k";
+  edge.transform.type = "unit_convert";
+  edge.transform.params["to_unit"] = std::string("K");
+  edge.transform.params["from_unit"] = std::string("degC");
+  spec.edges.push_back(edge);
+
+  SignalNamespace signal_ns;
+  FunctionNamespace func_ns;
+  GraphCompiler compiler;
+  CompilationOptions options;
+  options.dimensional_policy = DimensionalPolicy::strict;
+
+  EXPECT_NO_THROW(compiler.compile(spec, signal_ns, func_ns, options));
+}
+
+TEST(GraphCompilerTest, StrictModeRejectsUnsignedCustomTransform) {
+  const std::string type = "test.strict_unsigned_transform";
+  if (!GraphCompiler::is_transform_registered(type)) {
+    GraphCompiler::register_transform_factory(
+        type, [](const TransformSpec &) -> std::unique_ptr<ITransform> {
+          return std::make_unique<AffineTestTransform>(0.0);
+        });
+  }
+
+  GraphSpec spec;
+  spec.signals.push_back({"a", "dimensionless"});
+  spec.signals.push_back({"b", "dimensionless"});
+
+  EdgeSpec edge;
+  edge.source_path = "a";
+  edge.target_path = "b";
+  edge.transform.type = type;
+  spec.edges.push_back(edge);
+
+  SignalNamespace signal_ns;
+  FunctionNamespace func_ns;
+  GraphCompiler compiler;
+  CompilationOptions options;
+  options.dimensional_policy = DimensionalPolicy::strict;
+
+  EXPECT_THROW(compiler.compile(spec, signal_ns, func_ns, options),
+               std::runtime_error);
+}
+
+TEST(GraphCompilerTest, StrictModeAllowsSignedCustomTransform) {
+  const std::string type = "test.strict_signed_transform";
+  if (!GraphCompiler::is_transform_registered(type)) {
+    TransformSignature signature;
+    signature.contract = TransformSignature::Contract::preserve;
+    GraphCompiler::register_transform_factory_with_signature(
+        type,
+        [](const TransformSpec &) -> std::unique_ptr<ITransform> {
+          return std::make_unique<AffineTestTransform>(0.0);
+        },
+        signature);
+  }
+
+  GraphSpec spec;
+  spec.signals.push_back({"a", "dimensionless"});
+  spec.signals.push_back({"b", "dimensionless"});
+
+  EdgeSpec edge;
+  edge.source_path = "a";
+  edge.target_path = "b";
+  edge.transform.type = type;
+  spec.edges.push_back(edge);
+
+  SignalNamespace signal_ns;
+  FunctionNamespace func_ns;
+  GraphCompiler compiler;
+  CompilationOptions options;
+  options.dimensional_policy = DimensionalPolicy::strict;
+
+  EXPECT_NO_THROW(compiler.compile(spec, signal_ns, func_ns, options));
+}
+
+TEST(GraphCompilerTest, StrictModeRejectsUnsignedCustomModel) {
+  const std::string type = "test.strict_unsigned_model";
+  if (!GraphCompiler::is_model_registered(type)) {
+    GraphCompiler::register_model_factory(
+        type,
+        [](const ModelSpec &, SignalNamespace &ns) -> std::unique_ptr<IModel> {
+          const SignalId id = ns.intern("unsigned.model.output");
+          return std::make_unique<ConstantSignalModel>("unsigned", id, 1.0,
+                                                       "dimensionless");
+        });
+  }
+
+  GraphSpec spec;
+  spec.signals.push_back({"unsigned.model.output", "dimensionless"});
+  ModelSpec model;
+  model.id = "unsigned_model";
+  model.type = type;
+  spec.models.push_back(model);
+
+  SignalNamespace signal_ns;
+  FunctionNamespace func_ns;
+  GraphCompiler compiler;
+  CompilationOptions options;
+  options.dimensional_policy = DimensionalPolicy::strict;
+
+  EXPECT_THROW(compiler.compile(spec, signal_ns, func_ns, options),
+               std::runtime_error);
+}
+
+TEST(GraphCompilerTest, StrictModeAllowsSignedCustomModel) {
+  const std::string type = "test.strict_signed_model";
+  if (!GraphCompiler::is_model_registered(type)) {
+    ModelSignature signature;
+    signature.signal_param_units["output_signal"] = "dimensionless";
+    GraphCompiler::register_model_factory_with_signature(
+        type,
+        [](const ModelSpec &model_spec,
+           SignalNamespace &ns) -> std::unique_ptr<IModel> {
+          const auto output_it = model_spec.params.find("output_signal");
+          if (output_it == model_spec.params.end()) {
+            throw std::runtime_error("Missing output_signal");
+          }
+          const SignalId output_id = ns.intern(
+              variant_to_string(output_it->second, "model/output_signal"));
+          return std::make_unique<ConstantSignalModel>(model_spec.id, output_id,
+                                                       5.0, "dimensionless");
+        },
+        signature);
+  }
+
+  GraphSpec spec;
+  spec.signals.push_back({"signed.model.output", "dimensionless"});
+  ModelSpec model;
+  model.id = "signed_model";
+  model.type = type;
+  model.params["output_signal"] = std::string("signed.model.output");
+  spec.models.push_back(model);
+
+  SignalNamespace signal_ns;
+  FunctionNamespace func_ns;
+  GraphCompiler compiler;
+  CompilationOptions options;
+  options.dimensional_policy = DimensionalPolicy::strict;
+
+  EXPECT_NO_THROW(compiler.compile(spec, signal_ns, func_ns, options));
+}
+
+TEST(GraphCompilerTest, StrictModeRejectsRuleWithoutDeclaredLhsContract) {
+  GraphSpec spec;
+  RuleSpec rule;
+  rule.id = "r";
+  rule.condition = "undeclared.signal > 1.0";
+  spec.rules.push_back(rule);
+
+  SignalNamespace signal_ns;
+  FunctionNamespace func_ns;
+  GraphCompiler compiler;
+  CompilationOptions options;
+  options.dimensional_policy = DimensionalPolicy::strict;
+
+  EXPECT_THROW(compiler.compile(spec, signal_ns, func_ns, options),
+               std::runtime_error);
+}
+
+TEST(GraphCompilerTest, StrictModeEnforcesThermalModelSignalContracts) {
+  GraphSpec spec;
+  spec.signals.push_back({"chamber.temp", "degC"});
+  spec.signals.push_back({"chamber.power", "degC"});
+  spec.signals.push_back({"ambient.temp", "degC"});
+
+  ModelSpec model;
+  model.id = "chamber";
+  model.type = "thermal_mass";
+  model.params["temp_signal"] = std::string("chamber.temp");
+  model.params["power_signal"] = std::string("chamber.power");
+  model.params["ambient_signal"] = std::string("ambient.temp");
+  model.params["thermal_mass"] = 1000.0;
+  model.params["heat_transfer_coeff"] = 10.0;
+  model.params["initial_temp"] = 20.0;
+  spec.models.push_back(model);
+
+  SignalNamespace signal_ns;
+  FunctionNamespace func_ns;
+  GraphCompiler compiler;
+  CompilationOptions options;
+  options.dimensional_policy = DimensionalPolicy::strict;
+
+  EXPECT_THROW(compiler.compile(spec, signal_ns, func_ns, options),
+               std::runtime_error);
+}
+
+TEST(GraphCompilerTest, PermissiveModeEmitsLinearBoundaryWarning) {
+  GraphSpec spec;
+  spec.signals.push_back({"a", "degC"});
+  spec.signals.push_back({"b", "W"});
+
+  EdgeSpec edge;
+  edge.source_path = "a";
+  edge.target_path = "b";
+  edge.transform.type = "linear";
+  edge.transform.params["scale"] = 1.0;
+  edge.transform.params["offset"] = 0.0;
+  spec.edges.push_back(edge);
+
+  std::vector<std::string> warnings;
+  CompilationOptions options;
+  options.dimensional_policy = DimensionalPolicy::permissive;
+  options.warning_handler = [&warnings](const std::string &message) {
+    warnings.push_back(message);
+  };
+
+  SignalNamespace signal_ns;
+  FunctionNamespace func_ns;
+  GraphCompiler compiler;
+  EXPECT_NO_THROW(compiler.compile(spec, signal_ns, func_ns, options));
+  EXPECT_FALSE(warnings.empty());
+}

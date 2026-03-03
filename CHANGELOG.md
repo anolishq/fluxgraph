@@ -10,11 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Engine tick semantics now follow model-first then edge-propagation execution for immediate within-tick signal flow.
-- Edge processing now propagates source units to targets instead of forcing `"dimensionless"`.
+- Edge processing now writes using target signal contracts (or target-local unit state), and no longer copies source unit metadata during propagation.
 - Graph compiler supports delay-mediated feedback policy by detecting cycles on the non-delay subgraph.
 - Graph compiler topological ordering is deterministic for non-delay edges (stable tie-break by `SignalId`).
 - Server `--dt` is now wired into runtime timestep and compile-time stability validation.
 - GoogleTest discovery switched to `POST_BUILD` mode for more reliable Visual Studio multi-config test registration.
+- Graph schema now supports explicit top-level `signals` unit contracts in JSON/YAML.
+- Transform/model registration APIs now include signature-aware strict-mode variants:
+  - `register_transform_factory_with_signature(...)`
+  - `register_model_factory_with_signature(...)`
+- Compiler now supports policy-driven dimensional validation:
+  - `DimensionalPolicy::permissive`
+  - `DimensionalPolicy::strict`
+- Strict-mode rule-threshold validation now requires declared LHS signal unit contracts.
 
 ### Added
 
@@ -46,6 +54,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - thermal validation target (`tests/validation/thermal_mass_validation.cpp`)
   - numerical validation CI evidence workflow (`.github/workflows/numerical-validation-evidence.yml`)
   - methodology/evidence docs (`docs/validation-methodology.md`, `docs/numerical-methods.md`)
+- Dimensional-analysis core primitives:
+  - `UnitKind`, `DimensionVector`, `UnitDef`, `UnitConversion`
+  - curated `UnitRegistry` with affine temperature conversions and absolute/delta temperature boundary checks
+- New `unit_convert` transform for explicit registry-derived cross-unit conversion (`to_unit`, optional `from_unit` assertion).
+- Compiled-program signal contract metadata propagated into runtime preload.
+- SignalStore contract/runtime helpers:
+  - `write_with_contract_unit(...)`
+  - `has_declared_unit(...)`
+  - `declared_unit(...)`
+- New/expanded unit tests for:
+  - unit registry conversions and compatibility checks
+  - strict-mode dimensional compiler rejection paths and permissive warning paths
+  - target-contract edge write behavior
+  - JSON/YAML loader `signals` parsing
+  - `unit_convert` transform behavior
 
 ### Fixed
 

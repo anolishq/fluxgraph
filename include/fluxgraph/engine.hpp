@@ -3,6 +3,8 @@
 #include "fluxgraph/command.hpp"
 #include "fluxgraph/graph/compiler.hpp"
 #include <cstddef>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace fluxgraph {
@@ -50,6 +52,7 @@ private:
   bool loaded_;
   size_t required_signal_capacity_ = 0;
   size_t required_command_capacity_ = 0;
+  std::vector<std::pair<SignalId, std::string>> signal_unit_contracts_;
   std::vector<CompiledEdge> edges_;
   std::vector<std::unique_ptr<IModel>> models_;
   std::vector<CompiledRule> rules_;

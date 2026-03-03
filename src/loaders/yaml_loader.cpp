@@ -92,6 +92,24 @@ EdgeSpec parse_edge(const YAML::Node &node, size_t index) {
   return spec;
 }
 
+SignalSpec parse_signal(const YAML::Node &node, size_t index) {
+  const std::string path = "/signals/" + std::to_string(index);
+  SignalSpec spec;
+
+  if (!node["path"]) {
+    throw std::runtime_error("YAML parse error at " + path +
+                             ": Missing required field 'path'");
+  }
+  if (!node["unit"]) {
+    throw std::runtime_error("YAML parse error at " + path +
+                             ": Missing required field 'unit'");
+  }
+
+  spec.path = node["path"].as<std::string>();
+  spec.unit = node["unit"].as<std::string>();
+  return spec;
+}
+
 // Parse model specification
 ModelSpec parse_model(const YAML::Node &node, size_t index) {
   std::string path = "/models/" + std::to_string(index);
@@ -185,6 +203,15 @@ GraphSpec load_yaml_string(const std::string &yaml_content) {
 
   try {
     YAML::Node root = YAML::Load(yaml_content);
+
+    // Parse signals array
+    if (root["signals"] && root["signals"].IsSequence()) {
+      size_t index = 0;
+      for (const auto &signal_node : root["signals"]) {
+        spec.signals.push_back(parse_signal(signal_node, index));
+        ++index;
+      }
+    }
 
     // Parse edges array
     if (root["edges"] && root["edges"].IsSequence()) {

@@ -1,11 +1,16 @@
 # JSON Graph Schema
 
-FluxGraph JSON files define signal processing graphs using a simple, validated structure. This document specifies the schema for graph files loaded with `load_json_file()` and `load_json_string()`.##JSON Structure
+FluxGraph JSON files define signal processing graphs using a simple, validated structure. This document specifies the schema for graph files loaded with `load_json_file()` and `load_json_string()`.
 
-A graph file has three top-level arrays (all optional):
+## JSON Structure
+
+A graph file has four top-level arrays (all optional):
 
 ```json
 {
+  "signals": [
+    /* Signal unit contracts */
+  ],
   "models": [
     /* Physics models */
   ],
@@ -17,6 +22,22 @@ A graph file has three top-level arrays (all optional):
   ]
 }
 ```
+
+## Signals
+
+Signals declare explicit unit contracts used by dimensional validation.
+
+```json
+{
+  "path": "chamber.temp",
+  "unit": "degC"
+}
+```
+
+**Fields:**
+
+- `path` (string, required) - Signal path
+- `unit` (string, required) - Unit symbol (`dimensionless`, `W`, `degC`, etc.)
 
 ## Models
 
@@ -100,7 +121,7 @@ Edges connect signals through transforms, defining the dataflow graph.
 
 ## Transforms
 
-All 8 transform types with their parameters:
+All 9 transform types with their parameters:
 
 ### 1. Linear Transform
 
@@ -328,6 +349,35 @@ Sliding window average (FIR filter): `y = (1/N) * sum(x[n-i])` for i=0 to N-1
 
 **Memory:** `window_size * 8` bytes per instance
 
+### 9. Unit Convert
+
+**Type:** `"unit_convert"`
+
+Explicit cross-unit conversion transform. Conversion coefficients are derived
+from the built-in unit registry.
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `to_unit` | string | yes | Target unit symbol |
+| `from_unit` | string | no | Optional source-unit assertion |
+
+**Example:**
+
+```json
+{
+  "source": "sensor.temp_c",
+  "target": "sensor.temp_k",
+  "transform": {
+    "type": "unit_convert",
+    "params": {
+      "to_unit": "K",
+      "from_unit": "degC"
+    }
+  }
+}
+```
+
 ## Rules
 
 Rules trigger device actions when conditions are met.
@@ -465,6 +515,10 @@ For tools that support JSON Schema, here's a minimal schema excerpt:
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "properties": {
+    "signals": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/signal" }
+    },
     "models": {
       "type": "array",
       "items": { "$ref": "#/definitions/model" }

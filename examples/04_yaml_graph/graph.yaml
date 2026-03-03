@@ -1,3 +1,17 @@
+signals:
+  - path: heater.output
+    unit: W
+  - path: chamber.power
+    unit: W
+  - path: chamber.temp
+    unit: degC
+  - path: ambient.temp
+    unit: degC
+  - path: sensor.reading
+    unit: degC
+  - path: display.temp
+    unit: degC
+
 models:
   - id: chamber
     type: thermal_mass

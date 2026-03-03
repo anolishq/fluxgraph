@@ -185,9 +185,28 @@ TEST(YamlLoaderTest, EmptyGraph) {
 
   auto spec = load_yaml_string(yaml);
 
+  EXPECT_EQ(spec.signals.size(), 0);
   EXPECT_EQ(spec.edges.size(), 0);
   EXPECT_EQ(spec.models.size(), 0);
   EXPECT_EQ(spec.rules.size(), 0);
+}
+
+TEST(YamlLoaderTest, LoadSignalContracts) {
+  std::string yaml = R"yaml(
+signals:
+  - path: chamber.temp
+    unit: degC
+  - path: heater.power
+    unit: W
+)yaml";
+
+  auto spec = load_yaml_string(yaml);
+
+  ASSERT_EQ(spec.signals.size(), 2);
+  EXPECT_EQ(spec.signals[0].path, "chamber.temp");
+  EXPECT_EQ(spec.signals[0].unit, "degC");
+  EXPECT_EQ(spec.signals[1].path, "heater.power");
+  EXPECT_EQ(spec.signals[1].unit, "W");
 }
 
 TEST(YamlLoaderTest, InvalidYaml) {

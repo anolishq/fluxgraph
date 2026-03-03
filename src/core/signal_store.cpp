@@ -93,6 +93,25 @@ void SignalStore::write_with_source_unit(SignalId target, double value,
   write(target, value, source_unit);
 }
 
+void SignalStore::write_with_contract_unit(SignalId id, double value) {
+  if (id == INVALID_SIGNAL) {
+    return;
+  }
+
+  const size_t index = static_cast<size_t>(id);
+  if (index < has_declared_unit_.size() && has_declared_unit_[index] != 0U) {
+    write(id, value, declared_units_[index]);
+    return;
+  }
+
+  if (index < signals_.size() && has_signal_[index] != 0U) {
+    write(id, value, signals_[index].unit);
+    return;
+  }
+
+  write(id, value, dimensionless_unit());
+}
+
 Signal SignalStore::read(SignalId id) const {
   if (id == INVALID_SIGNAL) {
     return Signal(); // Return default signal
@@ -165,7 +184,18 @@ void SignalStore::declare_unit(SignalId id, const std::string &expected_unit) {
 
   ensure_index(id);
   const size_t index = static_cast<size_t>(id);
-  declared_units_[index] = expected_unit;
+  const std::string &normalized_unit =
+      expected_unit.empty() ? dimensionless_unit() : expected_unit;
+
+  if (has_declared_unit_[index] != 0U &&
+      declared_units_[index] != normalized_unit) {
+    throw std::runtime_error("Signal unit contract redefinition for signal " +
+                             std::to_string(id) + ": existing '" +
+                             declared_units_[index] + "', new '" +
+                             normalized_unit + "'");
+  }
+
+  declared_units_[index] = normalized_unit;
   has_declared_unit_[index] = static_cast<uint8_t>(1);
 }
 
@@ -186,6 +216,28 @@ void SignalStore::validate_unit(SignalId id, const std::string &unit) const {
                              ": expected '" + declared_units_[index] +
                              "', got '" + normalized_unit + "'");
   }
+}
+
+bool SignalStore::has_declared_unit(SignalId id) const {
+  if (id == INVALID_SIGNAL) {
+    return false;
+  }
+
+  const size_t index = static_cast<size_t>(id);
+  return index < has_declared_unit_.size() && has_declared_unit_[index] != 0U;
+}
+
+const std::string &SignalStore::declared_unit(SignalId id) const {
+  if (id == INVALID_SIGNAL) {
+    return dimensionless_unit();
+  }
+
+  const size_t index = static_cast<size_t>(id);
+  if (index >= has_declared_unit_.size() || has_declared_unit_[index] == 0U) {
+    return dimensionless_unit();
+  }
+
+  return declared_units_[index];
 }
 
 void SignalStore::reserve(size_t max_signals) {

@@ -64,6 +64,38 @@ TEST(EngineTest, SimpleEdgeExecution) {
   EXPECT_EQ(output, 20.0); // 2 * 10
 }
 
+TEST(EngineTest, EdgePropagationUsesTargetContractUnit) {
+  GraphSpec spec;
+  spec.signals.push_back({"input", "W"});
+  spec.signals.push_back({"output", "degC"});
+
+  EdgeSpec edge;
+  edge.source_path = "input";
+  edge.target_path = "output";
+  edge.transform.type = "linear";
+  edge.transform.params["scale"] = 1.0;
+  edge.transform.params["offset"] = 0.0;
+  spec.edges.push_back(edge);
+
+  SignalNamespace signal_ns;
+  FunctionNamespace func_ns;
+  SignalStore store;
+  GraphCompiler compiler;
+  auto program = compiler.compile(spec, signal_ns, func_ns);
+
+  Engine engine;
+  engine.load(std::move(program));
+
+  SignalId input_id = signal_ns.resolve("input");
+  SignalId output_id = signal_ns.resolve("output");
+  store.write(input_id, 10.0, "W");
+
+  engine.tick(0.1, store);
+
+  EXPECT_DOUBLE_EQ(store.read_value(output_id), 10.0);
+  EXPECT_EQ(store.read_unit(output_id), "degC");
+}
+
 TEST(EngineTest, TickPreallocatesSignalStoreFromProgramMetadata) {
   GraphSpec spec;
 

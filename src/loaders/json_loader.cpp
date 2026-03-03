@@ -50,6 +50,25 @@ TransformSpec parse_transform(const json &j, const std::string &base_path) {
   return spec;
 }
 
+SignalSpec parse_signal(const json &j, const std::string &base_path,
+                        size_t index) {
+  const std::string path = base_path + "/" + std::to_string(index);
+  SignalSpec spec;
+
+  if (!j.contains("path")) {
+    throw std::runtime_error("JSON parse error at " + path +
+                             ": Missing required field 'path'");
+  }
+  if (!j.contains("unit")) {
+    throw std::runtime_error("JSON parse error at " + path +
+                             ": Missing required field 'unit'");
+  }
+
+  spec.path = j["path"].get<std::string>();
+  spec.unit = j["unit"].get<std::string>();
+  return spec;
+}
+
 // Parse edge specification
 EdgeSpec parse_edge(const json &j, const std::string &base_path, size_t index) {
   EdgeSpec spec;
@@ -165,6 +184,14 @@ RuleSpec parse_rule(const json &j, const std::string &base_path, size_t index) {
 // Parse complete GraphSpec from JSON
 GraphSpec parse_json(const json &j) {
   GraphSpec spec;
+
+  // Parse signals (optional)
+  if (j.contains("signals") && j["signals"].is_array()) {
+    size_t index = 0;
+    for (const auto &signal_json : j["signals"]) {
+      spec.signals.push_back(parse_signal(signal_json, "/signals", index++));
+    }
+  }
 
   // Parse models (optional)
   if (j.contains("models") && j["models"].is_array()) {

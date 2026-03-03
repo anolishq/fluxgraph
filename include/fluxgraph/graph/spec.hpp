@@ -7,6 +7,12 @@
 
 namespace fluxgraph {
 
+/// Explicit signal unit contract in graph definition.
+struct SignalSpec {
+  std::string path;
+  std::string unit;
+};
+
 /// POD specification for a transform (protocol-agnostic)
 struct TransformSpec {
   std::string type; // "linear", "first_order_lag", "delay", etc.
@@ -44,6 +50,7 @@ struct RuleSpec {
 
 /// Complete graph specification (protocol-agnostic POD)
 struct GraphSpec {
+  std::vector<SignalSpec> signals;
   std::vector<ModelSpec> models;
   std::vector<EdgeSpec> edges;
   std::vector<RuleSpec> rules;

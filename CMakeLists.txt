@@ -42,6 +42,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(FLUXGRAPH_SOURCES
     src/core/signal_store.cpp
     src/core/namespace.cpp
+    src/core/units.cpp
     src/model/thermal_mass.cpp
     src/graph/compiler.cpp
     src/engine.cpp
@@ -114,9 +115,16 @@ install(TARGETS fluxgraph
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-install(DIRECTORY include/fluxgraph
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
+if(FLUXGRAPH_BUILD_DIAGRAM_TOOL)
+    install(DIRECTORY include/fluxgraph
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+else()
+    install(DIRECTORY include/fluxgraph
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        PATTERN "viz" EXCLUDE
+    )
+endif()
 
 install(EXPORT fluxgraphTargets
     FILE fluxgraphTargets.cmake

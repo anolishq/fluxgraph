@@ -4,9 +4,13 @@ FluxGraph YAML files define signal processing graphs with a human-friendly synta
 
 ## YAML Structure
 
-A graph file has three top-level sequences (all optional):
+A graph file has four top-level sequences (all optional):
 
 ```yaml
+signals:
+  - path: signal.path
+    unit: unit_symbol
+
 models:
   - id: unique_identifier
     type: model_type
@@ -30,6 +34,21 @@ rules:
         args:
           arg_name: value
 ```
+
+## Signals
+
+Signals declare explicit unit contracts used by dimensional validation.
+
+```yaml
+signals:
+  - path: chamber.temp
+    unit: degC
+```
+
+**Fields:**
+
+- `path` (string, required) - Signal path
+- `unit` (string, required) - Unit symbol (`dimensionless`, `W`, `degC`, etc.)
 
 ## Models
 
@@ -92,7 +111,7 @@ Edges connect signals through transforms, defining the dataflow graph.
 
 ## Transforms
 
-All 8 transform types with their parameters:
+All 9 transform types with their parameters:
 
 ### 1. Linear Transform
 
@@ -295,6 +314,32 @@ edges:
 ```
 
 **Memory:** `window_size * 8` bytes per instance
+
+### 9. Unit Convert
+
+**Type:** `unit_convert`
+
+Explicit cross-unit conversion transform. Conversion coefficients are derived
+from the built-in unit registry.
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `to_unit` | string | yes | Target unit symbol |
+| `from_unit` | string | no | Optional source-unit assertion |
+
+**Example:**
+
+```yaml
+edges:
+  - source: sensor.temp_c
+    target: sensor.temp_k
+    transform:
+      type: unit_convert
+      params:
+        to_unit: K
+        from_unit: degC
+```
 
 ## Rules
 

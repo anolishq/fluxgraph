@@ -97,6 +97,15 @@ FluxGraphServiceImpl::LoadConfig(grpc::ServerContext * /*context*/,
     last_completed_commands_.clear();
     sessions_.clear();
 
+    // Preload declared signal contracts so provider writes are validated
+    // immediately (before first tick).
+    for (const auto &signal_spec : spec.signals) {
+      const SignalId signal_id = signal_ns_.resolve(signal_spec.path);
+      if (signal_id != INVALID_SIGNAL) {
+        store_.declare_unit(signal_id, signal_spec.unit);
+      }
+    }
+
     // Build write-authority map from spec.
     // - All edge targets are derived outputs and protected from external
     // writes.

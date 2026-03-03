@@ -33,6 +33,10 @@ public:
   /// Falls back to "dimensionless" when source is invalid/unwritten.
   void write_with_source_unit(SignalId target, double value, SignalId source);
 
+  /// Write a value using the target signal contract unit when available.
+  /// This is used for internal edge propagation to avoid source-unit copying.
+  void write_with_contract_unit(SignalId id, double value);
+
   /// Read a signal (value + unit)
   Signal read(SignalId id) const;
 
@@ -54,6 +58,9 @@ public:
   /// Validate that a unit matches the declared unit for a signal
   /// Throws std::runtime_error if mismatch
   void validate_unit(SignalId id, const std::string &unit) const;
+
+  bool has_declared_unit(SignalId id) const;
+  const std::string &declared_unit(SignalId id) const;
 
   /// Pre-allocate storage for signals (optimization)
   void reserve(size_t max_signals);

@@ -117,6 +117,21 @@ TEST_F(SignalStoreTest, WriteWithSourceUnitFallsBackToDimensionless) {
   EXPECT_EQ(store.read_unit(8), "dimensionless");
 }
 
+TEST_F(SignalStoreTest, WriteWithContractUnitUsesDeclaredContract) {
+  SignalId id = 50;
+  store.declare_unit(id, "W");
+  store.write_with_contract_unit(id, 123.0);
+
+  EXPECT_EQ(store.read_value(id), 123.0);
+  EXPECT_EQ(store.read_unit(id), "W");
+}
+
+TEST_F(SignalStoreTest, DeclareUnitRejectsConflictingRedefinition) {
+  SignalId id = 51;
+  store.declare_unit(id, "degC");
+  EXPECT_THROW(store.declare_unit(id, "K"), std::runtime_error);
+}
+
 TEST_F(SignalStoreTest, OverwriteSignal) {
   store.write(1, 100.0, "degC");
   EXPECT_EQ(store.read_value(1), 100.0);

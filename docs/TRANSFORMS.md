@@ -39,9 +39,9 @@ if clamp_max set: y = min(y, clamp_max)
 
 **Use Cases:**
 
-- Unit conversion (degC to degF: scale=1.8, offset=32)
 - Sensor calibration
 - Range remapping
+- Conditioning within a single unit contract
 
 **Example:**
 
@@ -55,6 +55,27 @@ edge.transform.params["offset"] = -10.0;
 edge.transform.params["clamp_min"] = 0.0;
 edge.transform.params["clamp_max"] = 100.0;
 ```
+
+---
+
+## 1.5 Unit Convert Transform
+
+**Type:** `unit_convert`
+
+**Function:** Explicit cross-unit conversion using registry-derived coefficients.
+
+**Parameters:**
+
+- `to_unit` (string, required) - Target unit symbol
+- `from_unit` (string, optional) - Source unit assertion
+
+**State:** Stateless (dt-independent)
+
+**Use Cases:**
+
+- `degC` <-> `K` conversions
+- Canonical unit normalization between subsystems
+- Strict-mode replacement for implicit unit-boundary `linear` usage
 
 ---
 

@@ -13,6 +13,7 @@ void Engine::load(CompiledProgram program) {
 
   required_signal_capacity_ = program.required_signal_capacity;
   required_command_capacity_ = program.required_command_capacity;
+  signal_unit_contracts_ = std::move(program.signal_unit_contracts);
   edges_ = std::move(program.edges);
   models_ = std::move(program.models);
   rules_ = std::move(program.rules);
@@ -39,6 +40,10 @@ void Engine::tick(double dt, SignalStore &store) {
   if (required_signal_capacity_ > 0 &&
       store.capacity() < required_signal_capacity_) {
     store.reserve(required_signal_capacity_);
+  }
+
+  for (const auto &contract : signal_unit_contracts_) {
+    store.declare_unit(contract.first, contract.second);
   }
 
   // Runtime stability contract: enforce model limits for supplied dt.
@@ -105,7 +110,7 @@ void Engine::process_edges(double dt, SignalStore &store) {
   for (auto &edge : edges_) {
     const double source_value = store.read_value(edge.source);
     double output = edge.transform->apply(source_value, dt);
-    store.write_with_source_unit(edge.target, output, edge.source);
+    store.write_with_contract_unit(edge.target, output);
   }
 }
 

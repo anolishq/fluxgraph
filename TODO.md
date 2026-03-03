@@ -20,3 +20,4 @@
 - [ ] Add provider restart recovery and network-failure handling examples.
 - [ ] Keep one embedded reference example and one service reference example maintained.
 - [ ] Publish concise troubleshooting and performance-tuning guides.
+- [ ] Fix optional viz packaging boundary: do not install/export `viz` headers/targets when `FLUXGRAPH_BUILD_DIAGRAM_TOOL=OFF`.
