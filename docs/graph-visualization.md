@@ -1,6 +1,6 @@
 # Graph Visualization Contract (Phase 4 Stub)
 
-**Status:** Phase 4 Sprint 4.1 contract stub (pre-implementation).  
+**Status:** Phase 4 contract; Sprint 4.2 DOT baseline implemented.  
 **Purpose:** lock the visualization interface and behavior before coding to prevent drift in tests and CLI behavior.
 
 ## 1. Scope
@@ -102,6 +102,12 @@ Exit code contract (planned):
 2. `1`: input/load/validation failure
 3. `2`: unsupported option/format for current build
 4. `3`: renderer invocation failure
+
+Current implementation status:
+
+1. DOT emission is implemented.
+2. Non-DOT `--format` values return unsupported-format errors.
+3. Renderer invocation is deferred to Sprint 4.3.
 
 ## 8. Evidence and Governance Mapping
 

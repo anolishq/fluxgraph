@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.20)
 option(FLUXGRAPH_BUILD_TESTS "Build unit tests" ON)
 option(FLUXGRAPH_BUILD_EXAMPLES "Build examples" ON)
 option(FLUXGRAPH_BUILD_SERVER "Build gRPC server" OFF)
+option(FLUXGRAPH_BUILD_DIAGRAM_TOOL "Build diagram generation tooling" OFF)
 option(FLUXGRAPH_JSON_ENABLED "Enable JSON graph loading (requires nlohmann/json)" OFF)
 option(FLUXGRAPH_YAML_ENABLED "Enable YAML graph loading (requires yaml-cpp)" OFF)
 
@@ -82,6 +83,11 @@ endif()
 if(FLUXGRAPH_YAML_ENABLED)
     target_link_libraries(fluxgraph PUBLIC yaml-cpp::yaml-cpp)
     target_compile_definitions(fluxgraph PUBLIC FLUXGRAPH_YAML_ENABLED)
+endif()
+
+# Optional diagram tooling
+if(FLUXGRAPH_BUILD_DIAGRAM_TOOL)
+    add_subdirectory(tools)
 endif()
 
 # Tests

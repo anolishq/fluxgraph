@@ -54,6 +54,7 @@ Optional graph loaders can be enabled:
 
 | Option                   | Default | Description                                       |
 | ------------------------ | ------- | ------------------------------------------------- |
+| `FLUXGRAPH_BUILD_DIAGRAM_TOOL` | OFF | Build optional graph diagram CLI + DOT emitter |
 | `FLUXGRAPH_JSON_ENABLED` | OFF     | Enable JSON graph loader (requires nlohmann-json) |
 | `FLUXGRAPH_YAML_ENABLED` | OFF     | Enable YAML graph loader (requires yaml-cpp)      |
 
