@@ -1,0 +1,2 @@
+add_executable(example_state_space_siso_discrete main.cpp)
+target_link_libraries(example_state_space_siso_discrete PRIVATE fluxgraph)

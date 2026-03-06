@@ -9,8 +9,10 @@ Validation protocol details are documented in `docs/validation-methodology.md`.
 
 ## Current Policy
 
-1. Integration method selection is explicit per model via model parameters.
-2. If not specified, the deterministic default is `forward_euler`.
+1. For ODE-based models, integration method selection is explicit via model
+   parameters.
+2. If not specified for ODE models, the deterministic default is
+   `forward_euler`.
 3. Methods are selected at compile time and remain fixed at runtime.
 4. Runtime behavior must be deterministic for identical inputs and `dt`.
 
@@ -22,6 +24,13 @@ The following built-in models support `integration_method`:
 2. `thermal_rc2`
 3. `first_order_process`
 4. `second_order_process`
+
+Discrete-time structured model:
+
+1. `state_space_siso_discrete` does not use `integration_method`.
+2. Its update law is natively discrete (`x[k+1] = A_d x[k] + B_d u[k]`).
+3. `compute_stability_limit()` returns infinity for this model because no
+   continuous-time explicit integration step is performed.
 
 Supported methods:
 

@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `DimensionalPolicy::strict`
 - Strict-mode rule-threshold validation now requires declared LHS signal unit contracts.
 - CI now includes a required strict-dimensional-validation lane with artifact upload.
+- Graph configuration params now use structured `ParamValue` trees for model and transform parameters (`ParamMap`), while command/rule args remain scalar `Variant` values.
 
 ### Added
 
@@ -73,6 +74,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dimensional validation automation:
   - `scripts/run_dimensional_validation.py` for strict test evidence generation
   - scheduled/dispatch evidence workflow (`.github/workflows/dimensional-validation-evidence.yml`)
+- Structured-parameter model support:
+  - built-in `state_space_siso_discrete` model (`A_d`, `B_d`, `C`, `D`, `x0`)
+  - compile-time structured-parameter validation hook in model signatures
+  - unit + analytical tests for shape validation, deterministic trajectory, and reset behavior
+- Loader hardening for structured params:
+  - centralized parse limits (depth, node count, collection sizes, string size)
+  - recursive model/transform param parsing in JSON/YAML loaders
+  - scalar-only enforcement for rule action `args`
 
 ### Fixed
 

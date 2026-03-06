@@ -58,10 +58,26 @@ Models represent physical systems with internal state and differential equations
 
 ```yaml
 - id: unique_identifier # Unique model identifier
-  type: model_type # Model type (thermal_mass, thermal_rc2, first_order_process, second_order_process)
+  type: model_type # Model type (thermal_mass, thermal_rc2, first_order_process, second_order_process, state_space_siso_discrete, mass_spring_damper, dc_motor)
   params: # Model-specific parameters
     param_name: value
 ```
+
+### Parameter Value Types (Models and Transforms)
+
+Model/transform `params` use structured values:
+
+1. scalar: number, integer, boolean, string
+2. sequence: YAML list of structured values
+3. mapping: YAML map with structured values
+
+Loader resource limits are enforced to reject abusive payloads:
+
+1. max nesting depth: `32`
+2. max total nodes: `250000`
+3. max object members: `4096`
+4. max array elements: `65536`
+5. max string bytes: `1048576`
 
 ### ThermalMass Model
 
@@ -196,6 +212,49 @@ models:
       initial_output: 0.0
       initial_output_rate: 0.0
       integration_method: rk4
+```
+
+### StateSpaceSisoDiscrete Model
+
+Discrete-time SISO state-space model:
+`x[k+1] = A_d x[k] + B_d u[k]`, `y[k] = C x[k] + D u[k]`
+
+**Parameters:**
+| Parameter | Type | Units | Description |
+|-----------|------|-------|-------------|
+| `output_signal` | string | user-defined | Output signal path |
+| `input_signal` | string | user-defined | Input signal path |
+| `A_d` | sequence of sequences | - | Square matrix (`n x n`) |
+| `B_d` | sequence | - | Input vector (`n`) |
+| `C` | sequence | - | Output vector (`n`) |
+| `D` | number | - | Feedthrough scalar |
+| `x0` | sequence | - | Initial state vector (`n`) |
+
+**Validation notes:**
+
+1. `A_d` must be non-empty, rectangular, and square.
+2. `B_d`, `C`, and `x0` lengths must match `A_d` dimension.
+3. All numeric values must be finite.
+4. In strict dimensional mode, `input_signal` and `output_signal` must have
+   declared signal contracts.
+5. Internal state-unit algebra is currently out of scope.
+
+**Example:**
+
+```yaml
+models:
+  - id: ss
+    type: state_space_siso_discrete
+    params:
+      output_signal: ss.y
+      input_signal: ss.u
+      A_d:
+        - [0.9, 0.1]
+        - [0.0, 0.95]
+      B_d: [0.1, 0.05]
+      C: [1.0, 0.0]
+      D: 0.0
+      x0: [0.0, 0.0]
 ```
 
 ### MassSpringDamper Model
@@ -543,6 +602,11 @@ Rules trigger device actions when conditions are met.
   on_error: log_and_continue # Error handling (optional)
 ```
 
+**Action `args` constraint:**
+
+1. command args are scalar-only (`double`, `int64`, `bool`, `string`)
+2. nested mappings/sequences in `args` are rejected at load time
+
 **Example:**
 
 ```yaml
@@ -678,7 +742,8 @@ The YAML loader provides detailed error messages with node locations:
 
 ```
 YAML parse error at edges[2].transform: Missing required field 'type'
-YAML parse error at models[0].params.thermal_mass: Expected number, got string
+YAML parse error at rules[0].actions[0].args.payload: Command args must be scalar (double/int64/bool/string)
+Parameter parse error at models[0].params.x: nesting depth exceeds limit (32)
 YAML parse error in file graph.yaml: [yaml-cpp internal error]
 ```
 

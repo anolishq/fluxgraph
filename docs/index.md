@@ -1,5 +1,22 @@
 # FluxGraph Documentation
 
-Welcome to the FluxGraph documentation! FluxGraph is a protocol-agnostic, graph-based physics simulation library for embedded systems.
+FluxGraph is a protocol-agnostic, graph-based simulation library with
+deterministic execution and strict compile-time validation options.
 
-The documentation is quite rough at the moment, but we are actively working on improving it. We encourage you to explore the available resources using the navbar on the left. If you have any questions or need further assistance, please don't hesitate to reach out in the issues or discussions!
+## Start Here
+
+1. [API Reference](api-reference.md)
+2. [JSON Schema](schema-json.md)
+3. [YAML Schema](schema-yaml.md)
+4. [Architecture](architecture.md)
+
+## Validation and Evidence
+
+1. [Numerical Methods Policy](numerical-methods.md)
+2. [Validation Methodology](validation-methodology.md)
+3. [Performance Benchmarks](performance-benchmarks.md)
+
+## Specialized Topics
+
+1. [Graph Visualization](graph-visualization.md)
+2. [State-Space SISO Discrete Model](state-space-siso-discrete.md)

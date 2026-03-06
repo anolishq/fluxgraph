@@ -131,6 +131,7 @@ int main() {
 - [`07_second_order_process`](./examples/07_second_order_process/) - Second-order process primitive (PT2)
 - [`08_mass_spring_damper`](./examples/08_mass_spring_damper/) - Translational mass-spring-damper model example
 - [`09_dc_motor`](./examples/09_dc_motor/) - Armature-controlled DC motor model example
+- [`10_state_space_siso_discrete`](./examples/10_state_space_siso_discrete/) - Structured discrete-time state-space model example
 
 ## Project Structure
 

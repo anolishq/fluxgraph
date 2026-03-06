@@ -116,6 +116,13 @@ cmake --build build-json --config Debug
 ./build-json/examples/03_json_graph/Debug/example_json_graph.exe
 ```
 
+Use the structured state-space sample file:
+
+```bash
+./build-json/examples/03_json_graph/Debug/example_json_graph.exe \
+  ./examples/03_json_graph/state_space_siso_discrete.json
+```
+
 **Graph structure (graph.json):**
 
 - 1 thermal mass model (chamber)
@@ -128,6 +135,11 @@ cmake --build build-json --config Debug
 - `load_json_string()` - Parse from string
 - Optional dependency (core library still zero-dep)
 - Identical runtime API after loading
+
+Additional structured-parameter sample:
+
+- `state_space_siso_discrete.json` demonstrates nested matrix/vector params for
+  the discrete state-space model.
 
 ## Example 4: YAML Graph Loader
 
@@ -152,11 +164,23 @@ cmake --build build-yaml --config Debug
 ./build-yaml/examples/04_yaml_graph/Debug/example_yaml_graph.exe
 ```
 
+Use the structured state-space sample file:
+
+```bash
+./build-yaml/examples/04_yaml_graph/Debug/example_yaml_graph.exe \
+  ./examples/04_yaml_graph/state_space_siso_discrete.yaml
+```
+
 **Graph structure (graph.yaml):**
 
 - Same logical structure as Example 3
 - YAML syntax instead of JSON
 - Supports comments and multi-line strings
+
+Additional structured-parameter sample:
+
+- `state_space_siso_discrete.yaml` demonstrates nested matrix/vector params for
+  the discrete state-space model.
 
 **Key API Concepts:**
 
@@ -244,6 +268,24 @@ dynamics:
 
 ```bash
 ./build/examples/09_dc_motor/Debug/example_dc_motor.exe
+```
+
+## Example 10: State-Space SISO Discrete
+
+**Location:** `10_state_space_siso_discrete/`
+
+Demonstrates structured model parameters for a discrete-time state-space
+system:
+
+- `state_space_siso_discrete` model with matrix/vector params (`A_d`, `B_d`,
+  `C`, `D`, `x0`)
+- Strict dimensional compile mode with declared input/output contracts
+- Deterministic difference-equation evolution
+
+**Run:**
+
+```bash
+./build/examples/10_state_space_siso_discrete/Debug/example_state_space_siso_discrete.exe
 ```
 
 ## When to Use Each Approach

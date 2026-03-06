@@ -203,6 +203,17 @@ Plain Old Data (POD) structure defining the entire simulation graph.
 fluxgraph::GraphSpec spec;
 ```
 
+#### Parameter Types
+
+FluxGraph separates graph configuration params from command transport args:
+
+1. `TransformSpec.params` and `ModelSpec.params` use `ParamMap` / `ParamValue`
+   (structured values: scalar, array, object).
+2. `ActionSpec.args` and runtime `Command` args use scalar `Variant`
+   (`double`, `int64_t`, `bool`, `std::string`).
+
+This keeps structured graph configuration decoupled from command/RPC payloads.
+
 #### EdgeSpec
 
 Defines signal transformation edges.
@@ -251,8 +262,60 @@ spec.models.push_back(model);
 - `thermal_rc2` - Two-node thermal RC network (coupled temperatures)
 - `first_order_process` - First-order process primitive (PT1)
 - `second_order_process` - Second-order process primitive (PT2)
+- `state_space_siso_discrete` - Discrete-time SISO state-space model
 - `mass_spring_damper` - Translational mass-spring-damper (mechanical)
 - `dc_motor` - Armature-controlled DC motor (electromechanical)
+
+Structured state-space example:
+
+```cpp
+model.id = "ss";
+model.type = "state_space_siso_discrete";
+model.params["output_signal"] = std::string("ss.y");
+model.params["input_signal"] = std::string("ss.u");
+model.params["A_d"] = fluxgraph::ParamArray{
+    fluxgraph::ParamArray{0.9, 0.1},
+    fluxgraph::ParamArray{0.0, 0.95},
+};
+model.params["B_d"] = fluxgraph::ParamArray{0.1, 0.05};
+model.params["C"] = fluxgraph::ParamArray{1.0, 0.0};
+model.params["D"] = 0.0;
+model.params["x0"] = fluxgraph::ParamArray{0.0, 0.0};
+```
+
+State-space scope notes:
+
+1. This built-in model is discrete-time only.
+2. In strict dimensional mode, input/output signal contracts are required.
+3. Internal state-unit algebra is not yet modeled.
+
+See [state-space-siso-discrete.md](state-space-siso-discrete.md) for the full
+model contract.
+
+#### Migration Note for Custom Factories
+
+Legacy custom factories often used direct `std::get<T>` on scalar-only params.
+With `ParamValue`, use typed extractors from `fluxgraph/graph/param_utils.hpp`
+for deterministic path-aware errors.
+
+Before:
+
+```cpp
+double gain = std::get<double>(spec.params.at("gain"));
+std::string output = std::get<std::string>(spec.params.at("output_signal"));
+```
+
+After:
+
+```cpp
+#include "fluxgraph/graph/param_utils.hpp"
+
+const std::string context = "model[" + spec.id + ":" + spec.type + "]";
+double gain = fluxgraph::param::as_double(
+    spec.params.at("gain"), context + "/gain");
+std::string output = fluxgraph::param::as_string(
+    spec.params.at("output_signal"), context + "/output_signal");
+```
 
 #### RuleSpec
 

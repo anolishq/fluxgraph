@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <stdexcept>
 
 int main(int argc, char *argv[]) {
   // Determine graph file path
@@ -43,39 +44,68 @@ int main(int argc, char *argv[]) {
     fluxgraph::Engine engine;
     engine.load(std::move(program));
 
-    // 5. Get signal IDs for interaction
-    auto heater_id = sig_ns.resolve("heater.output");
-    auto ambient_id = sig_ns.resolve("ambient.temp");
-    auto chamber_id = sig_ns.resolve("chamber.temp");
-    auto display_id = sig_ns.resolve("display.temp");
+    // 5. Run one of the bundled simulation loops based on available signals.
+    const auto heater_id = sig_ns.resolve("heater.output");
+    const auto ambient_id = sig_ns.resolve("ambient.temp");
+    const auto chamber_id = sig_ns.resolve("chamber.temp");
+    const auto display_id = sig_ns.resolve("display.temp");
 
-    // 6. Initialize state
-    store.write(ambient_id, 20.0, "degC");
-    store.write(heater_id, 500.0, "W");
+    if (heater_id != fluxgraph::INVALID_SIGNAL &&
+        ambient_id != fluxgraph::INVALID_SIGNAL &&
+        chamber_id != fluxgraph::INVALID_SIGNAL &&
+        display_id != fluxgraph::INVALID_SIGNAL) {
+      store.write(ambient_id, 20.0, "degC");
+      store.write(heater_id, 500.0, "W");
 
-    // 7. Run simulation
-    std::cout << "Running simulation:\n";
-    std::cout << "Time(s)  Heater(W)  Chamber(degC)  Display(degC)\n";
-    std::cout << "-------  ---------  -----------  -----------\n";
+      std::cout << "Running thermal chamber simulation:\n";
+      std::cout << "Time(s)  Heater(W)  Chamber(degC)  Display(degC)\n";
+      std::cout << "-------  ---------  -----------  -----------\n";
 
-    double dt = 0.1;
-    for (int i = 0; i <= 100; ++i) {
-      engine.tick(dt, store);
+      const double dt = 0.1;
+      for (int i = 0; i <= 100; ++i) {
+        engine.tick(dt, store);
 
-      if (i % 10 == 0) {
-        double heater = store.read_value(heater_id);
-        double chamber = store.read_value(chamber_id);
-        double display = store.read_value(display_id);
+        if (i % 10 == 0) {
+          const double heater = store.read_value(heater_id);
+          const double chamber = store.read_value(chamber_id);
+          const double display = store.read_value(display_id);
 
-        std::cout << std::fixed << std::setprecision(1) << std::setw(7)
-                  << i * dt << "  " << std::setw(9) << heater << "  "
-                  << std::setw(11) << chamber << "  " << std::setw(11)
-                  << display << "\n";
+          std::cout << std::fixed << std::setprecision(1) << std::setw(7)
+                    << i * dt << "  " << std::setw(9) << heater << "  "
+                    << std::setw(11) << chamber << "  " << std::setw(11)
+                    << display << "\n";
+        }
+
+        if (i == 50) {
+          store.write(heater_id, 0.0, "W");
+        }
+      }
+    } else {
+      const auto u_id = sig_ns.resolve("ss.u");
+      const auto y_id = sig_ns.resolve("ss.y");
+      if (u_id == fluxgraph::INVALID_SIGNAL ||
+          y_id == fluxgraph::INVALID_SIGNAL) {
+        throw std::runtime_error(
+            "Example runner does not recognize graph IO signals");
       }
 
-      // Cycle heater power
-      if (i == 50) {
-        store.write(heater_id, 0.0, "W");
+      std::cout << "Running discrete state-space simulation:\n";
+      std::cout << "Time(s)  Input(V)  Output(A)\n";
+      std::cout << "-------  --------  ---------\n";
+
+      const double dt = 0.05;
+      for (int i = 0; i <= 80; ++i) {
+        const double t = i * dt;
+        const double u = (t >= 0.5) ? 5.0 : 0.0;
+        store.write(u_id, u, "V");
+        engine.tick(dt, store);
+
+        if (i % 8 == 0) {
+          const double y = store.read_value(y_id);
+          std::cout << std::fixed << std::setprecision(2) << std::setw(7) << t
+                    << "  " << std::setw(8) << u << "  " << std::setw(9) << y
+                    << "\n";
+        }
       }
     }
 

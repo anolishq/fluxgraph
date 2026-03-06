@@ -58,8 +58,24 @@ Models represent physical systems with internal state and differential equations
 **Fields:**
 
 - `id` (string, required) - Unique model identifier
-- `type` (string, required) - Model type (built-in: `"thermal_mass"`, `"thermal_rc2"`, `"first_order_process"`, `"second_order_process"`)
-- `params` (object, required) - Model-specific parameters
+- `type` (string, required) - Model type (built-in: `"thermal_mass"`, `"thermal_rc2"`, `"first_order_process"`, `"second_order_process"`, `"state_space_siso_discrete"`, `"mass_spring_damper"`, `"dc_motor"`)
+- `params` (object, required) - Model-specific parameters (supports nested structured values)
+
+### Parameter Value Types (Models and Transforms)
+
+Model/transform `params` use structured values:
+
+1. scalar: `number`, `integer`, `boolean`, `string`
+2. array: JSON array of structured values
+3. object: JSON object with structured values
+
+Loader resource limits are enforced to reject abusive payloads:
+
+1. max nesting depth: `32`
+2. max total nodes: `250000`
+3. max object members: `4096`
+4. max array elements: `65536`
+5. max string bytes: `1048576`
 
 ### ThermalMass Model
 
@@ -200,6 +216,52 @@ Second-order process primitive:
     "initial_output": 0.0,
     "initial_output_rate": 0.0,
     "integration_method": "rk4"
+  }
+}
+```
+
+### StateSpaceSisoDiscrete Model
+
+Discrete-time SISO state-space model:
+`x[k+1] = A_d x[k] + B_d u[k]`, `y[k] = C x[k] + D u[k]`
+
+**Parameters:**
+| Parameter | Type | Units | Description |
+|-----------|------|-------|-------------|
+| `output_signal` | string | user-defined | Output signal path |
+| `input_signal` | string | user-defined | Input signal path |
+| `A_d` | array of arrays | - | Square matrix (`n x n`) |
+| `B_d` | array | - | Input vector (`n`) |
+| `C` | array | - | Output vector (`n`) |
+| `D` | number | - | Feedthrough scalar |
+| `x0` | array | - | Initial state vector (`n`) |
+
+**Validation notes:**
+
+1. `A_d` must be non-empty, rectangular, and square.
+2. `B_d`, `C`, and `x0` lengths must match `A_d` dimension.
+3. All numeric values must be finite.
+4. In strict dimensional mode, `input_signal` and `output_signal` must have
+   declared signal contracts.
+5. Internal state-unit algebra is currently out of scope.
+
+**Example:**
+
+```json
+{
+  "id": "ss",
+  "type": "state_space_siso_discrete",
+  "params": {
+    "output_signal": "ss.y",
+    "input_signal": "ss.u",
+    "A_d": [
+      [0.9, 0.1],
+      [0.0, 0.95]
+    ],
+    "B_d": [0.1, 0.05],
+    "C": [1.0, 0.0],
+    "D": 0.0,
+    "x0": [0.0, 0.0]
   }
 }
 ```
@@ -603,6 +665,11 @@ Rules trigger device actions when conditions are met.
 - `actions` (array, required) - Array of action objects
 - `on_error` (string, optional) - Error handling ("log_and_continue" only in v1.0)
 
+**Action `args` constraint:**
+
+1. command args are scalar-only (`double`, `int64`, `bool`, `string`)
+2. nested arrays/objects in `args` are rejected at load time
+
 **Example:**
 
 ```json
@@ -697,7 +764,8 @@ The JSON loader provides detailed error messages with JSON pointer paths:
 
 ```
 JSON parse error at /edges/2/transform: Missing required field 'type'
-JSON parse error at /models/0/params/thermal_mass: Unsupported type for Variant
+JSON parse error at /rules/0/actions/0/args/payload: Command args must be scalar (double/int64/bool/string)
+Parameter parse error at /models/0/params/x: nesting depth exceeds limit (32)
 JSON parse error in file graph.json: [nlohmann::json parse error]
 ```
 
