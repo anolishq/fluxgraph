@@ -1,6 +1,7 @@
 #ifdef FLUXGRAPH_JSON_ENABLED
 
 #include "fluxgraph/loaders/json_loader.hpp"
+#include "param_parse_limits.hpp"
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
@@ -11,7 +12,12 @@ namespace fluxgraph::loaders {
 
 namespace {
 
-ParamValue json_to_param_value(const json &j, const std::string &path) {
+ParamValue json_to_param_value(const json &j, const std::string &path,
+                               detail::ParamParseBudget &budget,
+                               size_t depth = 0) {
+  budget.check_depth(depth, path);
+  budget.consume_node(path);
+
   if (j.is_number_float()) {
     return j.get<double>();
   } else if (j.is_number_integer()) {
@@ -19,10 +25,31 @@ ParamValue json_to_param_value(const json &j, const std::string &path) {
   } else if (j.is_boolean()) {
     return j.get<bool>();
   } else if (j.is_string()) {
-    return j.get<std::string>();
+    const std::string value = j.get<std::string>();
+    detail::check_string_size(value.size(), path);
+    return value;
+  } else if (j.is_array()) {
+    detail::check_array_size(j.size(), path);
+    ParamArray arr;
+    arr.reserve(j.size());
+    for (size_t i = 0; i < j.size(); ++i) {
+      arr.push_back(
+          json_to_param_value(j[i], path + "/" + std::to_string(i), budget,
+                              depth + 1));
+    }
+    return arr;
+  } else if (j.is_object()) {
+    detail::check_object_size(j.size(), path);
+    ParamObject obj;
+    for (auto &[key, value] : j.items()) {
+      detail::check_string_size(key.size(), path + "/<key>");
+      obj.emplace(key, json_to_param_value(value, path + "/" + key, budget,
+                                           depth + 1));
+    }
+    return obj;
   } else {
-    throw std::runtime_error("JSON parse error at " + path +
-                             ": Unsupported type for Variant");
+    throw std::runtime_error("Parameter parse error at " + path +
+                             ": Unsupported JSON type");
   }
 }
 
@@ -37,13 +64,15 @@ Variant json_to_variant(const json &j, const std::string &path) {
   } else if (j.is_string()) {
     return j.get<std::string>();
   } else {
-    throw std::runtime_error("JSON parse error at " + path +
-                             ": Unsupported type for Variant");
+    throw std::runtime_error(
+        "JSON parse error at " + path +
+        ": Command args must be scalar (double/int64/bool/string)");
   }
 }
 
 // Parse transform specification
-TransformSpec parse_transform(const json &j, const std::string &base_path) {
+TransformSpec parse_transform(const json &j, const std::string &base_path,
+                              detail::ParamParseBudget &budget) {
   TransformSpec spec;
 
   std::string path = base_path + "/transform";
@@ -55,10 +84,14 @@ TransformSpec parse_transform(const json &j, const std::string &base_path) {
 
   spec.type = j["type"].get<std::string>();
 
-  if (j.contains("params") && j["params"].is_object()) {
+  if (j.contains("params")) {
+    if (!j["params"].is_object()) {
+      throw std::runtime_error("JSON parse error at " + path +
+                               "/params: Expected object");
+    }
     for (auto &[key, value] : j["params"].items()) {
       std::string param_path = path + "/params/" + key;
-      spec.params[key] = json_to_param_value(value, param_path);
+      spec.params[key] = json_to_param_value(value, param_path, budget);
     }
   }
 
@@ -85,7 +118,8 @@ SignalSpec parse_signal(const json &j, const std::string &base_path,
 }
 
 // Parse edge specification
-EdgeSpec parse_edge(const json &j, const std::string &base_path, size_t index) {
+EdgeSpec parse_edge(const json &j, const std::string &base_path, size_t index,
+                    detail::ParamParseBudget &budget) {
   EdgeSpec spec;
 
   std::string path = base_path + "/" + std::to_string(index);
@@ -102,17 +136,21 @@ EdgeSpec parse_edge(const json &j, const std::string &base_path, size_t index) {
     throw std::runtime_error("JSON parse error at " + path +
                              ": Missing required field 'transform'");
   }
+  if (!j["transform"].is_object()) {
+    throw std::runtime_error("JSON parse error at " + path +
+                             "/transform: Expected object");
+  }
 
   spec.source_path = j["source"].get<std::string>();
   spec.target_path = j["target"].get<std::string>();
-  spec.transform = parse_transform(j["transform"], path);
+  spec.transform = parse_transform(j["transform"], path, budget);
 
   return spec;
 }
 
 // Parse model specification
 ModelSpec parse_model(const json &j, const std::string &base_path,
-                      size_t index) {
+                      size_t index, detail::ParamParseBudget &budget) {
   ModelSpec spec;
 
   std::string path = base_path + "/" + std::to_string(index);
@@ -129,10 +167,14 @@ ModelSpec parse_model(const json &j, const std::string &base_path,
   spec.id = j["id"].get<std::string>();
   spec.type = j["type"].get<std::string>();
 
-  if (j.contains("params") && j["params"].is_object()) {
+  if (j.contains("params")) {
+    if (!j["params"].is_object()) {
+      throw std::runtime_error("JSON parse error at " + path +
+                               "/params: Expected object");
+    }
     for (auto &[key, value] : j["params"].items()) {
       std::string param_path = path + "/params/" + key;
-      spec.params[key] = json_to_param_value(value, param_path);
+      spec.params[key] = json_to_param_value(value, param_path, budget);
     }
   }
 
@@ -176,7 +218,11 @@ RuleSpec parse_rule(const json &j, const std::string &base_path, size_t index) {
       action.device = action_json["device"].get<std::string>();
       action.function = action_json["function"].get<std::string>();
 
-      if (action_json.contains("args") && action_json["args"].is_object()) {
+      if (action_json.contains("args")) {
+        if (!action_json["args"].is_object()) {
+          throw std::runtime_error("JSON parse error at " + action_path +
+                                   "/args: Expected object");
+        }
         for (auto &[key, value] : action_json["args"].items()) {
           std::string arg_path = action_path + "/args/" + key;
           action.args[key] = json_to_variant(value, arg_path);
@@ -199,6 +245,7 @@ RuleSpec parse_rule(const json &j, const std::string &base_path, size_t index) {
 // Parse complete GraphSpec from JSON
 GraphSpec parse_json(const json &j) {
   GraphSpec spec;
+  detail::ParamParseBudget param_budget;
 
   // Parse signals (optional)
   if (j.contains("signals") && j["signals"].is_array()) {
@@ -212,7 +259,8 @@ GraphSpec parse_json(const json &j) {
   if (j.contains("models") && j["models"].is_array()) {
     size_t index = 0;
     for (auto &model_json : j["models"]) {
-      spec.models.push_back(parse_model(model_json, "/models", index++));
+      spec.models.push_back(
+          parse_model(model_json, "/models", index++, param_budget));
     }
   }
 
@@ -220,7 +268,8 @@ GraphSpec parse_json(const json &j) {
   if (j.contains("edges") && j["edges"].is_array()) {
     size_t index = 0;
     for (auto &edge_json : j["edges"]) {
-      spec.edges.push_back(parse_edge(edge_json, "/edges", index++));
+      spec.edges.push_back(
+          parse_edge(edge_json, "/edges", index++, param_budget));
     }
   }
 

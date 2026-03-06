@@ -180,6 +180,93 @@ models:
             "hello");
 }
 
+TEST(YamlLoaderTest, NestedParamsSupported) {
+  std::string yaml = R"yaml(
+models:
+  - id: nested
+    type: test_model
+    params:
+      matrix:
+        - [1, 2]
+        - [3, 4]
+      config:
+        enabled: true
+        label: demo
+edges:
+  - source: a
+    target: b
+    transform:
+      type: linear
+      params:
+        coeff:
+          scale: 2.0
+          offset: 1.0
+)yaml";
+
+  auto spec = load_yaml_string(yaml);
+  ASSERT_EQ(spec.models.size(), 1);
+  ASSERT_EQ(spec.edges.size(), 1);
+
+  const auto &matrix_value = spec.models[0].params.at("matrix");
+  ASSERT_TRUE(std::holds_alternative<fluxgraph::ParamArray>(matrix_value));
+  const auto &matrix = std::get<fluxgraph::ParamArray>(matrix_value);
+  ASSERT_EQ(matrix.size(), 2u);
+  ASSERT_TRUE(std::holds_alternative<fluxgraph::ParamArray>(matrix[0]));
+  const auto &row0 = std::get<fluxgraph::ParamArray>(matrix[0]);
+  ASSERT_EQ(row0.size(), 2u);
+  EXPECT_EQ(std::get<int64_t>(row0[0]), 1);
+
+  const auto &config_value = spec.models[0].params.at("config");
+  ASSERT_TRUE(std::holds_alternative<fluxgraph::ParamObject>(config_value));
+  const auto &config = std::get<fluxgraph::ParamObject>(config_value);
+  EXPECT_TRUE(std::get<bool>(config.at("enabled")));
+  EXPECT_EQ(std::get<std::string>(config.at("label")), "demo");
+
+  const auto &coeff_value = spec.edges[0].transform.params.at("coeff");
+  ASSERT_TRUE(std::holds_alternative<fluxgraph::ParamObject>(coeff_value));
+}
+
+TEST(YamlLoaderTest, RejectsNestedCommandArgs) {
+  std::string yaml = R"yaml(
+rules:
+  - id: nested_args
+    condition: a > 0
+    actions:
+      - device: dev
+        function: fn
+        args:
+          payload:
+            key: value
+)yaml";
+
+  EXPECT_THROW({ load_yaml_string(yaml); }, std::runtime_error);
+}
+
+TEST(YamlLoaderTest, RejectsNonMapParams) {
+  std::string yaml = R"yaml(
+models:
+  - id: m
+    type: test_model
+    params: [1, 2, 3]
+)yaml";
+
+  EXPECT_THROW({ load_yaml_string(yaml); }, std::runtime_error);
+}
+
+TEST(YamlLoaderTest, EnforcesParamDepthLimit) {
+  std::string yaml = "models:\\n  - id: m\\n    type: test_model\\n    params:\\n      x: ";
+  for (int i = 0; i < 40; ++i) {
+    yaml += "[";
+  }
+  yaml += "0";
+  for (int i = 0; i < 40; ++i) {
+    yaml += "]";
+  }
+  yaml += "\\n";
+
+  EXPECT_THROW({ load_yaml_string(yaml); }, std::runtime_error);
+}
+
 TEST(YamlLoaderTest, EmptyGraph) {
   std::string yaml = "{}";
 

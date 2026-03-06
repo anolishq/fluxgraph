@@ -1,7 +1,11 @@
 #ifdef FLUXGRAPH_YAML_ENABLED
 
 #include "fluxgraph/loaders/yaml_loader.hpp"
+#include "param_parse_limits.hpp"
+#include <cerrno>
+#include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <yaml-cpp/yaml.h>
@@ -17,28 +21,91 @@ std::string format_yaml_error(const std::string &message,
          ", column " + std::to_string(mark.column + 1) + ": " + message;
 }
 
-ParamValue yaml_to_param_value(const YAML::Node &node, const std::string &path) {
+bool parse_int64_strict(const std::string &text, int64_t &out) {
+  if (text.empty()) {
+    return false;
+  }
+  errno = 0;
+  char *end = nullptr;
+  const long long parsed = std::strtoll(text.c_str(), &end, 10);
+  if (errno == ERANGE || end != text.c_str() + text.size()) {
+    return false;
+  }
+  if (parsed < std::numeric_limits<int64_t>::min() ||
+      parsed > std::numeric_limits<int64_t>::max()) {
+    return false;
+  }
+  out = static_cast<int64_t>(parsed);
+  return true;
+}
+
+bool parse_double_strict(const std::string &text, double &out) {
+  if (text.empty()) {
+    return false;
+  }
+  errno = 0;
+  char *end = nullptr;
+  const double parsed = std::strtod(text.c_str(), &end);
+  if (errno == ERANGE || end != text.c_str() + text.size()) {
+    return false;
+  }
+  out = parsed;
+  return true;
+}
+
+ParamValue yaml_to_param_value(const YAML::Node &node, const std::string &path,
+                               detail::ParamParseBudget &budget,
+                               size_t depth = 0) {
+  budget.check_depth(depth, path);
+  budget.consume_node(path);
+
   if (node.IsScalar()) {
-    // Try to determine type from the actual content
-    try {
-      // Try boolean first
-      if (node.as<std::string>() == "true" ||
-          node.as<std::string>() == "false") {
-        return node.as<bool>();
-      }
-      // Try integer
-      if (node.as<std::string>().find('.') == std::string::npos) {
-        return node.as<int64_t>();
-      }
-      // Try double
-      return node.as<double>();
-    } catch (...) {
-      // Fall back to string
-      return node.as<std::string>();
+    const std::string scalar = node.as<std::string>();
+    detail::check_string_size(scalar.size(), path);
+    if (scalar == "true") {
+      return true;
     }
+    if (scalar == "false") {
+      return false;
+    }
+
+    int64_t int_val = 0;
+    if (parse_int64_strict(scalar, int_val)) {
+      return int_val;
+    }
+
+    double double_val = 0.0;
+    if (parse_double_strict(scalar, double_val)) {
+      return double_val;
+    }
+
+    return scalar;
+  }
+
+  if (node.IsSequence()) {
+    detail::check_array_size(node.size(), path);
+    ParamArray arr;
+    arr.reserve(node.size());
+    for (size_t i = 0; i < node.size(); ++i) {
+      arr.push_back(yaml_to_param_value(node[i], path + "/" + std::to_string(i),
+                                        budget, depth + 1));
+    }
+    return arr;
+  }
+
+  if (node.IsMap()) {
+    detail::check_object_size(node.size(), path);
+    ParamObject obj;
+    for (auto it = node.begin(); it != node.end(); ++it) {
+      const std::string key = it->first.as<std::string>();
+      detail::check_string_size(key.size(), path + "/<key>");
+      obj.emplace(key, yaml_to_param_value(it->second, path + "/" + key,
+                                           budget, depth + 1));
+    }
+    return obj;
   } else {
     throw std::runtime_error("YAML parse error at " + path +
-                             ": Expected scalar value for Variant");
+                             ": Expected scalar/sequence/map value");
   }
 }
 
@@ -63,14 +130,15 @@ Variant yaml_to_variant(const YAML::Node &node, const std::string &path) {
       return node.as<std::string>();
     }
   } else {
-    throw std::runtime_error("YAML parse error at " + path +
-                             ": Expected scalar value for Variant");
+    throw std::runtime_error(
+        "YAML parse error at " + path +
+        ": Command args must be scalar (double/int64/bool/string)");
   }
 }
 
 // Parse transform specification
-TransformSpec parse_transform(const YAML::Node &node,
-                              const std::string &base_path) {
+TransformSpec parse_transform(const YAML::Node &node, const std::string &base_path,
+                              detail::ParamParseBudget &budget) {
   TransformSpec spec;
 
   std::string path = base_path + "/transform";
@@ -82,11 +150,15 @@ TransformSpec parse_transform(const YAML::Node &node,
 
   spec.type = node["type"].as<std::string>();
 
-  if (node["params"] && node["params"].IsMap()) {
+  if (node["params"]) {
+    if (!node["params"].IsMap()) {
+      throw std::runtime_error("YAML parse error at " + path +
+                               "/params: Expected map");
+    }
     for (auto it = node["params"].begin(); it != node["params"].end(); ++it) {
       std::string key = it->first.as<std::string>();
       std::string param_path = path + "/params/" + key;
-      spec.params[key] = yaml_to_param_value(it->second, param_path);
+      spec.params[key] = yaml_to_param_value(it->second, param_path, budget);
     }
   }
 
@@ -94,7 +166,8 @@ TransformSpec parse_transform(const YAML::Node &node,
 }
 
 // Parse edge specification
-EdgeSpec parse_edge(const YAML::Node &node, size_t index) {
+EdgeSpec parse_edge(const YAML::Node &node, size_t index,
+                    detail::ParamParseBudget &budget) {
   std::string path = "/edges/" + std::to_string(index);
   EdgeSpec spec;
 
@@ -106,13 +179,18 @@ EdgeSpec parse_edge(const YAML::Node &node, size_t index) {
     throw std::runtime_error("YAML parse error at " + path +
                              ": Missing required field 'target'");
   }
+  if (!node["transform"]) {
+    throw std::runtime_error("YAML parse error at " + path +
+                             ": Missing required field 'transform'");
+  }
+  if (!node["transform"].IsMap()) {
+    throw std::runtime_error("YAML parse error at " + path +
+                             "/transform: Expected map");
+  }
 
   spec.source_path = node["source"].as<std::string>();
   spec.target_path = node["target"].as<std::string>();
-
-  if (node["transform"] && node["transform"].IsMap()) {
-    spec.transform = parse_transform(node["transform"], path);
-  }
+  spec.transform = parse_transform(node["transform"], path, budget);
 
   return spec;
 }
@@ -136,7 +214,8 @@ SignalSpec parse_signal(const YAML::Node &node, size_t index) {
 }
 
 // Parse model specification
-ModelSpec parse_model(const YAML::Node &node, size_t index) {
+ModelSpec parse_model(const YAML::Node &node, size_t index,
+                      detail::ParamParseBudget &budget) {
   std::string path = "/models/" + std::to_string(index);
   ModelSpec spec;
 
@@ -152,11 +231,15 @@ ModelSpec parse_model(const YAML::Node &node, size_t index) {
   spec.id = node["id"].as<std::string>();
   spec.type = node["type"].as<std::string>();
 
-  if (node["params"] && node["params"].IsMap()) {
+  if (node["params"]) {
+    if (!node["params"].IsMap()) {
+      throw std::runtime_error("YAML parse error at " + path +
+                               "/params: Expected map");
+    }
     for (auto it = node["params"].begin(); it != node["params"].end(); ++it) {
       std::string key = it->first.as<std::string>();
       std::string param_path = path + "/params/" + key;
-      spec.params[key] = yaml_to_param_value(it->second, param_path);
+      spec.params[key] = yaml_to_param_value(it->second, param_path, budget);
     }
   }
 
@@ -199,7 +282,11 @@ RuleSpec parse_rule(const YAML::Node &node, size_t index) {
       action.device = action_node["device"].as<std::string>();
       action.function = action_node["function"].as<std::string>();
 
-      if (action_node["args"] && action_node["args"].IsMap()) {
+      if (action_node["args"]) {
+        if (!action_node["args"].IsMap()) {
+          throw std::runtime_error("YAML parse error at " + action_path +
+                                   "/args: Expected map");
+        }
         for (auto it = action_node["args"].begin();
              it != action_node["args"].end(); ++it) {
           std::string key = it->first.as<std::string>();
@@ -225,6 +312,7 @@ RuleSpec parse_rule(const YAML::Node &node, size_t index) {
 
 GraphSpec load_yaml_string(const std::string &yaml_content) {
   GraphSpec spec;
+  detail::ParamParseBudget param_budget;
 
   try {
     YAML::Node root = YAML::Load(yaml_content);
@@ -242,7 +330,7 @@ GraphSpec load_yaml_string(const std::string &yaml_content) {
     if (root["edges"] && root["edges"].IsSequence()) {
       size_t index = 0;
       for (const auto &edge_node : root["edges"]) {
-        spec.edges.push_back(parse_edge(edge_node, index));
+        spec.edges.push_back(parse_edge(edge_node, index, param_budget));
         ++index;
       }
     }
@@ -251,7 +339,7 @@ GraphSpec load_yaml_string(const std::string &yaml_content) {
     if (root["models"] && root["models"].IsSequence()) {
       size_t index = 0;
       for (const auto &model_node : root["models"]) {
-        spec.models.push_back(parse_model(model_node, index));
+        spec.models.push_back(parse_model(model_node, index, param_budget));
         ++index;
       }
     }
