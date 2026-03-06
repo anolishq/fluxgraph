@@ -10,7 +10,7 @@ using namespace fluxgraph;
 
 namespace {
 
-double variant_to_double(const Variant &value, const std::string &path) {
+double variant_to_double(const ParamValue &value, const std::string &path) {
   if (std::holds_alternative<double>(value)) {
     return std::get<double>(value);
   }
@@ -20,7 +20,7 @@ double variant_to_double(const Variant &value, const std::string &path) {
   throw std::runtime_error("Expected numeric value at " + path);
 }
 
-std::string variant_to_string(const Variant &value, const std::string &path) {
+std::string variant_to_string(const ParamValue &value, const std::string &path) {
   if (std::holds_alternative<std::string>(value)) {
     return std::get<std::string>(value);
   }

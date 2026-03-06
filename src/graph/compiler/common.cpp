@@ -1,4 +1,5 @@
 #include "common.hpp"
+#include "fluxgraph/graph/param_utils.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -6,26 +7,8 @@
 
 namespace fluxgraph::compiler_internal {
 
-namespace {
-
-std::string variant_type_name(const Variant &value) {
-  if (std::holds_alternative<double>(value)) {
-    return "double";
-  }
-  if (std::holds_alternative<int64_t>(value)) {
-    return "int64";
-  }
-  if (std::holds_alternative<bool>(value)) {
-    return "bool";
-  }
-  return "string";
-}
-
-} // namespace
-
-const Variant &require_param(const std::map<std::string, Variant> &params,
-                             const std::string &name,
-                             const std::string &context) {
+const ParamValue &require_param(const ParamMap &params, const std::string &name,
+                                const std::string &context) {
   auto it = params.find(name);
   if (it == params.end()) {
     throw std::runtime_error("Missing required parameter at " + context + "/" +
@@ -34,31 +17,16 @@ const Variant &require_param(const std::map<std::string, Variant> &params,
   return it->second;
 }
 
-double as_double(const Variant &value, const std::string &path) {
-  if (std::holds_alternative<double>(value)) {
-    return std::get<double>(value);
-  }
-  if (std::holds_alternative<int64_t>(value)) {
-    return static_cast<double>(std::get<int64_t>(value));
-  }
-  throw std::runtime_error("Type error at " + path + ": expected number, got " +
-                           variant_type_name(value));
+double as_double(const ParamValue &value, const std::string &path) {
+  return param::as_double(value, path);
 }
 
-int64_t as_int64(const Variant &value, const std::string &path) {
-  if (std::holds_alternative<int64_t>(value)) {
-    return std::get<int64_t>(value);
-  }
-  throw std::runtime_error("Type error at " + path + ": expected int64, got " +
-                           variant_type_name(value));
+int64_t as_int64(const ParamValue &value, const std::string &path) {
+  return param::as_int64(value, path);
 }
 
-std::string as_string(const Variant &value, const std::string &path) {
-  if (std::holds_alternative<std::string>(value)) {
-    return std::get<std::string>(value);
-  }
-  throw std::runtime_error("Type error at " + path + ": expected string, got " +
-                           variant_type_name(value));
+std::string as_string(const ParamValue &value, const std::string &path) {
+  return param::as_string(value, path);
 }
 
 void require_finite(const double value, const std::string &path) {

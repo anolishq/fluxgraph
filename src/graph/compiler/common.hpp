@@ -9,13 +9,12 @@
 
 namespace fluxgraph::compiler_internal {
 
-const Variant &require_param(const std::map<std::string, Variant> &params,
-                             const std::string &name,
-                             const std::string &context);
+const ParamValue &require_param(const ParamMap &params, const std::string &name,
+                                const std::string &context);
 
-double as_double(const Variant &value, const std::string &path);
-int64_t as_int64(const Variant &value, const std::string &path);
-std::string as_string(const Variant &value, const std::string &path);
+double as_double(const ParamValue &value, const std::string &path);
+int64_t as_int64(const ParamValue &value, const std::string &path);
+std::string as_string(const ParamValue &value, const std::string &path);
 
 void require_finite(double value, const std::string &path);
 void require_finite_positive(double value, const std::string &path);

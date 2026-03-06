@@ -50,6 +50,7 @@ set(FLUXGRAPH_SOURCES
     src/model/second_order_process.cpp
     src/model/mass_spring_damper.cpp
     src/model/dc_motor.cpp
+    src/graph/param_utils.cpp
     src/graph/compiler.cpp
     src/graph/compiler/algorithms.cpp
     src/graph/compiler/common.cpp

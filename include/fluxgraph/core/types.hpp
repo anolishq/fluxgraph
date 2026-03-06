@@ -1,7 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <string>
+#include <type_traits>
+#include <vector>
 #include <variant>
 
 namespace fluxgraph {
@@ -68,5 +71,33 @@ struct UnitConversion {
 
 /// Variant type for command arguments and signal values
 using Variant = std::variant<double, int64_t, bool, std::string>;
+
+class ParamValue;
+
+using ParamArray = std::vector<ParamValue>;
+using ParamObject = std::map<std::string, ParamValue>;
+using ParamScalar = std::variant<double, int64_t, bool, std::string>;
+using ParamVariant =
+    std::variant<double, int64_t, bool, std::string, ParamArray, ParamObject>;
+
+/// Structured parameter value used for graph model/transform parameters.
+/// Command transport continues to use `Variant`.
+class ParamValue : public ParamVariant {
+public:
+  using ParamVariant::ParamVariant;
+  using ParamVariant::operator=;
+
+  ParamValue() : ParamVariant(double{0.0}) {}
+
+  ParamValue(const char *value) : ParamVariant(std::string(value)) {}
+
+  template <typename Integer,
+            typename = std::enable_if_t<std::is_integral_v<Integer> &&
+                                        !std::is_same_v<Integer, bool> &&
+                                        !std::is_same_v<Integer, int64_t>>>
+  ParamValue(Integer value) : ParamVariant(static_cast<int64_t>(value)) {}
+};
+
+using ParamMap = std::map<std::string, ParamValue>;
 
 } // namespace fluxgraph

@@ -26,7 +26,7 @@ private:
   double gain_ = 1.0;
 };
 
-double variant_to_double(const Variant &value) {
+double variant_to_double(const ParamValue &value) {
   if (std::holds_alternative<double>(value)) {
     return std::get<double>(value);
   }

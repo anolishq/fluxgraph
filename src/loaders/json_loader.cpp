@@ -11,6 +11,21 @@ namespace fluxgraph::loaders {
 
 namespace {
 
+ParamValue json_to_param_value(const json &j, const std::string &path) {
+  if (j.is_number_float()) {
+    return j.get<double>();
+  } else if (j.is_number_integer()) {
+    return j.get<int64_t>();
+  } else if (j.is_boolean()) {
+    return j.get<bool>();
+  } else if (j.is_string()) {
+    return j.get<std::string>();
+  } else {
+    throw std::runtime_error("JSON parse error at " + path +
+                             ": Unsupported type for Variant");
+  }
+}
+
 // Convert JSON value to Variant
 Variant json_to_variant(const json &j, const std::string &path) {
   if (j.is_number_float()) {
@@ -43,7 +58,7 @@ TransformSpec parse_transform(const json &j, const std::string &base_path) {
   if (j.contains("params") && j["params"].is_object()) {
     for (auto &[key, value] : j["params"].items()) {
       std::string param_path = path + "/params/" + key;
-      spec.params[key] = json_to_variant(value, param_path);
+      spec.params[key] = json_to_param_value(value, param_path);
     }
   }
 
@@ -117,7 +132,7 @@ ModelSpec parse_model(const json &j, const std::string &base_path,
   if (j.contains("params") && j["params"].is_object()) {
     for (auto &[key, value] : j["params"].items()) {
       std::string param_path = path + "/params/" + key;
-      spec.params[key] = json_to_variant(value, param_path);
+      spec.params[key] = json_to_param_value(value, param_path);
     }
   }
 

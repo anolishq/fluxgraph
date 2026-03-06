@@ -16,7 +16,7 @@ struct SignalSpec {
 /// POD specification for a transform (protocol-agnostic)
 struct TransformSpec {
   std::string type; // "linear", "first_order_lag", "delay", etc.
-  std::map<std::string, Variant> params;
+  ParamMap params;
 };
 
 /// POD specification for a signal edge in the graph
@@ -30,7 +30,7 @@ struct EdgeSpec {
 struct ModelSpec {
   std::string id;   // e.g., "chamber_air"
   std::string type; // "thermal_mass"
-  std::map<std::string, Variant> params;
+  ParamMap params;
 };
 
 /// POD specification for a rule action

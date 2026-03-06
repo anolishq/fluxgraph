@@ -17,6 +17,31 @@ std::string format_yaml_error(const std::string &message,
          ", column " + std::to_string(mark.column + 1) + ": " + message;
 }
 
+ParamValue yaml_to_param_value(const YAML::Node &node, const std::string &path) {
+  if (node.IsScalar()) {
+    // Try to determine type from the actual content
+    try {
+      // Try boolean first
+      if (node.as<std::string>() == "true" ||
+          node.as<std::string>() == "false") {
+        return node.as<bool>();
+      }
+      // Try integer
+      if (node.as<std::string>().find('.') == std::string::npos) {
+        return node.as<int64_t>();
+      }
+      // Try double
+      return node.as<double>();
+    } catch (...) {
+      // Fall back to string
+      return node.as<std::string>();
+    }
+  } else {
+    throw std::runtime_error("YAML parse error at " + path +
+                             ": Expected scalar value for Variant");
+  }
+}
+
 // Convert YAML node to Variant
 Variant yaml_to_variant(const YAML::Node &node, const std::string &path) {
   if (node.IsScalar()) {
@@ -61,7 +86,7 @@ TransformSpec parse_transform(const YAML::Node &node,
     for (auto it = node["params"].begin(); it != node["params"].end(); ++it) {
       std::string key = it->first.as<std::string>();
       std::string param_path = path + "/params/" + key;
-      spec.params[key] = yaml_to_variant(it->second, param_path);
+      spec.params[key] = yaml_to_param_value(it->second, param_path);
     }
   }
 
@@ -131,7 +156,7 @@ ModelSpec parse_model(const YAML::Node &node, size_t index) {
     for (auto it = node["params"].begin(); it != node["params"].end(); ++it) {
       std::string key = it->first.as<std::string>();
       std::string param_path = path + "/params/" + key;
-      spec.params[key] = yaml_to_variant(it->second, param_path);
+      spec.params[key] = yaml_to_param_value(it->second, param_path);
     }
   }
 
