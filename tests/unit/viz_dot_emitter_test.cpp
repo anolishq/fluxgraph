@@ -85,7 +85,8 @@ TEST(DotEmitter, FormatsStructuredTransformParams) {
 
   const std::string dot = viz::emit_dot(spec);
 
-  EXPECT_NE(dot.find("config={name=\"fir\", taps=[1, 2]}"), std::string::npos);
+  EXPECT_NE(dot.find("config={name=\\\"fir\\\", taps=[1, 2]}"),
+            std::string::npos);
 }
 
 TEST(DotEmitter, ReportsExtensionTransformTypesSortedAndUnique) {
