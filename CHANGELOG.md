@@ -217,6 +217,6 @@ FluxGraph follows these principles:
 
 ---
 
-[0.1.1]: https://github.com/FEASTorg/fluxgraph/releases/tag/v0.1.1
-[0.1.0]: https://github.com/FEASTorg/fluxgraph/releases/tag/v0.1.0
-[unreleased]: https://github.com/FEASTorg/fluxgraph/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/anolishq/fluxgraph/releases/tag/v0.1.1
+[0.1.0]: https://github.com/anolishq/fluxgraph/releases/tag/v0.1.0
+[unreleased]: https://github.com/anolishq/fluxgraph/compare/v0.1.1...HEAD

@@ -1,6 +1,6 @@
 # FluxGraph
 
-[![CI](https://github.com/FEASTorg/fluxgraph/actions/workflows/ci.yml/badge.svg)](https://github.com/FEASTorg/fluxgraph/actions/workflows/ci.yml)
+[![CI](https://github.com/anolishq/fluxgraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anolishq/fluxgraph/actions/workflows/ci.yml)
 
 **A protocol-agnostic physics simulation library for embedded systems.**
 
@@ -26,7 +26,7 @@ FluxGraph is a standalone C++ library that provides signal storage, graph compil
 
 ```bash
 # Clone
-git clone https://github.com/FEASTorg/fluxgraph.git
+git clone https://github.com/anolishq/fluxgraph.git
 cd fluxgraph
 
 # Prerequisite
@@ -153,12 +153,12 @@ AGPL v3 License - See [LICENSE](LICENSE) for details
 
 ## Contributing
 
-This project is part of the FEAST ecosystem. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+This project is part of the Anolis ecosystem. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Related Projects
 
-- [anolis-provider-sim](https://github.com/FEASTorg/anolis-provider-sim) - Simulation provider which uses FluxGraph for physics simulation
-- [anolis](https://github.com/FEASTorg/anolis) - FEAST automation runtime
+- [anolis-provider-sim](https://github.com/anolishq/anolis-provider-sim) - Simulation provider which uses FluxGraph for physics simulation
+- [anolis](https://github.com/anolishq/anolis) - Machine runtime
 
 ## Version
 
