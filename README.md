@@ -4,7 +4,9 @@
 
 **A protocol-agnostic physics simulation library for embedded systems.**
 
-FluxGraph is a standalone C++ library that provides signal storage, graph compilation, transforms, models, and deterministic tick execution. FluxGraph enables embeddable physics simulation in any C++ host application.
+FluxGraph is a standalone C++ library that provides signal storage, graph compilation,
+transforms, models, and deterministic tick execution. FluxGraph enables embeddable
+physics simulation in any C++ host application.
 
 ## Features
 

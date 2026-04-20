@@ -526,7 +526,7 @@ Example: tau=1.0s -> dt <= 0.1s
 
 For Delay:
 
-```
+```text
 dt should divide delay_sec evenly
 Example: delay=0.5s -> dt=0.1s (5 samples) or 0.05s (10 samples)
 ```
@@ -608,7 +608,7 @@ All transforms validated against analytical solutions (see tests/analytical/):
 
 ## Future Enhancements
 
-### Additional Transforms Under Consideration:
+### Additional Transforms Under Consideration
 
 - **PID Controller** - Proportional-Integral-Derivative control
 - **LUT (Lookup Table)** - Piecewise linear interpolation
