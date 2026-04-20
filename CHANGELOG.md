@@ -7,89 +7,122 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Engine tick semantics now follow model-first then edge-propagation execution for immediate within-tick signal flow.
-- Edge processing now writes using target signal contracts (or target-local unit state), and no longer copies source unit metadata during propagation.
-- Graph compiler supports delay-mediated feedback policy by detecting cycles on the non-delay subgraph.
-- Graph compiler topological ordering is deterministic for non-delay edges (stable tie-break by `SignalId`).
-- Server `--dt` is now wired into runtime timestep and compile-time stability validation.
-- GoogleTest discovery switched to `POST_BUILD` mode for more reliable Visual Studio multi-config test registration.
-- Graph schema now supports explicit top-level `signals` unit contracts in JSON/YAML.
-- Transform/model registration APIs now include signature-aware strict-mode variants:
-  - `register_transform_factory_with_signature(...)`
-  - `register_model_factory_with_signature(...)`
-- Compiler now supports policy-driven dimensional validation:
-  - `DimensionalPolicy::permissive`
-  - `DimensionalPolicy::strict`
-- Strict-mode rule-threshold validation now requires declared LHS signal unit contracts.
-- CI now includes a required strict-dimensional-validation lane with artifact upload.
-- Graph configuration params now use structured `ParamValue` trees for model and transform parameters (`ParamMap`), while command/rule args remain scalar `Variant` values.
+## [1.0.2] - 2026-04-20
 
 ### Added
 
-- Runtime stability validation in `Engine::tick` (`dt` must be positive and within model stability limits).
-- Rule condition execution in compiler for comparator expressions:
-  - `<`, `<=`, `>`, `>=`, `==`, `!=`
-- Compiler parameter parsing hardening:
-  - numeric coercion `int64 -> double` where valid
-  - path-precise parameter type/missing-key diagnostics
-  - optional `noise.seed` default
-  - alias support for `saturation` (`min_value/max_value`) and `rate_limiter` (`max_rate`)
-- Single-writer ownership checks across model outputs and edge targets.
-- Server write-authority enforcement rejecting writes to protected model-owned and edge-derived signals.
-- New/expanded tests covering:
-  - immediate chain propagation
-  - rule condition emission path
-  - delay-mediated cycle acceptance
-  - stability validation (compile-time + runtime paths)
-  - server protected-write rejection
-  - server `--dt` timestep behavior
-  - SignalStore unit-declaration behavior
-- Benchmark evidence tooling:
-  - policy profiles (`local`, `ci-hosted`, `ci-dedicated`)
-  - benchmark evaluation script (`scripts/evaluate_benchmarks.py`)
-  - benchmark evidence CI workflow with artifact upload (`.github/workflows/benchmark-evidence.yml`)
-- Numerical validation framework:
-  - `thermal_mass` integration method policy (`forward_euler`, `rk4`)
-  - numerical validation runner (`scripts/run_numerical_validation.py`)
-  - thermal validation target (`tests/validation/thermal_mass_validation.cpp`)
-  - numerical validation CI evidence workflow (`.github/workflows/numerical-validation-evidence.yml`)
-  - methodology/evidence docs (`docs/validation-methodology.md`, `docs/numerical-methods.md`)
-- Dimensional-analysis core primitives:
-  - `UnitKind`, `DimensionVector`, `UnitDef`, `UnitConversion`
-  - curated `UnitRegistry` with affine temperature conversions and absolute/delta temperature boundary checks
-- New `unit_convert` transform for explicit registry-derived cross-unit conversion (`to_unit`, optional `from_unit` assertion).
+- gRPC server (`fluxgraph-server`): compiles and runs FluxGraph as a network service,
+  accepting `LoadGraph`, `Step`, `WriteSignal`, `ReadSignal`, and `Subscribe` RPCs.
+  Optional; built via `add_subdirectory(server)`.
+- Server write-authority enforcement rejecting writes to protected model-owned and
+  edge-derived signals.
+- Server `--dt` flag wired into runtime timestep and compile-time stability
+  validation.
+- `unit_convert` transform: explicit registry-derived cross-unit conversion with
+  `to_unit` and optional `from_unit` assertion.
+- `state_space_siso_discrete` built-in model: structured `A_d`, `B_d`, `C`, `D`,
+  `x0` parameters with compile-time shape validation, analytical tests for
+  deterministic trajectory, and reset behavior. SISO example and docs added.
+- `dc_motor` model: coupled electrical–mechanical dynamics, curated
+  electrical/rotational units, strict compiler signatures, unit and analytical
+  tests, Example 9.
+- `mass_spring_damper` model: curated mechanical units, compiler signatures, tests,
+  example, and docs.
+- `PT1` / `PT2` built-in process models: strict `ModelSignature` metadata, minimal
+  time units, expanded unit and analytical test coverage.
+- `thermal_rc2` two-node thermal model with shared thermal integration utilities,
+  docs, tests, and example.
+- Dimensional-analysis core: `UnitKind`, `DimensionVector`, `UnitDef`,
+  `UnitConversion`; curated `UnitRegistry` with affine temperature conversions and
+  absolute/delta boundary checks.
+- Compiler dimensional validation policy: `DimensionalPolicy::permissive` and
+  `DimensionalPolicy::strict`; strict-mode requires declared LHS signal unit
+  contracts.
 - Compiled-program signal contract metadata propagated into runtime preload.
-- SignalStore contract/runtime helpers:
-  - `write_with_contract_unit(...)`
-  - `has_declared_unit(...)`
-  - `declared_unit(...)`
-- New/expanded unit tests for:
-  - unit registry conversions and compatibility checks
-  - strict-mode dimensional compiler rejection paths and permissive warning paths
-  - target-contract edge write behavior
-  - JSON/YAML loader `signals` parsing
-  - `unit_convert` transform behavior
-- Dimensional validation automation:
-  - `scripts/run_dimensional_validation.py` for strict test evidence generation
-  - scheduled/dispatch evidence workflow (`.github/workflows/dimensional-validation-evidence.yml`)
-- Structured-parameter model support:
-  - built-in `state_space_siso_discrete` model (`A_d`, `B_d`, `C`, `D`, `x0`)
-  - compile-time structured-parameter validation hook in model signatures
-  - unit + analytical tests for shape validation, deterministic trajectory, and reset behavior
-- Loader hardening for structured params:
-  - centralized parse limits (depth, node count, collection sizes, string size)
-  - recursive model/transform param parsing in JSON/YAML loaders
-  - scalar-only enforcement for rule action `args`
+- `SignalStore` contract helpers: `write_with_contract_unit`, `has_declared_unit`,
+  `declared_unit`.
+- Graph schema: explicit top-level `signals` unit contracts in JSON/YAML.
+- Structured `ParamValue` / `ParamMap` type for model and transform parameters
+  (command/rule args remain scalar `Variant`).
+- Centralized parse limits for structured params (depth, node count, collection
+  sizes, string size) enforced in JSON/YAML loaders.
+- Transform/model registration variants with signature awareness:
+  `register_transform_factory_with_signature`, `register_model_factory_with_signature`.
+- Rule condition execution: `<`, `<=`, `>`, `>=`, `==`, `!=` comparators (was
+  previously hardcoded false).
+- Compiler parameter parsing: numeric coercion (`int64 → double`), path-precise
+  diagnostics, optional `noise.seed` default, `saturation`/`rate_limiter` aliases.
+- Single-writer ownership checks across model outputs and edge targets.
+- Runtime stability validation in `Engine::tick` (`dt` must be positive and within
+  model stability limits).
+- Benchmark evidence tooling: policy profiles (`local`, `ci-hosted`,
+  `ci-dedicated`); `scripts/evaluate_benchmarks.py`; CI evidence workflow.
+- Numerical validation framework: `thermal_mass` solver strategies
+  (`forward_euler`, `rk4`); `scripts/run_numerical_validation.py`; numerical
+  validation CI evidence workflow; methodology/evidence docs.
+- Dimensional validation automation: `scripts/run_dimensional_validation.py`;
+  scheduled/dispatch CI evidence workflow.
+- `thermal_mass` integration method policy (`forward_euler`, `rk4`) with
+  method-dependent stability, regression, and determinism coverage.
+- Expanded test coverage: immediate chain propagation, rule condition emission,
+  delay-mediated cycle acceptance, stability validation, server protected-write
+  rejection, server `--dt` behavior, `SignalStore` unit-declaration behavior.
+- CI: required strict-dimensional-validation lane with artifact upload; Windows
+  diagram CI parity; shared docs check workflow.
+- Release workflow: on `v*` tag, builds `ci-linux-release-server`, packages
+  `fluxgraph-server` binary + source tarball + `manifest.json` + `SHA256SUMS`.
+
+### Changed
+
+- Engine tick semantics: model-first then edge-propagation for immediate
+  within-tick signal flow.
+- Edge processing writes using target signal contracts (no longer copies source
+  unit metadata during propagation).
+- Graph compiler: delay-mediated feedback policy detects cycles on the non-delay
+  subgraph; topological ordering is deterministic (stable tie-break by `SignalId`).
+- Compiler architecture split: built-in transform/model registration is now
+  family-scoped.
+- Internal helper module and dimensional signature validation extracted to
+  dedicated compilation units.
+- GoogleTest discovery switched to `POST_BUILD` mode for reliable Visual Studio
+  multi-config test registration.
+- Org references updated from `feast` / `FEASTorg` to `anolis` / `anolishq`
+  throughout.
+- Markdownlint config tightened to org canonical ruleset.
+- Docs: angle brackets in method signatures escaped for VitePress; case-sensitive
+  doc links corrected.
 
 ### Fixed
 
-- Rule execution path was previously non-functional (conditions were hardcoded false).
-- Stability validation function existed but was not integrated into active server compile/load path.
-- CLI timestep argument was previously parsed but not applied to service runtime behavior.
-- Signal unit contract now prevents accidental mismatches while avoiding premature lock-in to `"dimensionless"` defaults.
-- Windows test executables no longer link both `gtest_main` and `gmock` runtimes in `fluxgraph_tests`, which could cause zero discovered/registered tests at runtime.
+- Rule execution path was non-functional (conditions hardcoded false) — now fully
+  wired.
+- Stability validation function existed but was not applied during active server
+  compile/load path.
+- CLI `--dt` was parsed but not applied to service runtime timestep.
+- Signal unit contract no longer accidentally locks signals to `"dimensionless"`.
+- Windows: `fluxgraph_tests` no longer links both `gtest_main` and `gmock` runtimes
+  (was causing zero discovered tests).
+- DOT emitter test: match escape-quote form after `TransformSpec::params` typed as
+  `ParamValue`.
+
+## [1.0.1] - 2024-02-16
+
+### Fixed
+
+- Removed all Unicode and emoji characters for maximum terminal compatibility:
+  degree symbols (`°`) replaced with `degC`/`deg`; mathematical symbols (`≥`, `≤`,
+  `±`, `∞`, `π`, `τ`, `Δ`, `∫`) replaced with ASCII equivalents. Affected files:
+  documentation, examples, tests, header comments.
+
+## [1.0.0] - 2024-02-16
+
+Initial anolishq release. Core library stable; gRPC server scaffolded.
+See `[0.1.1]` and `[0.1.0]` below for historical FEASTorg-era feature inventory.
+
+### Added
+
+- CMake export configuration (`cmake/fluxgraphConfig.cmake.in`).
+- v1.0.0 API documentation update.
 
 ## [0.1.1] - 2024-02-16
 
