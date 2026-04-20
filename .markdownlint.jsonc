@@ -1,0 +1,10 @@
+{
+  "default": true,
+  "MD013": false,
+  "MD024": { "siblings_only": true }, // CHANGELOG and API reference repeat section headings across separate release/API blocks.
+  "MD032": false, // docs/graph-visualization.md uses compact mixed ordered/unordered list blocks pending structural rewrite.
+  "MD033": false, // docs/schema-yaml.md includes inline HTML (<br>) in generated/reference table content.
+  "MD040": false, // multiple architecture/reference docs still contain unlabeled fenced blocks from generated or legacy prose.
+  "MD058": false, // schema-json/schema-yaml reference docs contain many generated tables without surrounding blank lines.
+  "MD060": false // schema and reference docs retain mixed/compact table pipe styles from generated content.
+}

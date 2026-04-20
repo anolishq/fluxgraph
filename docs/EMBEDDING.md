@@ -156,7 +156,7 @@ SOURCES = src/main.cpp \
           fluxgraph/src/thermal_mass.cpp
 
 your_app: $(SOURCES)
-	$(CXX) $(CXXFLAGS) -o your_app $(SOURCES)
+  $(CXX) $(CXXFLAGS) -o your_app $(SOURCES)
 ```
 
 ---
@@ -827,7 +827,7 @@ cmake --build . --config Release
 
 ## Support
 
-**Issues:** https://github.com/your-org/fluxgraph/issues
+**Issues:** <https://github.com/your-org/fluxgraph/issues>
 
 **Questions:** Post issue with "question" label
 

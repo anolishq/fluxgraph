@@ -409,7 +409,7 @@ edges:
         tau_s: 0.5
 ```
 
-**Frequency Response:** 3dB cutoff at f_c = 1 / (2*pi * tau)
+**Frequency Response:** `3dB cutoff at f_c = 1 / (2*pi*tau)`
 
 ### 3. Delay Transform
 

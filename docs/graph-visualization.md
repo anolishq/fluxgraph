@@ -61,10 +61,11 @@ Guarantees:
 
 1. Emitter always writes node IDs and edge labels as quoted DOT strings.
 2. Escape rules:
+
 - `\` -> `\\`
 - `"` -> `\"`
 - newline -> `\n`
-3. Signal paths containing `/`, `.`, spaces, or other punctuation are preserved via quoting.
+1. Signal paths containing `/`, `.`, spaces, or other punctuation are preserved via quoting.
 
 ## 6.2 Ordering Rules
 
@@ -107,12 +108,16 @@ Exit codes:
 ## 8. Evidence Mapping
 
 1. Deterministic DOT output:
+
 - `tests/unit/viz_dot_emitter_test.cpp`
 - `tests/unit/viz_dot_golden_test.cpp`
-2. CLI DOT determinism end-to-end:
+1. CLI DOT determinism end-to-end:
+
 - `tests/integration/diagram_cli_e2e.cmake` (registered as `integration.diagram_cli_json_dot`)
-3. Core isolation:
+1. Core isolation:
+
 - default presets keep `FLUXGRAPH_BUILD_DIAGRAM_TOOL=OFF`
-4. Renderer coverage in CI:
+1. Renderer coverage in CI:
+
 - `linux-matrix` lane `diagram-dot`
 - `diagram-render-smoke` job in `.github/workflows/ci.yml`

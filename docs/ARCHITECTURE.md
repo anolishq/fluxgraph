@@ -137,7 +137,7 @@ Example: Emergency stop based on filtered temperature, not raw sensor.
 
 ### Stage 5: Post-Tick Write
 
-_(Implicit - all writes already committed to store)_
+#### Implicit: all writes already committed to store
 
 **Purpose:** Store now contains new state for next tick
 

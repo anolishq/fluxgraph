@@ -3,7 +3,7 @@
 Thanks for contributing.
 
 FluxGraph is part of the Anolis ecosystem. For shared organization-level engineering and governance context, see:  
-https://github.com/anolishq/
+<https://github.com/anolishq/>
 
 ## Local Development
 

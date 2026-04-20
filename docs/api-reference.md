@@ -686,7 +686,7 @@ engine.tick(dt, store);  // Throws if no program loaded
 store.reserve(1000);  // If you know signal count
 ```
 
-2. **Reuse SignalIds:**
+1. **Reuse SignalIds:**
 
 ```cpp
 // Cache IDs, avoid repeated resolve()
@@ -694,18 +694,18 @@ auto temp_id = ns.intern("chamber.temp");
 // Use temp_id many times
 ```
 
-3. **Minimize graph complexity:**
+1. **Minimize graph complexity:**
 
 - Fewer edges = faster execution
 - Long transform chains = more overhead
 
-4. **Choose appropriate dt:**
+1. **Choose appropriate dt:**
 
 - Too small: wasted computation
 - Too large: instability
 - Use model.compute_stability_limit() as guide
 
-5. **Profile before optimizing:**
+1. **Profile before optimizing:**
 
 - Run benchmarks (see tests/benchmarks/)
 - Most time typically in models, not transforms
