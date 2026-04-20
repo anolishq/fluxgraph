@@ -104,7 +104,7 @@ std::string path = ns.lookup(signal_id);
 **size_t size()**
 Get total number of interned signals.
 
-**std::vector<std::string> all_paths()**
+**std::vector&lt;std::string&gt; all_paths()**
 Get all interned signal paths.
 
 **void clear()**
@@ -170,7 +170,7 @@ engine.tick(0.1, store);  // 100ms time step
 4. Rule evaluation (command emission)
 5. Post-tick write (commit changes)
 
-**std::vector<Command> drain_commands()**
+**std::vector&lt;Command&gt; drain_commands()**
 Retrieve and clear command queue.
 
 ```cpp
