@@ -428,7 +428,7 @@ auto spec = fluxgraph::loaders::load_json_string(json);
 **See also:**
 
 - [JSON_SCHEMA.md](schema-json.md) - Complete schema reference
-- [examples/03_json_graph/](../examples/03_json_graph/) - Working example
+- [examples/03_json_graph/](https://github.com/anolishq/fluxgraph/tree/main/examples/03_json_graph) - Working example
 
 ### YAML Loader
 
@@ -475,7 +475,7 @@ auto spec = fluxgraph::loaders::load_yaml_string(yaml);
 **See also:**
 
 - [YAML_SCHEMA.md](schema-yaml.md) - Complete schema reference
-- [examples/04_yaml_graph/](../examples/04_yaml_graph/) - Working example
+- [examples/04_yaml_graph/](https://github.com/anolishq/fluxgraph/tree/main/examples/04_yaml_graph) - Working example
 
 **Note:** Loaders are completely optional. You can always construct `GraphSpec` programmatically without any file parsing dependencies.
 
@@ -758,4 +758,4 @@ int main() {
 }
 ```
 
-See [examples/](../examples/) for more complete examples.
+See [examples/](https://github.com/anolishq/fluxgraph/tree/main/examples) for more complete examples.

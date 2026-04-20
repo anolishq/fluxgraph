@@ -182,7 +182,7 @@ Execution order: A, B, C
 
 **Complexity:** O(V + E) where V=signals, E=edges
 
-**Implementation:** See [compiler.cpp:109-153](../src/compiler.cpp#L109-L153)
+**Implementation:** See `src/compiler.cpp` lines 109-153.
 
 ---
 
@@ -408,7 +408,7 @@ transform_factory.register_type("my_transform",
     [](const ParamMap& p) { return std::make_unique<MyTransform>(p); });
 ```
 
-See [EMBEDDING.md](embedding.md) for details.
+See [EMBEDDING.md](EMBEDDING.md) for details.
 
 ### Custom Models
 
@@ -631,4 +631,4 @@ FluxGraph achieves high-performance deterministic simulation through:
 
 **Result:** Sub-10ms ticks for 1000-signal graphs with zero dependencies.
 
-**Next:** See [TRANSFORMS.md](transforms.md) for transform details, [EMBEDDING.md](embedding.md) for integration guide.
+**Next:** See [TRANSFORMS.md](TRANSFORMS.md) for transform details, [EMBEDDING.md](EMBEDDING.md) for integration guide.

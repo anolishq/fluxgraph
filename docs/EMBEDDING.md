@@ -301,8 +301,8 @@ auto spec2 = fluxgraph::loaders::load_yaml_file("graph.yaml");
 
 - [JSON_SCHEMA.md](schema-json.md) - JSON graph format reference
 - [YAML_SCHEMA.md](schema-yaml.md) - YAML graph format reference
-- [examples/03_json_graph/](../examples/03_json_graph/) - JSON example
-- [examples/04_yaml_graph/](../examples/04_yaml_graph/) - YAML example
+- [examples/03_json_graph/](https://github.com/anolishq/fluxgraph/tree/main/examples/03_json_graph) - JSON example
+- [examples/04_yaml_graph/](https://github.com/anolishq/fluxgraph/tree/main/examples/04_yaml_graph) - YAML example
 
 ---
 
@@ -819,16 +819,16 @@ cmake --build . --config Release
 ## Further Reading
 
 - [API.md](api-reference.md) - Complete API reference
-- [architecture.md](architecture.md) - Design rationale
-- [TRANSFORMS.md](transforms.md) - Transform details
-- [examples/](../examples/) - Full working examples
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Design rationale
+- [TRANSFORMS.md](TRANSFORMS.md) - Transform details
+- [examples/](https://github.com/anolishq/fluxgraph/tree/main/examples) - Full working examples
 
 ---
 
 ## Support
 
-**Issues:** <https://github.com/your-org/fluxgraph/issues>
+**Issues:** <https://github.com/anolishq/fluxgraph/issues>
 
 **Questions:** Post issue with "question" label
 
-**Contributing:** See [CONTRIBUTING.md](../CONTRIBUTING.md)
+**Contributing:** See [CONTRIBUTING.md](https://github.com/anolishq/fluxgraph/blob/main/CONTRIBUTING.md)

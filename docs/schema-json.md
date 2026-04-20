@@ -833,5 +833,5 @@ cmake --build build
 
 - [YAML_SCHEMA.md](schema-yaml.md) - YAML equivalent (more human-friendly)
 - [API.md](api-reference.md) - C++ API reference
-- [TRANSFORMS.md](transforms.md) - Detailed transform documentation
-- [examples/03_json_graph/](../examples/03_json_graph/) - Working example
+- [TRANSFORMS.md](TRANSFORMS.md) - Detailed transform documentation
+- [examples/03_json_graph/](https://github.com/anolishq/fluxgraph/tree/main/examples/03_json_graph) - Working example

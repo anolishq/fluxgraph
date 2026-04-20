@@ -814,5 +814,5 @@ Choose based on your use case:
 
 - [JSON_SCHEMA.md](schema-json.md) - JSON equivalent
 - [API.md](api-reference.md) - C++ API reference
-- [TRANSFORMS.md](transforms.md) - Detailed transform documentation
-- [examples/04_yaml_graph/](../examples/04_yaml_graph/) - Working example
+- [TRANSFORMS.md](TRANSFORMS.md) - Detailed transform documentation
+- [examples/04_yaml_graph/](https://github.com/anolishq/fluxgraph/tree/main/examples/04_yaml_graph) - Working example

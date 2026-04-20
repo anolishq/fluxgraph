@@ -509,7 +509,7 @@ public:
 };
 ```
 
-See [EMBEDDING.md](embedding.md) for registration details.
+See [EMBEDDING.md](EMBEDDING.md) for registration details.
 
 ---
 
@@ -639,4 +639,4 @@ All transforms:
 - Validated analytically
 - Efficient (sub-microsecond per call in Release)
 
-**Next:** See [API.md](api-reference.md) for usage details, [EMBEDDING.md](embedding.md) for integration.
+**Next:** See [API.md](api-reference.md) for usage details, [EMBEDDING.md](EMBEDDING.md) for integration.

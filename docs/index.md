@@ -8,7 +8,7 @@ deterministic execution and strict compile-time validation options.
 1. [API Reference](api-reference.md)
 2. [JSON Schema](schema-json.md)
 3. [YAML Schema](schema-yaml.md)
-4. [Architecture](architecture.md)
+4. [Architecture](ARCHITECTURE.md)
 
 ## Validation and Evidence
 
