@@ -12,6 +12,12 @@ env:
   VCPKG_COMMIT: "66c0373dc7fca549e5803087b9487edfe3aca0a1"
 
 jobs:
+  metrics:
+    name: Collect metrics
+    uses: anolishq/.github/.github/workflows/metrics.yml@v1
+    with:
+      tag: ${{ github.ref_name }}
+
   release-linux-x86_64:
     name: Release (linux-x86_64)
     runs-on: ubuntu-24.04
@@ -105,3 +111,19 @@ jobs:
             SHA256SUMS
             manifest.json
           generate_release_notes: true
+
+  upload-metrics:
+    name: Upload metrics to release
+    runs-on: ubuntu-24.04
+    needs: [release-linux-x86_64, metrics]
+    steps:
+      - name: Download metrics artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: metrics-${{ github.event.repository.name }}-${{ github.run_number }}
+          path: metrics-out/
+
+      - name: Upload metrics.json to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: metrics-out/metrics.json
