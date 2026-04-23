@@ -37,6 +37,9 @@
 *.out
 *.app
 
+# Anolis package archives
+*.anpkg
+
 # debug information files
 *.dwo
 
