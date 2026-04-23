@@ -1,0 +1,5 @@
+# version-locations.txt for fluxgraph
+CMakeLists.txt:project\(.* VERSION ([0-9]+\.[0-9]+\.[0-9]+)
+include/fluxgraph/version.hpp:#define FLUXGRAPH_VERSION "([0-9]+\.[0-9]+\.[0-9]+)"
+vcpkg.json:"version": "([0-9]+\.[0-9]+\.[0-9]+)"
+# Add more locations if found in future

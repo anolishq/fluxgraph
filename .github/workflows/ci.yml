@@ -291,3 +291,9 @@ jobs:
           OUT="$RUNNER_TEMP/graph-smoke.svg"
           "$BIN" --in ./examples/03_json_graph/graph.json --out "$OUT" --format svg
           test -s "$OUT"
+
+  version-sync:
+    uses: anolishq/.github-anolishq/.github/workflows/version-sync.yml@main
+    with:
+      python-version: '3.12'
+      working-directory: '.'
