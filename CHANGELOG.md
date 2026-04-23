@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-04-23
+
+### Fixed
+
+- `include/fluxgraph/version.hpp` and `vcpkg.json` were stale at `0.1.1`; both
+  aligned to `1.0.3` to match `CMakeLists.txt`.
+
+### CI
+
+- Version-sync check wired: `version-locations.txt` added tracking `CMakeLists.txt`,
+  `include/fluxgraph/version.hpp`, and `vcpkg.json`; CI calls reusable `version-sync`
+  workflow from `anolishq/.github`.
+- `.anpkg` added to `.gitignore`.
+
 ## [1.0.3] - 2026-04-21
 
 ### CI
