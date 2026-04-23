@@ -19,12 +19,40 @@ physics simulation in any C++ host application.
 
 ## Quick Start
 
-### Prerequisites
+### Use as a library (recommended)
+
+FluxGraph is a header + compiled library. The easiest way to consume it is via CMake FetchContent
+pointing at a tagged release tarball:
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(
+    fluxgraph
+    URL https://github.com/anolishq/fluxgraph/releases/download/v1.0.4/fluxgraph-1.0.4-source.tar.gz
+)
+FetchContent_MakeAvailable(fluxgraph)
+target_link_libraries(your_target PRIVATE fluxgraph::fluxgraph)
+```
+
+Replace `v1.0.4` with the [latest release](https://github.com/anolishq/fluxgraph/releases/latest) tag.
+
+**FluxGraph server binary** (standalone gRPC simulation server):
+
+```bash
+VERSION=$(curl -fsSL https://api.github.com/repos/anolishq/fluxgraph/releases/latest | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
+curl -fsSL "https://github.com/anolishq/fluxgraph/releases/download/v${VERSION}/fluxgraph-${VERSION}-linux-x86_64.tar.gz" \
+  | tar -xz
+./bin/fluxgraph-server --help
+```
+
+### Build from source (contributors)
+
+#### Prerequisites
 
 - CMake 3.20 or later
 - C++17 compatible compiler (MSVC 2019+, GCC 9+, Clang 10+)
 
-### Building
+#### Building
 
 ```bash
 # Clone
