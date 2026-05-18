@@ -17,4 +17,4 @@ on:
 
 jobs:
   check:
-    uses: anolishq/.github/.github/workflows/docs-check.yml@v1
+    uses: anolishq/.github/.github/workflows/docs-check.yml@v2
