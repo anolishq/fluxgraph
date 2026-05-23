@@ -1,9 +1,0 @@
-# FluxGraph Python integration dependencies (range policy).
-# CI installs from requirements-lock.txt for deterministic runs.
-grpcio>=1.78.0,<2.0.0
-grpcio-tools>=1.78.0,<2.0.0
-protobuf>=6.33.0,<7.0.0
-pyyaml>=6.0.0,<7.0.0
-pytest>=8.0.0,<9.0.0
-ruff>=0.15.0,<1.0.0
-mypy>=1.8.0,<2.0.0
