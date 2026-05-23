@@ -1,6 +1,6 @@
 colorama==0.4.6
 grpcio==1.80.0
-grpcio-tools==1.78.1
+grpcio-tools==1.80.0
 iniconfig==2.3.0
 librt==0.8.1
 mypy==1.19.1
