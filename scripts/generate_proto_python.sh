@@ -30,10 +30,13 @@ fi
 
 # Find Python executable (prefer venv)
 PYTHON_EXE=""
-VENV_PATH="$REPO_ROOT/.venv-fxg"
+VENV_PATH="$REPO_ROOT/.venv"
 
 if [ -f "$VENV_PATH/bin/python3" ]; then
     PYTHON_EXE="$VENV_PATH/bin/python3"
+    echo "Using venv Python: $PYTHON_EXE"
+elif [ -f "$REPO_ROOT/.venv-fxg/bin/python3" ]; then
+    PYTHON_EXE="$REPO_ROOT/.venv-fxg/bin/python3"
     echo "Using venv Python: $PYTHON_EXE"
 elif command -v python3 &>/dev/null; then
     PYTHON_EXE="python3"
