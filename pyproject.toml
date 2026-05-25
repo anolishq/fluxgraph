@@ -1,3 +1,30 @@
+[project]
+name = "fluxgraph"
+version = "0.0.0"
+description = "FluxGraph – Python integration test and validation tooling"
+requires-python = ">=3.12"
+# No runtime dependencies – this is a C++ project.
+# Python is used only for gRPC integration tests and validation.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "grpcio>=1.78.0,<2.0.0",
+    "grpcio-tools>=1.78.0,<2.0.0",
+    "protobuf>=6.33.0,<7.0.0",
+    "pyyaml>=6.0.0,<7.0.0",
+    "pytest>=8.0.0,<9.0.0",
+    "ruff>=0.15.0,<1.0.0",
+    "mypy>=1.8.0,<2.0.0",
+]
+
+[tool.uv]
+# Not a distributable Python package – deps are for test tooling only.
+package = false
+
+# ---------------------------------------------------------------------------
+# Tool configuration
+# ---------------------------------------------------------------------------
 [tool.ruff]
 line-length = 120
 target-version = "py312"
