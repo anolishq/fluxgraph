@@ -128,7 +128,12 @@ jobs:
         run: uv sync --locked --extra dev
 
       - name: Configure
-        run: cmake --preset "${{ matrix.preset }}"
+        run: |
+          EXTRA_ARGS=""
+          if [ "${{ matrix.grpc_integration }}" = "true" ]; then
+            EXTRA_ARGS="-DPython3_EXECUTABLE=$(pwd)/.venv/bin/python"
+          fi
+          cmake --preset "${{ matrix.preset }}" $EXTRA_ARGS
 
       - name: Build
         run: cmake --build --preset "${{ matrix.preset }}" --parallel
