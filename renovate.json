@@ -17,6 +17,12 @@
       "description": "Supply-chain safety: wait 3 days for pypi packages",
       "matchManagers": ["pep621"],
       "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Block protobuf v7 until grpcio-tools supports protobuf>=7",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["protobuf"],
+      "allowedVersions": "<7.0.0"
     }
   ]
 }
