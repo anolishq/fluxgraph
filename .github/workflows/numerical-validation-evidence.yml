@@ -35,10 +35,10 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Setup vcpkg
-        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
+        uses: anolishq/.github/.github/actions/setup-vcpkg@main
         with:
-          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
-          doNotCache: false
+          vcpkg-commit: ${{ env.VCPKG_COMMIT }}
+          triplet: x64-windows-v143
 
       - name: Setup Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6

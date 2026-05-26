@@ -105,10 +105,10 @@ jobs:
           sudo apt-get install -y ninja-build g++
 
       - name: Setup vcpkg
-        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
+        uses: anolishq/.github/.github/actions/setup-vcpkg@main
         with:
-          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
-          doNotCache: false
+          vcpkg-commit: ${{ env.VCPKG_COMMIT }}
+          triplet: x64-linux
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         if: ${{ matrix.grpc_integration }}
@@ -161,10 +161,10 @@ jobs:
           sudo apt-get install -y ninja-build g++ python3
 
       - name: Setup vcpkg
-        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
+        uses: anolishq/.github/.github/actions/setup-vcpkg@main
         with:
-          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
-          doNotCache: false
+          vcpkg-commit: ${{ env.VCPKG_COMMIT }}
+          triplet: x64-linux
 
       - name: Run strict dimensional validation
         id: dimensional
@@ -194,10 +194,10 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Setup vcpkg
-        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
+        uses: anolishq/.github/.github/actions/setup-vcpkg@main
         with:
-          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
-          doNotCache: false
+          vcpkg-commit: ${{ env.VCPKG_COMMIT }}
+          triplet: x64-windows-v143
 
       - name: Configure
         run: cmake --preset ci-windows-release
@@ -217,10 +217,10 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Setup vcpkg
-        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
+        uses: anolishq/.github/.github/actions/setup-vcpkg@main
         with:
-          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
-          doNotCache: false
+          vcpkg-commit: ${{ env.VCPKG_COMMIT }}
+          triplet: x64-windows-v143
 
       - name: Configure
         run: cmake --preset ci-windows-release-diagram
@@ -245,10 +245,10 @@ jobs:
           sudo apt-get install -y ninja-build g++ graphviz
 
       - name: Setup vcpkg
-        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
+        uses: anolishq/.github/.github/actions/setup-vcpkg@main
         with:
-          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
-          doNotCache: false
+          vcpkg-commit: ${{ env.VCPKG_COMMIT }}
+          triplet: x64-linux
 
       - name: Configure diagram preset
         run: cmake --preset ci-linux-release-diagram
