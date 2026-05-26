@@ -35,10 +35,10 @@ jobs:
           sudo apt-get install -y ninja-build g++ python3
 
       - name: Setup vcpkg
-        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
+        uses: anolishq/.github/.github/actions/setup-vcpkg@main
         with:
-          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
-          doNotCache: false
+          vcpkg-commit: ${{ env.VCPKG_COMMIT }}
+          triplet: x64-linux
 
       - name: Resolve options
         id: opts
