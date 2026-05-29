@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- Add CI OK aggregator gate: removed `paths-ignore`, added `dorny/paths-filter`
+  to detect code-vs-docs changes, gated all jobs behind the filter, and added a
+  final `ok` job as the sole required status check for `main` branch protection.
+
 ## [1.0.4] - 2026-04-23
 
 ### Fixed
