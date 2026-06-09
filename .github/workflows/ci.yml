@@ -125,7 +125,7 @@ jobs:
           sudo apt-get install -y ninja-build g++
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@acf7758d393dab943086634dd9e07a1a49e6ce0a # main
+        uses: anolishq/.github/.github/actions/setup-vcpkg@ef4c42d66024dc4c42edf6971f98640d43965ebb # main
         with:
           vcpkg-commit: ${{ env.VCPKG_COMMIT }}
           triplet: x64-linux
@@ -183,7 +183,7 @@ jobs:
           sudo apt-get install -y ninja-build g++ python3
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@acf7758d393dab943086634dd9e07a1a49e6ce0a # main
+        uses: anolishq/.github/.github/actions/setup-vcpkg@ef4c42d66024dc4c42edf6971f98640d43965ebb # main
         with:
           vcpkg-commit: ${{ env.VCPKG_COMMIT }}
           triplet: x64-linux
@@ -218,7 +218,7 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@acf7758d393dab943086634dd9e07a1a49e6ce0a # main
+        uses: anolishq/.github/.github/actions/setup-vcpkg@ef4c42d66024dc4c42edf6971f98640d43965ebb # main
         with:
           vcpkg-commit: ${{ env.VCPKG_COMMIT }}
           triplet: x64-windows-v143
@@ -243,7 +243,7 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@acf7758d393dab943086634dd9e07a1a49e6ce0a # main
+        uses: anolishq/.github/.github/actions/setup-vcpkg@ef4c42d66024dc4c42edf6971f98640d43965ebb # main
         with:
           vcpkg-commit: ${{ env.VCPKG_COMMIT }}
           triplet: x64-windows-v143
@@ -273,7 +273,7 @@ jobs:
           sudo apt-get install -y ninja-build g++ graphviz
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@acf7758d393dab943086634dd9e07a1a49e6ce0a # main
+        uses: anolishq/.github/.github/actions/setup-vcpkg@ef4c42d66024dc4c42edf6971f98640d43965ebb # main
         with:
           vcpkg-commit: ${{ env.VCPKG_COMMIT }}
           triplet: x64-linux
@@ -295,7 +295,7 @@ jobs:
   version-sync:
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
-    uses: anolishq/.github/.github/workflows/version-sync.yml@acf7758d393dab943086634dd9e07a1a49e6ce0a # main
+    uses: anolishq/.github/.github/workflows/version-sync.yml@ef4c42d66024dc4c42edf6971f98640d43965ebb # main
     with:
       python-version: '3.12'
       working-directory: '.'
