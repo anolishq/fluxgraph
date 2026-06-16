@@ -29,6 +29,17 @@ def run_cmd(cmd: List[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _emit_captured(label: str, proc: subprocess.CompletedProcess[str]) -> None:
+    # The full logs live inside the artifact dir, which is not uploaded when a
+    # step fails early, so mirror them into the CI step log for visibility.
+    if proc.stdout:
+        print(f"----- {label} stdout -----", flush=True)
+        print(proc.stdout, flush=True)
+    if proc.stderr:
+        print(f"----- {label} stderr -----", flush=True)
+        print(proc.stderr, flush=True)
+
+
 def cmake_is_multi_config(preset: str, repo_root: Path) -> bool:
     result = run_cmd(["cmake", "--preset", preset, "-N", "-LA"], cwd=repo_root)
     blob = (result.stdout or "") + "\n" + (result.stderr or "")
@@ -173,6 +184,7 @@ def main() -> int:
         (output_dir / "configure.stderr.log").write_text(cfg.stderr or "", encoding="utf-8")
         if cfg.returncode != 0:
             print("Configure failed. See configure logs in", output_dir)
+            _emit_captured("configure", cfg)
             return cfg.returncode
 
         bld = run_cmd(build_cmd, cwd=repo_root)
@@ -180,6 +192,7 @@ def main() -> int:
         (output_dir / "build.stderr.log").write_text(bld.stderr or "", encoding="utf-8")
         if bld.returncode != 0:
             print("Build failed. See build logs in", output_dir)
+            _emit_captured("build", bld)
             return bld.returncode
 
     exe = pick_executable(build_dir, VALIDATION_TARGET, config)
