@@ -51,7 +51,10 @@ jobs:
           triplet: x64-linux
 
       - name: Configure
-        run: cmake --preset ci-linux-release-server
+        # Point CMake/ctest at the uv-managed venv so the integration.pytest
+        # test (run by ctest) can import pytest + the generated bindings,
+        # matching the CI server job.
+        run: cmake --preset ci-linux-release-server -DPython3_EXECUTABLE=$(pwd)/.venv/bin/python
 
       - name: Build
         run: cmake --build --preset ci-linux-release-server --parallel
