@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-06-16
+
+### Changed
+
+- Bump the vcpkg baseline to the vcpkg `2026.06.01` release: protobuf
+  `5.29.5` → `6.33.4`, grpc `1.71.0` → `1.76.0`, abseil and the rest refreshed.
+  No source changes required.
+- Centralize the vcpkg pin: the shared `setup-vcpkg` action now derives the
+  vcpkg commit from `vcpkg-configuration.json`, so the per-workflow
+  `VCPKG_COMMIT` env was removed.
+
 ### Fixed
 
 - Windows builds broke when GitHub migrated the `windows-2025` runner image
