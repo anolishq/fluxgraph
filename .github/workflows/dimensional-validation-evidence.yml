@@ -75,8 +75,9 @@ jobs:
           python3 scripts/run_dimensional_validation.py "${ARGS[@]}"
 
       - name: Upload dimensional artifacts
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: dimensional-validation-evidence-linux-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.opts.outputs.out_dir }}
-          if-no-files-found: error
+          if-no-files-found: warn

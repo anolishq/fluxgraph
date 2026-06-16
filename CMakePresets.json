@@ -26,13 +26,13 @@
       "name": "base-windows-msvc",
       "hidden": true,
       "inherits": "base",
-      "generator": "Visual Studio 17 2022",
-      "toolset": "v143",
+      "generator": "Visual Studio 18 2026",
+      "toolset": "v145",
       "architecture": "x64",
       "cacheVariables": {
         "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/triplets",
-        "VCPKG_TARGET_TRIPLET": "x64-windows-v143",
-        "VCPKG_HOST_TRIPLET": "x64-windows-v143"
+        "VCPKG_TARGET_TRIPLET": "x64-windows-v145",
+        "VCPKG_HOST_TRIPLET": "x64-windows-v145"
       }
     },
     {
