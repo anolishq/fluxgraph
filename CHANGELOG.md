@@ -7,8 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows builds broke when GitHub migrated the `windows-2025` runner image
+  from Visual Studio 2022 to Visual Studio 2026 (rollout 2026-06-08..06-15),
+  removing the `Visual Studio 17 2022` generator. Migrated the MSVC preset to
+  generator `Visual Studio 18 2026` with toolset `v145`, renamed the overlay
+  triplet `x64-windows-v143` -> `x64-windows-v145`, and updated the `triplet`
+  inputs in CI/evidence workflows accordingly.
+
 ### CI
 
+- Surface CMake configure/build output in the numerical, benchmark, and
+  dimensional evidence workflows: runner scripts now echo captured stdout/stderr
+  on failure, and artifact uploads run with `if: always()` (and
+  `if-no-files-found: warn`) so partial evidence is retained when a step fails
+  early.
 - Add CI OK aggregator gate: removed `paths-ignore`, added `dorny/paths-filter`
   to detect code-vs-docs changes, gated all jobs behind the filter, and added a
   final `ok` job as the sole required status check for `main` branch protection.

@@ -221,7 +221,7 @@ jobs:
         uses: anolishq/.github/.github/actions/setup-vcpkg@acf7758d393dab943086634dd9e07a1a49e6ce0a # main
         with:
           vcpkg-commit: ${{ env.VCPKG_COMMIT }}
-          triplet: x64-windows-v143
+          triplet: x64-windows-v145
 
       - name: Configure
         run: cmake --preset ci-windows-release
@@ -246,7 +246,7 @@ jobs:
         uses: anolishq/.github/.github/actions/setup-vcpkg@acf7758d393dab943086634dd9e07a1a49e6ce0a # main
         with:
           vcpkg-commit: ${{ env.VCPKG_COMMIT }}
-          triplet: x64-windows-v143
+          triplet: x64-windows-v145
 
       - name: Configure
         run: cmake --preset ci-windows-release-diagram
