@@ -1,23 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
-  "ignorePaths": ["requirements.txt", "requirements-lock.txt"],
+  "extends": ["local>anolishq/renovate-config"],
   "prConcurrentLimit": 3,
-  "lockFileMaintenance": {
-    "enabled": true,
-    "schedule": ["before 6am on monday"]
-  },
   "packageRules": [
-    {
-      "matchManagers": ["github-actions"],
-      "groupName": "github-actions",
-      "pinDigests": true
-    },
-    {
-      "description": "Supply-chain safety: wait 3 days for pypi packages",
-      "matchManagers": ["pep621"],
-      "minimumReleaseAge": "3 days"
-    },
     {
       "description": "Block protobuf v7 until grpcio-tools supports protobuf>=7",
       "matchManagers": ["pep621"],
