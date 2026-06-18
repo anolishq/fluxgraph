@@ -1,0 +1,20 @@
+name: Dependency Scan
+
+# Weekly keyless CVE scan of the vcpkg dependency set via the shared
+# reusable workflow. Non-blocking; findings in the job summary + artifact.
+# See the epic: anolishq/.github#28.
+
+on:
+  schedule:
+    - cron: "0 7 * * 1" # Mondays 07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    uses: anolishq/.github/.github/workflows/dependency-scan.yml@8288b78999ff65b61ac4eb1789c7efcf4c505819 # main
+    with:
+      triplet: x64-linux
+      features: "tests;json;yaml;server"
