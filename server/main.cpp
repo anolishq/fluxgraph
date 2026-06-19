@@ -1,7 +1,9 @@
 #include "service.hpp"
 #include <csignal>
 #include <fstream>
+#ifdef FLUXGRAPH_HAVE_GRPC_REFLECTION
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
+#endif
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
 #include <iostream>
@@ -145,8 +147,11 @@ int main(int argc, char *argv[]) {
     // Enable health check service
     grpc::EnableDefaultHealthCheckService(true);
 
-    // Enable server reflection (for grpcurl, etc.)
+#ifdef FLUXGRAPH_HAVE_GRPC_REFLECTION
+    // Enable server reflection (for grpcurl, etc.) when the grpc build provides
+    // it (the x64-linux-tsan minimal grpc omits the reflection component).
     grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+#endif
 
     // Build server
     std::string server_address = "0.0.0.0:" + std::to_string(port);
