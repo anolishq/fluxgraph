@@ -1,0 +1,118 @@
+name: Hardening
+
+# Memory-safety / data-race hardening for fluxgraph.
+#   - tsan:     ThreadSanitizer over the gRPC server (its state_mutex_ + tick_cv_
+#               worker coordination), exercised by the Python integration tests.
+#   - valgrind: shared org leak-check over the core unit-test binary.
+#   - fuzz:     shared org libFuzzer runner over the JSON + YAML graph loaders
+#               (the untrusted-input parsers).
+# Findings fail only when first-party; third-party false positives are scoped in
+# tsan.supp / valgrind.supp (first run per change = triage pass).
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  workflow_dispatch:
+
+concurrency:
+  group: fluxgraph-hardening-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tsan:
+    name: ThreadSanitizer (server)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Install Python integration deps
+        run: uv sync --locked --extra dev
+
+      - name: Setup vcpkg
+        uses: anolishq/.github/.github/actions/setup-vcpkg@0f4d8cd3c04dcb17fe128248a147b237c1465e0c # v2
+        with:
+          triplet: x64-linux
+
+      - name: Configure
+        run: cmake --preset ci-tsan -DPython3_EXECUTABLE="$(pwd)/.venv/bin/python"
+
+      - name: Build
+        run: cmake --build --preset ci-tsan --parallel
+
+      - name: Generate Python protobuf bindings
+        run: bash ./scripts/generate_proto_python.sh "$(pwd)/build/ci-tsan/python"
+
+      - name: Run tests with TSAN
+        env:
+          TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tsan.supp second_deadlock_stack=1 detect_deadlocks=1 history_size=7 log_path=${{ github.workspace }}/tsan-report"
+        run: |
+          set +e
+          set -o pipefail
+          export CTEST_PARALLEL_LEVEL=1
+          timeout 40m ctest --preset ci-tsan --timeout 600 -VV 2>&1 | tee tsan-output.log
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          if ls tsan-report.* >/dev/null 2>&1; then
+            echo "::error::ThreadSanitizer reported data races (see tsan-logs artifact)"
+            exit 1
+          fi
+
+          exit $EXIT_CODE
+
+      - name: Upload TSAN logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tsan-logs-${{ github.run_number }}
+          path: |
+            tsan-report.*
+            tsan-output.log
+            build/ci-tsan/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  valgrind:
+    name: Valgrind leak-check
+    uses: anolishq/.github/.github/workflows/valgrind-leak.yml@0f4d8cd3c04dcb17fe128248a147b237c1465e0c # v2
+    with:
+      triplet: x64-linux
+      build-preset: ci-linux-release
+      build-target: fluxgraph_tests
+      run: "build/ci-linux-release/tests/fluxgraph_tests"
+      suppressions: valgrind.supp
+
+  fuzz:
+    name: Fuzz (libFuzzer)
+    uses: anolishq/.github/.github/workflows/fuzz.yml@0f4d8cd3c04dcb17fe128248a147b237c1465e0c # v2
+    with:
+      triplet: x64-linux
+      build-preset: ci-fuzz
+      fuzz-binaries: "build/ci-fuzz/fuzz/fuzz_json_loader build/ci-fuzz/fuzz/fuzz_yaml_loader"
+      corpus-root: fuzz/corpus
+      max-total-time: "60"

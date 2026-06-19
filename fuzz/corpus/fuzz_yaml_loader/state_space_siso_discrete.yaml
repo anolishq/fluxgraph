@@ -1,0 +1,19 @@
+signals:
+  - path: ss.u
+    unit: V
+  - path: ss.y
+    unit: A
+
+models:
+  - id: ss
+    type: state_space_siso_discrete
+    params:
+      output_signal: ss.y
+      input_signal: ss.u
+      A_d:
+        - [0.9, 0.1]
+        - [0.0, 0.95]
+      B_d: [0.1, 0.05]
+      C: [1.0, 0.0]
+      D: 0.0
+      x0: [0.0, 0.0]

@@ -1,0 +1,23 @@
+# ThreadSanitizer suppressions for fluxgraph (the gRPC server lane).
+#
+# Format: https://github.com/google/sanitizers/wiki/ThreadSanitizerSuppressions
+# Scope third-party / known-benign races ONLY. Never suppress a first-party
+# (fluxgraph::) race — fix it. The first run per change is a triage pass (read
+# the tsan-report artifact, then add a precise entry for each false positive).
+
+# --- abseil (pulled in by gRPC/protobuf) ---------------------------------
+# Documented benign races in abseil's internal synchronization / hash tables.
+race:absl::base_internal::SpinLock
+race:absl::synchronization_internal::
+race:absl::base_internal::LowLevelAlloc
+race:absl::container_internal::raw_hash_set
+race:absl::base_internal::ThreadIdentity
+
+# --- gRPC ----------------------------------------------------------------
+# gRPC's lock-free/refcounting fast paths report benign races under TSAN.
+race:grpc_core::
+race:grpc_event_engine::
+deadlock:grpc_core::
+
+# --- protobuf ------------------------------------------------------------
+race:google::protobuf::internal::
