@@ -38,6 +38,38 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Export compile commands for IDE support
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# ThreadSanitizer (TSAN) — data-race detection for the gRPC server's worker
+# threads. Applied to all targets; deps are rebuilt with TSAN via x64-linux-tsan.
+option(ENABLE_TSAN "Enable ThreadSanitizer for data race detection" OFF)
+
+if(ENABLE_TSAN)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        if(NOT WIN32)
+            add_compile_options(-fsanitize=thread -g -fno-omit-frame-pointer)
+            add_link_options(-fsanitize=thread)
+            message(STATUS "ThreadSanitizer (TSAN) enabled for data race detection")
+        else()
+            message(WARNING "ThreadSanitizer not supported on Windows (Linux/macOS only)")
+        endif()
+    else()
+        message(WARNING "ThreadSanitizer requested but compiler not supported: ${CMAKE_CXX_COMPILER_ID}")
+    endif()
+elseif(DEFINED VCPKG_TARGET_TRIPLET AND VCPKG_TARGET_TRIPLET MATCHES "tsan")
+    if(NOT WIN32)
+        message(STATUS "ThreadSanitizer auto-detected via triplet: ${VCPKG_TARGET_TRIPLET}")
+        add_compile_options(-fsanitize=thread -g -fno-omit-frame-pointer)
+        add_link_options(-fsanitize=thread)
+    endif()
+endif()
+
+# Fuzzing (libFuzzer, requires clang). Include the helper BEFORE the targets so
+# its instrumentation applies to the code-under-test (the loaders), not just the
+# harness.
+option(ENABLE_FUZZING "Build libFuzzer fuzz targets (requires clang)" OFF)
+if(ENABLE_FUZZING)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/AddFuzzTarget.cmake)
+endif()
+
 # Core library sources
 set(FLUXGRAPH_SOURCES
     src/core/signal_store.cpp
@@ -90,6 +122,10 @@ target_include_directories(fluxgraph PUBLIC
 # Compiler warnings
 if(MSVC)
     target_compile_options(fluxgraph PRIVATE /W4 /WX)
+elseif(ENABLE_FUZZING)
+    # The fuzz lane is the first clang build of this repo; don't fail it on
+    # clang-only warnings (the gcc lanes keep -Werror).
+    target_compile_options(fluxgraph PRIVATE -Wall -Wextra -pedantic)
 else()
     target_compile_options(fluxgraph PRIVATE -Wall -Wextra -Werror -pedantic)
 endif()
@@ -124,6 +160,11 @@ endif()
 # gRPC Server
 if(FLUXGRAPH_BUILD_SERVER)
     add_subdirectory(server)
+endif()
+
+# Fuzz targets (libFuzzer; loaders must be enabled to have something to fuzz)
+if(ENABLE_FUZZING)
+    add_subdirectory(fuzz)
 endif()
 
 # Install/export package configuration

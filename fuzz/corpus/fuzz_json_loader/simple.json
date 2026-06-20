@@ -1,0 +1,15 @@
+{
+  "edges": [
+    {
+      "source": "input.value",
+      "target": "output.value",
+      "transform": {
+        "type": "linear",
+        "params": {
+          "scale": 2.0,
+          "offset": 1.0
+        }
+      }
+    }
+  ]
+}

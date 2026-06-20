@@ -1,0 +1,48 @@
+signals:
+  - path: heater.output
+    unit: W
+  - path: chamber.power
+    unit: W
+  - path: chamber.temp
+    unit: degC
+  - path: ambient.temp
+    unit: degC
+  - path: sensor.reading
+    unit: degC
+  - path: display.temp
+    unit: degC
+
+models:
+  - id: chamber
+    type: thermal_mass
+    params:
+      temp_signal: chamber.temp
+      power_signal: chamber.power
+      ambient_signal: ambient.temp
+      thermal_mass: 1000.0
+      heat_transfer_coeff: 10.0
+      initial_temp: 25.0
+
+edges:
+  - source: heater.output
+    target: chamber.power
+    transform:
+      type: saturation
+      params:
+        min: 0.0
+        max: 1000.0
+  
+  - source: chamber.temp
+    target: sensor.reading
+    transform:
+      type: first_order_lag
+      params:
+        tau_s: 0.5
+  
+  - source: sensor.reading
+    target: display.temp
+    transform:
+      type: noise
+      params:
+        amplitude: 0.1
+        seed: 42

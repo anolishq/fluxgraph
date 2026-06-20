@@ -56,9 +56,19 @@ target_include_directories(fluxgraph-server SYSTEM PRIVATE
 target_link_libraries(fluxgraph-server PRIVATE
     fluxgraph
     gRPC::grpc++
-    gRPC::grpc++_reflection
     protobuf::libprotobuf
 )
+
+# gRPC server reflection is an optional component (used for grpcurl/debugging,
+# not by the RPC handlers or the integration tests). Some grpc builds — e.g. the
+# minimal feature set vcpkg produces for the x64-linux-tsan triplet — omit it, so
+# link it only when present rather than hard-requiring it.
+if(TARGET gRPC::grpc++_reflection)
+    target_link_libraries(fluxgraph-server PRIVATE gRPC::grpc++_reflection)
+    target_compile_definitions(fluxgraph-server PRIVATE FLUXGRAPH_HAVE_GRPC_REFLECTION)
+else()
+    message(STATUS "gRPC::grpc++_reflection not available — building server without reflection")
+endif()
 
 # Compiler warnings
 if(MSVC)

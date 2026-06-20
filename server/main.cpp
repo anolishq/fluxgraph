@@ -1,7 +1,12 @@
 #include "service.hpp"
+#include <atomic>
+#include <chrono>
 #include <csignal>
 #include <fstream>
+#include <thread>
+#ifdef FLUXGRAPH_HAVE_GRPC_REFLECTION
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
+#endif
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
 #include <iostream>
@@ -12,13 +17,13 @@
 // Global server instance for signal handler
 std::unique_ptr<grpc::Server> g_server;
 
-// Signal handler for graceful shutdown
-void signal_handler(int signal) {
-  std::cout << "\n[FluxGraph] Shutdown signal received (" << signal << ")\n";
-  if (g_server) {
-    g_server->Shutdown();
-  }
-}
+// Set by the signal handler; the shutdown watcher thread does the actual work.
+std::atomic<bool> g_shutdown_requested{false};
+
+// Signal handler for graceful shutdown. Must be async-signal-safe: only set a
+// lock-free atomic flag here (no malloc/iostream/gRPC calls) — the watcher
+// thread below performs the (signal-unsafe) Shutdown().
+void signal_handler(int /*signal*/) { g_shutdown_requested.store(true); }
 
 void print_usage(const char *prog_name) {
   std::cout << "FluxGraph gRPC Server\n\n";
@@ -145,8 +150,11 @@ int main(int argc, char *argv[]) {
     // Enable health check service
     grpc::EnableDefaultHealthCheckService(true);
 
-    // Enable server reflection (for grpcurl, etc.)
+#ifdef FLUXGRAPH_HAVE_GRPC_REFLECTION
+    // Enable server reflection (for grpcurl, etc.) when the grpc build provides
+    // it (the x64-linux-tsan minimal grpc omits the reflection component).
     grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+#endif
 
     // Build server
     std::string server_address = "0.0.0.0:" + std::to_string(port);
@@ -168,8 +176,21 @@ int main(int argc, char *argv[]) {
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
+    // Watcher thread turns the signal flag into a graceful Shutdown() off the
+    // signal-handler context (Shutdown allocates and is not async-signal-safe).
+    std::thread shutdown_watcher([] {
+      while (!g_shutdown_requested.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+      std::cout << "\n[FluxGraph] Shutdown signal received\n";
+      if (g_server) {
+        g_server->Shutdown();
+      }
+    });
+
     // Block until shutdown
     g_server->Wait();
+    shutdown_watcher.join();
 
     std::cout << "[FluxGraph] Server stopped\n";
     return 0;

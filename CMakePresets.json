@@ -121,6 +121,32 @@
       }
     },
     {
+      "name": "ci-tsan",
+      "inherits": "ci-linux-release-server",
+      "binaryDir": "${sourceDir}/build/ci-tsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "VCPKG_TARGET_TRIPLET": "x64-linux-tsan",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/triplets",
+        "ENABLE_TSAN": "ON"
+      }
+    },
+    {
+      "name": "ci-fuzz",
+      "inherits": "ci-linux-release",
+      "binaryDir": "${sourceDir}/build/ci-fuzz",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "FLUXGRAPH_JSON_ENABLED": "ON",
+        "FLUXGRAPH_YAML_ENABLED": "ON",
+        "FLUXGRAPH_BUILD_TESTS": "OFF",
+        "FLUXGRAPH_BUILD_EXAMPLES": "OFF",
+        "ENABLE_FUZZING": "ON"
+      }
+    },
+    {
       "name": "dev-windows-server",
       "inherits": "base-windows-msvc",
       "binaryDir": "${sourceDir}/build-windows-server",
@@ -190,6 +216,14 @@
     {
       "name": "ci-linux-release-server",
       "configurePreset": "ci-linux-release-server"
+    },
+    {
+      "name": "ci-tsan",
+      "configurePreset": "ci-tsan"
+    },
+    {
+      "name": "ci-fuzz",
+      "configurePreset": "ci-fuzz"
     },
     {
       "name": "dev-windows-server",
@@ -280,6 +314,13 @@
     {
       "name": "ci-linux-release-server",
       "configurePreset": "ci-linux-release-server",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-tsan",
+      "configurePreset": "ci-tsan",
       "output": {
         "outputOnFailure": true
       }
