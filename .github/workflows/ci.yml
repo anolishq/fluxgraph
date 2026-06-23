@@ -122,9 +122,14 @@ jobs:
           sudo apt-get install -y ninja-build g++
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@c76784aff711e6540d539f6a5c3ea33c63627930 # v2
+        uses: anolishq/.github/.github/actions/setup-vcpkg@b2d9b16b9accee0e58d37e7d05add68b6621961a # v2.2
         with:
           triplet: x64-linux
+          # server-enabled is the sole writer (its closure — grpc+protobuf+json+
+          # yaml+gtest — is the union of every lane). The 4 subset lanes restore
+          # only, so a 1-min subset save can't clobber the shared key and drop
+          # grpc, which forced a ~65min grpc rebuild on the server lane every run.
+          cache-write: ${{ matrix.lane == 'server-enabled' }}
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         if: ${{ matrix.grpc_integration }}
@@ -179,9 +184,12 @@ jobs:
           sudo apt-get install -y ninja-build g++ python3
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@c76784aff711e6540d539f6a5c3ea33c63627930 # v2
+        uses: anolishq/.github/.github/actions/setup-vcpkg@b2d9b16b9accee0e58d37e7d05add68b6621961a # v2.2
         with:
           triplet: x64-linux
+          # Subset closure (core preset, no grpc) — read-only so it can't clobber
+          # the shared x64-linux key written by the server-enabled lane.
+          cache-write: "false"
 
       - name: Run strict dimensional validation
         id: dimensional
@@ -213,7 +221,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@c76784aff711e6540d539f6a5c3ea33c63627930 # v2
+        uses: anolishq/.github/.github/actions/setup-vcpkg@b2d9b16b9accee0e58d37e7d05add68b6621961a # v2.2
         with:
           triplet: x64-windows-v145
 
@@ -237,7 +245,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@c76784aff711e6540d539f6a5c3ea33c63627930 # v2
+        uses: anolishq/.github/.github/actions/setup-vcpkg@b2d9b16b9accee0e58d37e7d05add68b6621961a # v2.2
         with:
           triplet: x64-windows-v145
 
@@ -266,9 +274,12 @@ jobs:
           sudo apt-get install -y ninja-build g++ graphviz
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@c76784aff711e6540d539f6a5c3ea33c63627930 # v2
+        uses: anolishq/.github/.github/actions/setup-vcpkg@b2d9b16b9accee0e58d37e7d05add68b6621961a # v2.2
         with:
           triplet: x64-linux
+          # Subset closure (diagram preset, no grpc) — read-only so it can't
+          # clobber the shared x64-linux key written by the server-enabled lane.
+          cache-write: "false"
 
       - name: Configure diagram preset
         run: cmake --preset ci-linux-release-diagram
