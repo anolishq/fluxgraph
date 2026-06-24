@@ -2,5 +2,5 @@
 #
 # Enable once per clone:  git config blame.ignoreRevsFile .git-blame-ignore-revs
 
-# style(fluxgraph): apply org clang-format (pinned 18.1.8) [pure reformat]
-7da3d53386e6c4bd38427b25b61ae9e192a01de0
+# chore: adopt org config set + pinned clang-format gate + one-time reformat (#54) (#55) [squashed; contains the reformat]
+83f468d38fc1901dec5b8c2114c7cbe7c79a9cef
