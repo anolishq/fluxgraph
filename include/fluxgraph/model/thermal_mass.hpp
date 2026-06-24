@@ -1,10 +1,11 @@
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include "fluxgraph/core/namespace.hpp"
 #include "fluxgraph/model/interface.hpp"
 #include "fluxgraph/model/thermal_integration.hpp"
-#include <string>
-#include <vector>
 
 namespace fluxgraph {
 
@@ -17,48 +18,45 @@ namespace fluxgraph {
 ///   C = thermal mass (J/K)
 class ThermalMassModel : public IModel {
 public:
-  /// Construct thermal mass model
-  /// @param id Model identifier
-  /// @param thermal_mass Heat capacity in J/K (must be finite and > 0)
-  /// @param heat_transfer_coeff Heat transfer coefficient in W/K (must be
-  /// finite and > 0)
-  /// @param initial_temp Initial temperature in degC (must be finite)
-  /// @param temp_signal_path Signal path for temperature output (e.g.,
-  /// "chamber_air/temperature")
-  /// @param power_signal_path Signal path for power input (e.g.,
-  /// "chamber_air/heating_power")
-  /// @param ambient_signal_path Signal path for ambient temperature (e.g.,
-  /// "chamber_air/ambient_temp")
-  /// @param ns Signal namespace for path interning
-  ThermalMassModel(const std::string &id, double thermal_mass,
-                   double heat_transfer_coeff, double initial_temp,
-                   const std::string &temp_signal_path,
-                   const std::string &power_signal_path,
-                   const std::string &ambient_signal_path, SignalNamespace &ns,
-                   ThermalIntegrationMethod integration_method =
-                       ThermalIntegrationMethod::ForwardEuler);
+    /// Construct thermal mass model
+    /// @param id Model identifier
+    /// @param thermal_mass Heat capacity in J/K (must be finite and > 0)
+    /// @param heat_transfer_coeff Heat transfer coefficient in W/K (must be
+    /// finite and > 0)
+    /// @param initial_temp Initial temperature in degC (must be finite)
+    /// @param temp_signal_path Signal path for temperature output (e.g.,
+    /// "chamber_air/temperature")
+    /// @param power_signal_path Signal path for power input (e.g.,
+    /// "chamber_air/heating_power")
+    /// @param ambient_signal_path Signal path for ambient temperature (e.g.,
+    /// "chamber_air/ambient_temp")
+    /// @param ns Signal namespace for path interning
+    ThermalMassModel(const std::string &id, double thermal_mass, double heat_transfer_coeff, double initial_temp,
+                     const std::string &temp_signal_path, const std::string &power_signal_path,
+                     const std::string &ambient_signal_path, SignalNamespace &ns,
+                     ThermalIntegrationMethod integration_method = ThermalIntegrationMethod::ForwardEuler);
 
-  void tick(double dt, SignalStore &store) override;
-  void reset() override;
+    void tick(double dt, SignalStore &store) override;
+    void reset() override;
 
-  /// Stability limit for the selected integration method
-  double compute_stability_limit() const override;
+    /// Stability limit for the selected integration method
+    double compute_stability_limit() const override;
 
-  std::string describe() const override;
-  std::vector<SignalId> output_signal_ids() const override;
+    std::string describe() const override;
+    std::vector<SignalId> output_signal_ids() const override;
 
 private:
-  std::string id_;
-  SignalId temp_signal_;
-  SignalId power_signal_;
-  SignalId ambient_signal_;
-  double thermal_mass_;        // C (J/K)
-  double heat_transfer_coeff_; // h (W/K)
-  double temperature_;         // Current temp (degC)
-  double initial_temp_;        // Initial temp for reset (degC)
-  ThermalIntegrationMethod integration_method_;
+    std::string id_;
+    SignalId temp_signal_;
+    SignalId power_signal_;
+    SignalId ambient_signal_;
+    double thermal_mass_;         // C (J/K)
+    double heat_transfer_coeff_;  // h (W/K)
+    double temperature_;          // Current temp (degC)
+    double initial_temp_;         // Initial temp for reset (degC)
+    ThermalIntegrationMethod integration_method_;
 
-  double derivative(double temperature, double net_power, double ambient) const;
+    double derivative(double temperature, double net_power, double ambient) const;
 };
 
-} // namespace fluxgraph
+}  // namespace fluxgraph

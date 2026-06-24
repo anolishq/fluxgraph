@@ -1,0 +1,21 @@
+# Normalize text files to LF across platforms.
+* text=auto eol=lf
+
+# Keep Windows-native script line endings where expected.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Common binary assets.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.bmp binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.7z binary
+*.bin binary
+*.hex binary
+*.elf binary

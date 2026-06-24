@@ -1,0 +1,32 @@
+# Shared editor defaults for anolis providers. Copy to `.editorconfig` at the repo root.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+# C/C++ — matches .clang-format (IndentWidth: 4)
+[*.{c,cc,cpp,cxx,h,hh,hpp,hxx}]
+indent_size = 4
+
+[*.{cmake,txt}]
+indent_size = 2
+
+[CMakeLists.txt]
+indent_size = 2
+
+[*.{yml,yaml,json}]
+indent_size = 2
+
+[*.py]
+indent_size = 4
+
+[justfile]
+indent_size = 4
+
+# Markdown — keep trailing whitespace (hard line breaks)
+[*.md]
+trim_trailing_whitespace = false

@@ -1,12 +1,12 @@
 #pragma once
 
 #ifndef FLUXGRAPH_JSON_ENABLED
-#error                                                                         \
-    "JSON loader requested but FLUXGRAPH_JSON_ENABLED not defined. Build with -DFLUXGRAPH_JSON_ENABLED=ON"
+#error "JSON loader requested but FLUXGRAPH_JSON_ENABLED not defined. Build with -DFLUXGRAPH_JSON_ENABLED=ON"
 #endif
 
-#include "fluxgraph/graph/spec.hpp"
 #include <string>
+
+#include "fluxgraph/graph/spec.hpp"
 
 namespace fluxgraph::loaders {
 
@@ -18,4 +18,4 @@ GraphSpec load_json_file(const std::string &path);
 /// Throws std::runtime_error on parse errors with JSON pointer path
 GraphSpec load_json_string(const std::string &json_content);
 
-} // namespace fluxgraph::loaders
+}  // namespace fluxgraph::loaders

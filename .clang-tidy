@@ -1,0 +1,20 @@
+---
+# Shared provider clang-tidy config (mirrors the anolis runtime).
+# High-value signal only: keep diagnostics/analyzer/bugprone/performance, drop readability noise.
+Checks: >
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  performance-*,
+  bugprone-*,
+  -readability-*,
+  -bugprone-macro-parentheses,
+  -bugprone-easily-swappable-parameters
+# Note: consider re-enabling specific readability checks once bugprone/perf are clean.
+WarningsAsErrors: ""
+# Limit diagnostics to the repo's own source roots. ADJUST per provider to match
+# its layout (e.g. "src", "include", "tests"); this default covers the common case.
+# Generated protobuf sources live under build/ and are excluded — also disable
+# clang-tidy on the protobuf CMake target so compile_commands does not drag them in.
+HeaderFilterRegex: ".*/(src|include|server|tools|tests)/.*"
+FormatStyle: file
+...
