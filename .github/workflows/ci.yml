@@ -303,10 +303,27 @@ jobs:
       python-version: '3.12'
       working-directory: '.'
 
+  cpp-format:
+    name: C++ Formatting (clang-format)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Install pinned clang-tools
+        # SHA-verified static LLVM 18.1.8 clang-format on PATH — the org source of
+        # truth, matching workstation-configs apps/clang-tools on dev boxes. See
+        # anolishq/.github#69.
+        uses: anolishq/.github/.github/actions/setup-clang-tools@43a0fe0a7feb87215f6e7677133be542ef6f1031 # setup-clang-tools
+      - name: Check formatting
+        run: git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hh' '*.hpp' '*.hxx' | xargs clang-format --dry-run --Werror
+
   ok:
     name: ok
     if: always()
-    needs: [changes, python-lint, python-typecheck, linux-matrix, strict-dimensional-validation, windows-core, windows-diagram, diagram-render-smoke, version-sync]
+    needs: [changes, python-lint, python-typecheck, linux-matrix, strict-dimensional-validation, windows-core, windows-diagram, diagram-render-smoke, version-sync, cpp-format]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
