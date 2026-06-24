@@ -19,8 +19,13 @@ permissions:
 
 jobs:
   clang-tidy-diff:
-    # ci-linux-release-server enables server + json + yaml (the broadest single
-    # preset). The diagram-tool subdir (separate feature) is not covered here.
-    uses: anolishq/.github/.github/workflows/clang-tidy-diff.yml@36dd130dddbff472be8fc5e1c1e575e528c83e1b # clang-tidy-diff
+    # ci-linux-tidy is the max-coverage tidy preset: tests + server + json + yaml
+    # + diagram-tool + examples, so compile_commands covers every shipped Linux
+    # C++ target the paths filter matches (fuzz is clang/libFuzzer-only and stays
+    # out of this g++ gate). The diagram tool links graphviz, hence apt-packages.
+    # NB: it uses the default build/<preset> binaryDir — unlike ci-linux-release-
+    # server (build-server/), which the gate's -path build/<preset> can't find.
+    uses: anolishq/.github/.github/workflows/clang-tidy-diff.yml@bc822a0e1a1638789ecd912e3761283084fe914a # clang-tidy-diff
     with:
-      configure-preset: ci-linux-release-server
+      configure-preset: ci-linux-tidy
+      apt-packages: graphviz

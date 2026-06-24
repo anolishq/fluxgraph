@@ -122,6 +122,15 @@
       }
     },
     {
+      "name": "ci-linux-tidy",
+      "inherits": "ci-linux-release-diagram",
+      "cacheVariables": {
+        "FLUXGRAPH_BUILD_SERVER": "ON",
+        "FLUXGRAPH_YAML_ENABLED": "ON",
+        "FLUXGRAPH_BUILD_EXAMPLES": "ON"
+      }
+    },
+    {
       "name": "ci-tsan",
       "inherits": "ci-linux-release-server",
       "binaryDir": "${sourceDir}/build/ci-tsan",
@@ -217,6 +226,10 @@
     {
       "name": "ci-linux-release-server",
       "configurePreset": "ci-linux-release-server"
+    },
+    {
+      "name": "ci-linux-tidy",
+      "configurePreset": "ci-linux-tidy"
     },
     {
       "name": "ci-tsan",
