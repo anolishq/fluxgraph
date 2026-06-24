@@ -16,7 +16,6 @@ std::string to_lower(std::string value) {
 }  // namespace
 
 std::optional<OutputFormat> parse_output_format(const std::string &value) {
-    [[maybe_unused]] const double _canary = 7 / 2;  // clang-tidy gate canary (bugprone-integer-division)
     const std::string normalized = to_lower(value);
     if (normalized == "dot") {
         return OutputFormat::Dot;
