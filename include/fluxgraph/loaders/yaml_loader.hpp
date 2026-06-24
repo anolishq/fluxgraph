@@ -1,12 +1,12 @@
 #pragma once
 
 #ifndef FLUXGRAPH_YAML_ENABLED
-#error                                                                         \
-    "YAML loader requested but FLUXGRAPH_YAML_ENABLED not defined. Build with -DFLUXGRAPH_YAML_ENABLED=ON"
+#error "YAML loader requested but FLUXGRAPH_YAML_ENABLED not defined. Build with -DFLUXGRAPH_YAML_ENABLED=ON"
 #endif
 
-#include "fluxgraph/graph/spec.hpp"
 #include <string>
+
+#include "fluxgraph/graph/spec.hpp"
 
 namespace fluxgraph::loaders {
 
@@ -29,4 +29,4 @@ GraphSpec load_yaml_file(const std::string &path);
  */
 GraphSpec load_yaml_string(const std::string &yaml_content);
 
-} // namespace fluxgraph::loaders
+}  // namespace fluxgraph::loaders

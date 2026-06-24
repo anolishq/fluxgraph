@@ -1,7 +1,8 @@
 #pragma once
 
-#include "fluxgraph/core/types.hpp"
 #include <string>
+
+#include "fluxgraph/core/types.hpp"
 
 namespace fluxgraph::param {
 
@@ -14,4 +15,4 @@ std::string as_string(const ParamValue &value, const std::string &path);
 const ParamArray &as_array(const ParamValue &value, const std::string &path);
 const ParamObject &as_object(const ParamValue &value, const std::string &path);
 
-} // namespace fluxgraph::param
+}  // namespace fluxgraph::param

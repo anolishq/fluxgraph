@@ -11,7 +11,7 @@ namespace fluxgraph {
 using IntegrationMethod = ThermalIntegrationMethod;
 
 inline IntegrationMethod parse_integration_method(const std::string &method) {
-  return parse_thermal_integration_method(method);
+    return parse_thermal_integration_method(method);
 }
 
-} // namespace fluxgraph
+}  // namespace fluxgraph
