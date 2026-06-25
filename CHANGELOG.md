@@ -302,6 +302,12 @@ FluxGraph follows these principles:
 
 ---
 
+[Unreleased]: https://github.com/anolishq/fluxgraph/compare/v1.0.5...HEAD
+[1.0.5]: https://github.com/anolishq/fluxgraph/compare/v1.0.4...v1.0.5
+[1.0.4]: https://github.com/anolishq/fluxgraph/compare/v1.0.3...v1.0.4
+[1.0.3]: https://github.com/anolishq/fluxgraph/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/anolishq/fluxgraph/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/anolishq/fluxgraph/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/anolishq/fluxgraph/compare/v0.1.1...v1.0.0
 [0.1.1]: https://github.com/anolishq/fluxgraph/releases/tag/v0.1.1
 [0.1.0]: https://github.com/anolishq/fluxgraph/releases/tag/v0.1.0
-[unreleased]: https://github.com/anolishq/fluxgraph/compare/v0.1.1...HEAD
