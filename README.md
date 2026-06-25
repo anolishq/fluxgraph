@@ -28,13 +28,13 @@ pointing at a tagged release tarball:
 include(FetchContent)
 FetchContent_Declare(
     fluxgraph
-    URL https://github.com/anolishq/fluxgraph/releases/download/v1.0.4/fluxgraph-1.0.4-source.tar.gz
+    URL https://github.com/anolishq/fluxgraph/releases/download/v1.0.5/fluxgraph-1.0.5-source.tar.gz
 )
 FetchContent_MakeAvailable(fluxgraph)
 target_link_libraries(your_target PRIVATE fluxgraph::fluxgraph)
 ```
 
-Replace `v1.0.4` with the [latest release](https://github.com/anolishq/fluxgraph/releases/latest) tag.
+Replace `v1.0.5` with the [latest release](https://github.com/anolishq/fluxgraph/releases/latest) tag.
 
 **FluxGraph server binary** (standalone gRPC simulation server):
 
@@ -192,4 +192,4 @@ This project is part of the Anolis ecosystem. See [CONTRIBUTING.md](CONTRIBUTING
 
 ## Version
 
-0.1.1 - Current pre-release
+1.0.5 — see [`include/fluxgraph/version.hpp`](include/fluxgraph/version.hpp) and the [CHANGELOG](CHANGELOG.md).
