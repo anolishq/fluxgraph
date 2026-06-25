@@ -25,7 +25,7 @@ jobs:
     # out of this g++ gate). The diagram tool links graphviz, hence apt-packages.
     # NB: it uses the default build/<preset> binaryDir — unlike ci-linux-release-
     # server (build-server/), which the gate's -path build/<preset> can't find.
-    uses: anolishq/.github/.github/workflows/clang-tidy-diff.yml@bc822a0e1a1638789ecd912e3761283084fe914a # clang-tidy-diff
+    uses: anolishq/.github/.github/workflows/clang-tidy-diff.yml@9869a5f4bee7da9c7c1dc9bae033cd0137c4801d # clang-tidy-diff
     with:
       # x64-linux (not the gate's x64-linux-static default) so we reuse the warm
       # vcpkg cache the server-enabled CI lane writes — its closure (grpc+protobuf
