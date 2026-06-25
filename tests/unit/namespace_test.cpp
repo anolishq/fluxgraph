@@ -2,6 +2,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <string>
+
 using namespace fluxgraph;
 
 class SignalNamespaceTest : public ::testing::Test {

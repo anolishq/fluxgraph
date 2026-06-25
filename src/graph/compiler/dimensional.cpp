@@ -1,5 +1,6 @@
 #include "dimensional.hpp"
 
+#include <format>
 #include <stdexcept>
 
 #include "common.hpp"
@@ -45,23 +46,24 @@ void validate_model_signature_contracts(const ModelSpec &model_spec, const Model
         }
 
         const std::string path =
-            as_string(param_it->second, "model[" + model_spec.id + ":" + model_spec.type + "]/{" + param_name + "}");
+            as_string(param_it->second, std::format("model[{}:{}]/{{{}}}", model_spec.id, model_spec.type, param_name));
         const SignalId id = signal_ns.intern(path);
         const std::string actual_unit = resolve_signal_contract_or_empty(signal_contracts, id);
 
         if (actual_unit.empty()) {
             if (strict) {
                 throw std::runtime_error(
-                    "GraphCompiler: strict mode requires declared signal contract "
-                    "for model '" +
-                    model_spec.id + "' parameter '" + param_name + "' (path '" + path + "')");
+                    std::format("GraphCompiler: strict mode requires declared signal contract for model '{}' "
+                                "parameter '{}' (path '{}')",
+                                model_spec.id, param_name, path));
             }
             continue;
         }
 
         if (!expected_unit.empty() && actual_unit != expected_unit) {
-            const std::string message = "GraphCompiler: model '" + model_spec.id + "' parameter '" + param_name +
-                                        "' expects unit '" + expected_unit + "' but found '" + actual_unit + "'";
+            const std::string message =
+                std::format("GraphCompiler: model '{}' parameter '{}' expects unit '{}' but found '{}'", model_spec.id,
+                            param_name, expected_unit, actual_unit);
             if (strict) {
                 throw std::runtime_error(message);
             }
@@ -71,26 +73,27 @@ void validate_model_signature_contracts(const ModelSpec &model_spec, const Model
 
     for (const auto &[param_name, param_signature] : signature.scalar_param_signatures) {
         auto param_it = model_spec.params.find(param_name);
-        const std::string path = "model[" + model_spec.id + ":" + model_spec.type + "]/" + param_name;
+        const std::string path = std::format("model[{}:{}]/{}", model_spec.id, model_spec.type, param_name);
 
         if (param_it == model_spec.params.end()) {
             if (strict && param_signature.required) {
                 throw std::runtime_error(
-                    "GraphCompiler: strict mode requires scalar "
-                    "parameter '" +
-                    param_name + "' for model '" + model_spec.id + "'");
+                    std::format("GraphCompiler: strict mode requires scalar parameter '{}' for model '{}'", param_name,
+                                model_spec.id));
             }
             if (!strict && param_signature.required) {
-                emit_warning(options, "GraphCompiler: missing required scalar parameter '" + param_name +
-                                          "' for model '" + model_spec.id + "'");
+                emit_warning(options,
+                             std::format("GraphCompiler: missing required scalar parameter '{}' for model '{}'",
+                                         param_name, model_spec.id));
             }
             continue;
         }
 
         if (!param_signature.unit_symbol.empty() && !is_unit_known(unit_registry, param_signature.unit_symbol)) {
-            const std::string message = "GraphCompiler: model signature for type '" + model_spec.type +
-                                        "' references unknown scalar unit symbol '" + param_signature.unit_symbol +
-                                        "' for parameter '" + param_name + "'";
+            const std::string message = std::format(
+                "GraphCompiler: model signature for type '{}' references unknown scalar unit symbol '{}' "
+                "for parameter '{}'",
+                model_spec.type, param_signature.unit_symbol, param_name);
             if (strict) {
                 throw std::runtime_error(message);
             }
@@ -99,8 +102,8 @@ void validate_model_signature_contracts(const ModelSpec &model_spec, const Model
 
         const double value = as_double(param_it->second, path);
         if (!satisfies_scalar_constraint(value, param_signature.constraint)) {
-            const std::string message = "Invalid parameter at " + path + ": expected " +
-                                        format_scalar_constraint_rule(param_signature.constraint);
+            const std::string message = std::format("Invalid parameter at {}: expected {}", path,
+                                                    format_scalar_constraint_rule(param_signature.constraint));
             if (strict) {
                 throw std::runtime_error(message);
             }

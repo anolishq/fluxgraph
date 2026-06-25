@@ -20,8 +20,8 @@ namespace fluxgraph {
 /// - output_signal: user-defined scalar unit (strict mode requires declaration)
 class StateSpaceSisoDiscreteModel : public IModel {
 public:
-    StateSpaceSisoDiscreteModel(const std::string &id, std::vector<std::vector<double>> a_d, std::vector<double> b_d,
-                                std::vector<double> c, double d, std::vector<double> x0,
+    StateSpaceSisoDiscreteModel(const std::string &id, const std::vector<std::vector<double>> &a_d,
+                                std::vector<double> b_d, std::vector<double> c, double d, std::vector<double> x0,
                                 const std::string &output_signal_path, const std::string &input_signal_path,
                                 SignalNamespace &ns);
 

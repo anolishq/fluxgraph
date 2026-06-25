@@ -1,0 +1,18 @@
+---
+# Test code has different concerns than production code. Inherit the repo's
+# checks but relax the ones that are pure noise in tests:
+#  - performance-*: tests are not performance-sensitive; reserve/move/copy
+#    micro-optimizations add nothing to throwaway fixtures.
+#  - bugprone-narrowing-conversions: intentional narrowing of small integer
+#    literals in test arithmetic.
+#  - bugprone-unchecked-optional-access: false-positive against the gtest
+#    ASSERT_TRUE(opt.has_value()) guard idiom, which clang-tidy's optional
+#    model does not treat as a precondition.
+#  - bugprone-reserved-identifier: test-local identifier conventions.
+InheritParentConfig: true
+Checks: >
+  -performance-*,
+  -bugprone-narrowing-conversions,
+  -bugprone-unchecked-optional-access,
+  -bugprone-reserved-identifier
+...
