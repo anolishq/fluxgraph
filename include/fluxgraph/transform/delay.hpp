@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+#include <cstddef>
 #include <deque>
 
 #include "fluxgraph/transform/interface.hpp"
@@ -18,7 +20,7 @@ public:
         }
 
         // Compute required buffer size (samples needed for delay)
-        size_t required_samples = static_cast<size_t>(delay_sec_ / dt + 0.5);
+        size_t required_samples = static_cast<size_t>(std::llround(delay_sec_ / dt));
         if (required_samples == 0) {
             required_samples = 1;
         }

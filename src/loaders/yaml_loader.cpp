@@ -6,6 +6,7 @@
 
 #include <cerrno>
 #include <cstdlib>
+#include <format>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -60,7 +61,7 @@ ParamValue yaml_to_param_value(const YAML::Node &node, const std::string &path, 
     budget.consume_node(path);
 
     if (node.IsScalar()) {
-        const std::string scalar = node.as<std::string>();
+        std::string scalar = node.as<std::string>();
         detail::check_string_size(scalar.size(), path);
         if (scalar == "true") {
             return true;
@@ -87,7 +88,7 @@ ParamValue yaml_to_param_value(const YAML::Node &node, const std::string &path, 
         ParamArray arr;
         arr.reserve(node.size());
         for (size_t i = 0; i < node.size(); ++i) {
-            arr.push_back(yaml_to_param_value(node[i], path + "/" + std::to_string(i), budget, depth + 1));
+            arr.push_back(yaml_to_param_value(node[i], std::format("{}/{}", path, i), budget, depth + 1));
         }
         return arr;
     }
@@ -98,11 +99,11 @@ ParamValue yaml_to_param_value(const YAML::Node &node, const std::string &path, 
         for (auto it = node.begin(); it != node.end(); ++it) {
             const std::string key = it->first.as<std::string>();
             detail::check_string_size(key.size(), path + "/<key>");
-            obj.emplace(key, yaml_to_param_value(it->second, path + "/" + key, budget, depth + 1));
+            obj.emplace(key, yaml_to_param_value(it->second, std::format("{}/{}", path, key), budget, depth + 1));
         }
         return obj;
     } else {
-        throw std::runtime_error("YAML parse error at " + path + ": Expected scalar/sequence/map value");
+        throw std::runtime_error(std::format("YAML parse error at {}: Expected scalar/sequence/map value", path));
     }
 }
 
@@ -149,7 +150,7 @@ TransformSpec parse_transform(const YAML::Node &node, const std::string &base_pa
         }
         for (auto it = node["params"].begin(); it != node["params"].end(); ++it) {
             std::string key = it->first.as<std::string>();
-            std::string param_path = path + "/params/" + key;
+            std::string param_path = std::format("{}/params/{}", path, key);
             spec.params[key] = yaml_to_param_value(it->second, param_path, budget);
         }
     }
@@ -219,7 +220,7 @@ ModelSpec parse_model(const YAML::Node &node, size_t index, detail::ParamParseBu
         }
         for (auto it = node["params"].begin(); it != node["params"].end(); ++it) {
             std::string key = it->first.as<std::string>();
-            std::string param_path = path + "/params/" + key;
+            std::string param_path = std::format("{}/params/{}", path, key);
             spec.params[key] = yaml_to_param_value(it->second, param_path, budget);
         }
     }
@@ -265,7 +266,7 @@ RuleSpec parse_rule(const YAML::Node &node, size_t index) {
                 }
                 for (auto it = action_node["args"].begin(); it != action_node["args"].end(); ++it) {
                     std::string key = it->first.as<std::string>();
-                    std::string arg_path = action_path + "/args/" + key;
+                    std::string arg_path = std::format("{}/args/{}", action_path, key);
                     action.args[key] = yaml_to_variant(it->second, arg_path);
                 }
             }

@@ -2,6 +2,7 @@
 
 #include "fluxgraph/loaders/json_loader.hpp"
 
+#include <format>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
@@ -26,7 +27,7 @@ ParamValue json_to_param_value(const json &j, const std::string &path, detail::P
     } else if (j.is_boolean()) {
         return j.get<bool>();
     } else if (j.is_string()) {
-        const std::string value = j.get<std::string>();
+        std::string value = j.get<std::string>();
         detail::check_string_size(value.size(), path);
         return value;
     } else if (j.is_array()) {
@@ -42,7 +43,7 @@ ParamValue json_to_param_value(const json &j, const std::string &path, detail::P
         ParamObject obj;
         for (auto &[key, value] : j.items()) {
             detail::check_string_size(key.size(), path + "/<key>");
-            obj.emplace(key, json_to_param_value(value, path + "/" + key, budget, depth + 1));
+            obj.emplace(key, json_to_param_value(value, std::format("{}/{}", path, key), budget, depth + 1));
         }
         return obj;
     } else {
@@ -83,7 +84,7 @@ TransformSpec parse_transform(const json &j, const std::string &base_path, detai
             throw std::runtime_error("JSON parse error at " + path + "/params: Expected object");
         }
         for (auto &[key, value] : j["params"].items()) {
-            std::string param_path = path + "/params/" + key;
+            std::string param_path = std::format("{}/params/{}", path, key);
             spec.params[key] = json_to_param_value(value, param_path, budget);
         }
     }
@@ -154,7 +155,7 @@ ModelSpec parse_model(const json &j, const std::string &base_path, size_t index,
             throw std::runtime_error("JSON parse error at " + path + "/params: Expected object");
         }
         for (auto &[key, value] : j["params"].items()) {
-            std::string param_path = path + "/params/" + key;
+            std::string param_path = std::format("{}/params/{}", path, key);
             spec.params[key] = json_to_param_value(value, param_path, budget);
         }
     }
@@ -200,7 +201,7 @@ RuleSpec parse_rule(const json &j, const std::string &base_path, size_t index) {
                     throw std::runtime_error("JSON parse error at " + action_path + "/args: Expected object");
                 }
                 for (auto &[key, value] : action_json["args"].items()) {
-                    std::string arg_path = action_path + "/args/" + key;
+                    std::string arg_path = std::format("{}/args/{}", action_path, key);
                     action.args[key] = json_to_variant(value, arg_path);
                 }
             }
