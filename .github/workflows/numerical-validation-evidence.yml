@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@c76784aff711e6540d539f6a5c3ea33c63627930 # v2
+        uses: anolishq/.github/.github/actions/setup-vcpkg@b2d9b16b9accee0e58d37e7d05add68b6621961a # v2.2
         with:
           triplet: x64-windows-v145
 
