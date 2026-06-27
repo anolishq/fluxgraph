@@ -6,7 +6,7 @@ This document defines FluxGraph policy for dependency management, preset usage, 
 
 1. `vcpkg-configuration.json` is the canonical baseline source.
 2. `builtin-baseline` is not used.
-3. Lockfile pinning is deferred for now; baseline pinning stays in `vcpkg-configuration.json`.
+3. Lockfile pinning is deferred for now; baseline pinning stays in `vcpkg-configuration.json` (org decision tracked in anolishq/.github#93).
 
 ## Dependency Model Policy
 
