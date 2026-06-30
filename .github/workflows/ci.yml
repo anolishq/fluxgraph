@@ -139,7 +139,7 @@ jobs:
           sudo apt-get install -y ninja-build g++
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@16fe50768ba29a6a00bef572efd766c334c4eba4 # v2.3
+        uses: anolishq/.github/.github/actions/setup-vcpkg@a9b3d134acbcc7dcd6da02c1a345a1fbdca15064 # v2.4
         with:
           triplet: x64-linux
           # server-enabled is the sole writer (its closure — grpc+protobuf+json+
@@ -201,7 +201,7 @@ jobs:
           sudo apt-get install -y ninja-build g++ python3
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@16fe50768ba29a6a00bef572efd766c334c4eba4 # v2.3
+        uses: anolishq/.github/.github/actions/setup-vcpkg@a9b3d134acbcc7dcd6da02c1a345a1fbdca15064 # v2.4
         with:
           triplet: x64-linux
           # Subset closure (core preset, no grpc) — read-only so it can't clobber
@@ -238,7 +238,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@16fe50768ba29a6a00bef572efd766c334c4eba4 # v2.3
+        uses: anolishq/.github/.github/actions/setup-vcpkg@a9b3d134acbcc7dcd6da02c1a345a1fbdca15064 # v2.4
         with:
           triplet: x64-windows-v145
 
@@ -262,7 +262,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@16fe50768ba29a6a00bef572efd766c334c4eba4 # v2.3
+        uses: anolishq/.github/.github/actions/setup-vcpkg@a9b3d134acbcc7dcd6da02c1a345a1fbdca15064 # v2.4
         with:
           triplet: x64-windows-v145
 
@@ -291,7 +291,7 @@ jobs:
           sudo apt-get install -y ninja-build g++ graphviz
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@16fe50768ba29a6a00bef572efd766c334c4eba4 # v2.3
+        uses: anolishq/.github/.github/actions/setup-vcpkg@a9b3d134acbcc7dcd6da02c1a345a1fbdca15064 # v2.4
         with:
           triplet: x64-linux
           # Subset closure (diagram preset, no grpc) — read-only so it can't
