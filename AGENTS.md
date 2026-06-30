@@ -23,7 +23,7 @@ C++20 physics-simulation library used by Anolis providers.
 ## Tooling
 
 - **C++ repos:** clang-format / clang-tidy are pinned to **18.1.8** via the
-  shared `setup-clang-tools` action (matches workstation-configs) — do NOT use
+  shared `setup-clang-tools` action (install the same pinned binary locally) — do NOT use
   pip/apt/pre-commit/container versions. Run `clang-format -i` before **every**
   commit (CI fails otherwise).
 - Shared `.github` actions/workflows are SHA-pinned with a `# <tag>` comment so
