@@ -5,8 +5,8 @@
 #
 # `fmt`/`fmt-check`/`lint` call `clang-format`/`clang-tidy` on PATH. The org pins
 # those to a SHA-verified static LLVM 18.1.8 build — installed in CI by the
-# `setup-clang-tools` action and on dev boxes by workstation-configs
-# `apps/clang-tools` — so dev, editor, and CI run byte-identical bits. Do NOT use
+# `setup-clang-tools` action; install the same pinned binary on dev boxes — so
+# dev, editor, and CI run byte-identical bits. Do NOT use
 # the distro/apt clang-format here (it drifts: Debian 18.1.8 vs Ubuntu 18.1.3).
 
 # Primary CMake preset — override per repo (e.g. ci-linux-release).
