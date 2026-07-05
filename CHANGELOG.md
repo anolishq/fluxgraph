@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-07-04
+
+Maintenance release — CI, docs, and a one-time source reformat; no library
+behavior changes.
+
+### Changed
+
+- Adopt C++20 `std::format` for diagnostics and general clang hygiene. (#66)
+- One-time repo-wide clang-format reformat under the shared org config set;
+  `.git-blame-ignore-revs` points at the squashed reformat commit. (#55, #56)
+
+### CI
+
+- Promote the clang-tidy diff gate to blocking and fold it into `ok`; lint the
+  full C++ surface via the `ci-linux-tidy` preset; pin clang-format /
+  clang-tools; standardize on `setup-vcpkg` v2.2+; routine dependency
+  maintenance.
+
+### Documentation
+
+- Add `AGENTS.md`; use the public install path; prune completed TODO items;
+  reconcile README/CHANGELOG version references. (#67, #72, #76)
+
 ## [1.0.5] - 2026-06-16
 
 ### Changed
@@ -302,7 +325,8 @@ FluxGraph follows these principles:
 
 ---
 
-[Unreleased]: https://github.com/anolishq/fluxgraph/compare/v1.0.5...HEAD
+[Unreleased]: https://github.com/anolishq/fluxgraph/compare/v1.0.6...HEAD
+[1.0.6]: https://github.com/anolishq/fluxgraph/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/anolishq/fluxgraph/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/anolishq/fluxgraph/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/anolishq/fluxgraph/compare/v1.0.2...v1.0.3
