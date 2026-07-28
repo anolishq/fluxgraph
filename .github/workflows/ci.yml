@@ -73,8 +73,8 @@ jobs:
 
       - name: Run ruff checks
         run: |
-          uv run ruff check tests --output-format=github
-          uv run ruff format --check tests
+          uv run ruff check . --output-format=github
+          uv run ruff format --check .
 
   python-typecheck:
     name: Python Type Checking (mypy)
