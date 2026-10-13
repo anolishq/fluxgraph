@@ -9,7 +9,7 @@ FluxGraph is a deterministic signal processing library designed for real-time si
 1. **Determinism** - Same inputs always produce same outputs
 2. **Performance** - Low overhead for real-time execution (<10ms ticks)
 3. **Modularity** - Easy to add transforms/models
-4. **Zero Dependencies** - Pure C++17, no external libs
+4. **Zero Dependencies** - Pure C++20, no external libs
 5. **Type Safety** - Strong typing, compile-time checks where possible
 
 ## Core Architecture
@@ -552,7 +552,7 @@ Offload transform chains to GPU:
 ### vs. Simulink
 
 - **Simulink:** Visual block diagrams, MATLAB integration, expensive
-- **FluxGraph:** Code-first, C++17, free, embeddable
+- **FluxGraph:** Code-first, C++20, free, embeddable
 
 ### vs. OpenModelica
 
@@ -602,7 +602,7 @@ fluxgraph/
 
 ## Build System
 
-CMake 3.20+, C++17 standard:
+CMake 3.20+, C++20 standard:
 
 ```cmake
 add_subdirectory(fluxgraph)
@@ -613,9 +613,12 @@ target_link_libraries(your_app PRIVATE fluxgraph)
 
 **Platform support:**
 
-- Windows (MSVC 2019+)
-- Linux (GCC 9+, Clang 10+)
-- macOS (Xcode 12+)
+- Windows (MSVC 19.32+ / Visual Studio 2022 17.2+)
+- Linux (GCC 13+, Clang 17+)
+- macOS (Apple Clang with C++20 `std::format`; not built in CI)
+
+CI builds with GCC on Ubuntu 24.04 and MSVC v145 (Visual Studio 2026)
+on Windows Server 2025.
 
 ---
 

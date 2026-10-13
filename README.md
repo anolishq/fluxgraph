@@ -15,7 +15,7 @@ physics simulation in any C++ host application.
 - **Single-writer design** - No internal synchronization overhead
 - **Embeddable** - Works in any C++ host application
 - **Scientific rigor** - Dimensional analysis, topological correctness, stability validation
-- **C++17** - Modern C++ with clean API
+- **C++20** - Modern C++ with clean API
 
 ## Quick Start
 
@@ -50,7 +50,7 @@ curl -fsSL "https://github.com/anolishq/fluxgraph/releases/download/v${VERSION}/
 #### Prerequisites
 
 - CMake 3.20 or later
-- C++17 compatible compiler (MSVC 2019+, GCC 9+, Clang 10+)
+- C++20 compiler with `std::format` (GCC 13+, Clang 17+, MSVC 19.32+ / Visual Studio 2022 17.2+)
 
 #### Building
 
