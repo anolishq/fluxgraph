@@ -2,7 +2,7 @@
 
 ## Overview
 
-FluxGraph is a high-performance C++17 signal processing library for real-time simulations. It provides:
+FluxGraph is a high-performance C++20 signal processing library for real-time simulations. It provides:
 
 - Type-safe signal storage with units
 - Declarative graph-based data flow

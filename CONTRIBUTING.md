@@ -10,7 +10,7 @@ FluxGraph is part of the Anolis ecosystem. For shared organization-level enginee
 Prerequisites:
 
 1. CMake 3.20+
-2. C++17 toolchain
+2. C++20 toolchain with `std::format` (GCC 13+, Clang 17+, MSVC 19.32+)
 3. `VCPKG_ROOT` configured
 
 Typical loop:

@@ -6,11 +6,15 @@ This guide shows how to integrate FluxGraph into your C++ application for real-t
 
 ## Prerequisites
 
-- C++17 compatible compiler
-  - MSVC 2019+ (Windows)
-  - GCC 9+ (Linux)
-  - Clang 10+ (macOS/Linux)
+- C++20 compiler with `std::format`
+  - MSVC 19.32+ / Visual Studio 2022 17.2+ (Windows)
+  - GCC 13+ (Linux)
+  - Clang 17+ (macOS/Linux)
 - CMake 3.20 or later
+
+FluxGraph's own CMakeLists.txt builds the library as C++20, so with
+`add_subdirectory` or `FetchContent` the library target is C++20 whatever
+your project sets. Your compiler still has to support C++20 `std::format`.
 
 ---
 
@@ -46,7 +50,7 @@ git submodule add https://github.com/your-org/fluxgraph.git external/fluxgraph
 cmake_minimum_required(VERSION 3.20)
 project(your_project)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Add FluxGraph library
@@ -90,7 +94,7 @@ Automatically download FluxGraph during configure:
 cmake_minimum_required(VERSION 3.20)
 project(your_project)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -146,7 +150,7 @@ Add to your build:
 
 ```makefile
 CXX = g++
-CXXFLAGS = -std=c++17 -O3 -Ifluxgraph/include
+CXXFLAGS = -std=c++20 -O3 -Ifluxgraph/include
 
 SOURCES = src/main.cpp \
           fluxgraph/src/signal_store.cpp \
@@ -173,7 +177,7 @@ Zero external dependencies, 153 tests.
 cmake_minimum_required(VERSION 3.20)
 project(your_project)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 add_subdirectory(external/fluxgraph)
 
@@ -201,7 +205,7 @@ Adds nlohmann/json (header-only), 162 tests.
 cmake_minimum_required(VERSION 3.20)
 project(your_project)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 # Enable JSON loader
 set(FLUXGRAPH_JSON_ENABLED ON CACHE BOOL "Enable JSON loader")
@@ -232,7 +236,7 @@ Adds yaml-cpp, 162 tests.
 cmake_minimum_required(VERSION 3.20)
 project(your_project)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 # Enable YAML loader
 set(FLUXGRAPH_YAML_ENABLED ON CACHE BOOL "Enable YAML loader")
@@ -263,7 +267,7 @@ Supports both JSON and YAML, 171 tests.
 cmake_minimum_required(VERSION 3.20)
 project(your_project)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 # Enable both loaders
 set(FLUXGRAPH_JSON_ENABLED ON CACHE BOOL "Enable JSON loader")
