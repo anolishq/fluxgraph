@@ -10,7 +10,8 @@ This guide shows how to integrate FluxGraph into your C++ application for real-t
   - MSVC 19.32+ / Visual Studio 2022 17.2+ (Windows)
   - GCC 13+ (Linux)
   - Clang 17+ with libc++ 17+ or libstdc++ 13+ (macOS/Linux)
-- CMake 3.20 or later
+- CMake 3.20 or later; 4.2 or later for the `Visual Studio 18 2026` generator
+  (see [Platform-Specific Notes](#platform-specific-notes))
 
 FluxGraph's own CMakeLists.txt builds the library as C++20, so with
 `add_subdirectory` or `FetchContent` the library target is C++20 whatever
@@ -52,6 +53,11 @@ project(your_project)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# v1.0.6 and earlier build their tests and examples by default, even when
+# embedded, and the tests need GoogleTest
+set(FLUXGRAPH_BUILD_TESTS OFF CACHE BOOL "")
+set(FLUXGRAPH_BUILD_EXAMPLES OFF CACHE BOOL "")
 
 # Add FluxGraph library
 add_subdirectory(external/fluxgraph)
@@ -301,8 +307,11 @@ auto spec2 = fluxgraph::loaders::load_yaml_file("graph.yaml");
 
 | Option                   | Dependency            | Linkage              | Size Impact     |
 | ------------------------ | --------------------- | -------------------- | --------------- |
-| `FLUXGRAPH_JSON_ENABLED` | nlohmann/json v3.11.3 | Header-only, PUBLIC  | ~5KB compiled   |
-| `FLUXGRAPH_YAML_ENABLED` | yaml-cpp master       | Static lib, PUBLIC   | ~150KB compiled |
+| `FLUXGRAPH_JSON_ENABLED` | nlohmann/json 3.12.0  | Header-only, PUBLIC  | ~5KB compiled   |
+| `FLUXGRAPH_YAML_ENABLED` | yaml-cpp 0.9.0        | Static lib, PUBLIC   | ~150KB compiled |
+
+The versions are the ones the vcpkg baseline in `vcpkg-configuration.json` pins, which CI builds
+against.
 
 **Important:** Both loaders link their dependency `PUBLIC`, so the `fluxgraph` target carries it
 onto your link line and you do not link it yourself. Your project does have to make the package
@@ -801,6 +810,8 @@ store.clear();
 ## Platform-Specific Notes
 
 ### Windows (MSVC)
+
+The `Visual Studio 18 2026` generator needs Visual Studio 2026 and CMake 4.2 or later.
 
 ```bash
 cmake -G "Visual Studio 18 2026" -A x64 ..
