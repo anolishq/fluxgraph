@@ -9,7 +9,7 @@ This guide shows how to integrate FluxGraph into your C++ application for real-t
 - C++20 compiler with `std::format`
   - MSVC 19.32+ / Visual Studio 2022 17.2+ (Windows)
   - GCC 13+ (Linux)
-  - Clang 17+ (macOS/Linux)
+  - Clang 17+ with libc++ 17+ or libstdc++ 13+ (macOS/Linux)
 - CMake 3.20 or later
 
 FluxGraph's own CMakeLists.txt builds the library as C++20, so with
@@ -35,13 +35,13 @@ Clone FluxGraph:
 
 ```bash
 cd your_project/external
-git clone https://github.com/your-org/fluxgraph.git
+git clone https://github.com/anolishq/fluxgraph.git
 ```
 
 Or add as submodule:
 
 ```bash
-git submodule add https://github.com/your-org/fluxgraph.git external/fluxgraph
+git submodule add https://github.com/anolishq/fluxgraph.git external/fluxgraph
 ```
 
 ### Step 2: Update CMakeLists.txt
@@ -96,11 +96,16 @@ project(your_project)
 
 set(CMAKE_CXX_STANDARD 20)
 
+# v1.0.6 and earlier build their tests and examples by default, even when
+# embedded, and the tests need GoogleTest
+set(FLUXGRAPH_BUILD_TESTS OFF CACHE BOOL "")
+set(FLUXGRAPH_BUILD_EXAMPLES OFF CACHE BOOL "")
+
 include(FetchContent)
 FetchContent_Declare(
     fluxgraph
-    GIT_REPOSITORY https://github.com/your-org/fluxgraph.git
-    GIT_TAG        v0.1.1  # Or main for latest
+    GIT_REPOSITORY https://github.com/anolishq/fluxgraph.git
+    GIT_TAG        05a1564688a4b3fffbfd5e66b68fd7f9d587a0c5  # v1.0.6
 )
 FetchContent_MakeAvailable(fluxgraph)
 
@@ -139,29 +144,29 @@ your_project/
 Add to your build:
 
 - Include path: `your_project/fluxgraph/include`
-- Source files:
-  - `fluxgraph/src/signal_store.cpp`
-  - `fluxgraph/src/namespace.cpp`
-  - `fluxgraph/src/compiler.cpp`
-  - `fluxgraph/src/engine.cpp`
-  - `fluxgraph/src/thermal_mass.cpp`
+- Source files: the `FLUXGRAPH_SOURCES` list in `fluxgraph/CMakeLists.txt`, which is every
+  `.cpp` file under `fluxgraph/src/` outside `src/loaders/`
+- For a loader, also compile `src/loaders/json_loader.cpp` or `src/loaders/yaml_loader.cpp`,
+  define `FLUXGRAPH_JSON_ENABLED` or `FLUXGRAPH_YAML_ENABLED`, and provide nlohmann/json or
+  yaml-cpp
 
 ### Example Makefile
 
+<!-- markdownlint-disable MD010 -->
 ```makefile
 CXX = g++
 CXXFLAGS = -std=c++20 -O3 -Ifluxgraph/include
 
-SOURCES = src/main.cpp \
-          fluxgraph/src/signal_store.cpp \
-          fluxgraph/src/namespace.cpp \
-          fluxgraph/src/compiler.cpp \
-          fluxgraph/src/engine.cpp \
-          fluxgraph/src/thermal_mass.cpp
+# FLUXGRAPH_SOURCES: every .cpp under fluxgraph/src/ outside src/loaders/
+FLUXGRAPH_SOURCES = $(wildcard fluxgraph/src/*.cpp fluxgraph/src/core/*.cpp \
+                      fluxgraph/src/model/*.cpp fluxgraph/src/graph/*.cpp \
+                      fluxgraph/src/graph/compiler/*.cpp)
+SOURCES = src/main.cpp $(FLUXGRAPH_SOURCES)
 
 your_app: $(SOURCES)
-  $(CXX) $(CXXFLAGS) -o your_app $(SOURCES)
+	$(CXX) $(CXXFLAGS) -o your_app $(SOURCES)
 ```
+<!-- markdownlint-enable MD010 -->
 
 ---
 
@@ -171,7 +176,7 @@ FluxGraph core has zero dependencies. Optional graph loaders can be enabled at C
 
 ### Configuration 1: Core Only (No Loaders)
 
-Zero external dependencies, 153 tests.
+Zero external dependencies.
 
 ```cmake
 cmake_minimum_required(VERSION 3.20)
@@ -199,7 +204,7 @@ spec.edges.push_back(edge);
 
 ### Configuration 2: With JSON Loader
 
-Adds nlohmann/json (header-only), 162 tests.
+Adds nlohmann/json (header-only).
 
 ```cmake
 cmake_minimum_required(VERSION 3.20)
@@ -230,7 +235,7 @@ engine.load(std::move(program));
 
 ### Configuration 3: With YAML Loader
 
-Adds yaml-cpp, 162 tests.
+Adds yaml-cpp.
 
 ```cmake
 cmake_minimum_required(VERSION 3.20)
@@ -261,7 +266,7 @@ engine.load(std::move(program));
 
 ### Configuration 4: Both Loaders
 
-Supports both JSON and YAML, 171 tests.
+Supports both JSON and YAML.
 
 ```cmake
 cmake_minimum_required(VERSION 3.20)
@@ -296,10 +301,18 @@ auto spec2 = fluxgraph::loaders::load_yaml_file("graph.yaml");
 
 | Option                   | Dependency            | Linkage              | Size Impact     |
 | ------------------------ | --------------------- | -------------------- | --------------- |
-| `FLUXGRAPH_JSON_ENABLED` | nlohmann/json v3.11.3 | Header-only, PRIVATE | ~5KB compiled   |
-| `FLUXGRAPH_YAML_ENABLED` | yaml-cpp master       | Static lib, PRIVATE  | ~150KB compiled |
+| `FLUXGRAPH_JSON_ENABLED` | nlohmann/json v3.11.3 | Header-only, PUBLIC  | ~5KB compiled   |
+| `FLUXGRAPH_YAML_ENABLED` | yaml-cpp master       | Static lib, PUBLIC   | ~150KB compiled |
 
-**Important:** All dependencies use `PRIVATE` linkage. Your application does not need to find or link these libraries directly.
+**Important:** Both loaders link their dependency `PUBLIC`, so the `fluxgraph` target carries it
+onto your link line and you do not link it yourself. Your project does have to make the package
+findable by `find_package(... CONFIG)`, for example through vcpkg or `CMAKE_PREFIX_PATH`:
+
+- With `add_subdirectory` or `FetchContent`, FluxGraph's own `find_package(nlohmann_json CONFIG REQUIRED)`
+  and `find_package(yaml-cpp CONFIG REQUIRED)` run in your configure, which fails if the package
+  is not found.
+- With an installed FluxGraph and `find_package(fluxgraph)`, the package config calls
+  `find_dependency` for each loader it was built with.
 
 **See Also:**
 
@@ -705,17 +718,7 @@ compiler.register_model("motor",
 
 ## Debugging Tips
 
-### 1. Enable Logging
-
-```cpp
-// Before compile
-compiler.set_verbose(true);  // Prints graph structure
-
-// After tick
-engine.dump_state(std::cout);  // Print all signals
-```
-
-### 2. Validate Graph
+### 1. Validate Graph
 
 ```cpp
 try {
@@ -726,7 +729,7 @@ try {
 }
 ```
 
-### 3. Check Signal Units
+### 2. Check Signal Units
 
 ```cpp
 auto signal = store.read(temp_id);
@@ -735,7 +738,7 @@ std::cout << "Value: " << signal.value << " "
           << "Physics: " << signal.physics_driven << std::endl;
 ```
 
-### 4. Compare to Known Good
+### 3. Compare to Known Good
 
 Run analytical tests:
 
