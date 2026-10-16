@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `FLUXGRAPH_BUILD_TESTS` and `FLUXGRAPH_BUILD_EXAMPLES` default to OFF when
+  fluxgraph is added with `add_subdirectory` or `FetchContent`, so an embedding
+  project no longer needs GTest or builds the examples. They still default to
+  ON when fluxgraph is the top-level project. (#119)
+
 ## [1.0.6] - 2026-07-04
 
 Maintenance release — CI, docs, and a one-time source reformat; no library
