@@ -99,6 +99,18 @@ if(FLUXGRAPH_BUILD_DIAGRAM_TOOL AND FLUXGRAPH_JSON_ENABLED)
     )
 endif()
 
+add_test(
+    NAME integration.subproject_defaults
+    COMMAND ${CMAKE_COMMAND}
+        -DFLUXGRAPH_ROOT=${PROJECT_SOURCE_DIR}
+        -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/subproject-consumer
+        -DGENERATOR=${CMAKE_GENERATOR}
+        -DPLATFORM=${CMAKE_GENERATOR_PLATFORM}
+        -DTOOLSET=${CMAKE_GENERATOR_TOOLSET}
+        -DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/subproject_defaults.cmake
+)
+
 # -----------------------------------------------------------------------------
 # Python Integration Tests (pytest)
 # -----------------------------------------------------------------------------

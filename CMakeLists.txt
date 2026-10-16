@@ -1,8 +1,16 @@
 cmake_minimum_required(VERSION 3.20)
 
 # Build options (set before project() so vcpkg manifest features can be mapped)
-option(FLUXGRAPH_BUILD_TESTS "Build unit tests" ON)
-option(FLUXGRAPH_BUILD_EXAMPLES "Build examples" ON)
+# Tests and examples default ON only when fluxgraph is the top-level project.
+# PROJECT_IS_TOP_LEVEL cannot be used here: before project() it still holds
+# the parent's value, and it needs CMake 3.21.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(_fluxgraph_is_top ON)
+else()
+    set(_fluxgraph_is_top OFF)
+endif()
+option(FLUXGRAPH_BUILD_TESTS "Build unit tests" ${_fluxgraph_is_top})
+option(FLUXGRAPH_BUILD_EXAMPLES "Build examples" ${_fluxgraph_is_top})
 option(FLUXGRAPH_BUILD_SERVER "Build gRPC server" OFF)
 option(FLUXGRAPH_BUILD_DIAGRAM_TOOL "Build diagram generation tooling" OFF)
 option(FLUXGRAPH_JSON_ENABLED "Enable JSON graph loading (requires nlohmann/json)" OFF)
