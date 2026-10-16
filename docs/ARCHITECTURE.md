@@ -614,7 +614,7 @@ target_link_libraries(your_app PRIVATE fluxgraph)
 **Platform support:**
 
 - Windows (MSVC 19.32+ / Visual Studio 2022 17.2+)
-- Linux (GCC 13+, Clang 17+)
+- Linux (GCC 13+, Clang 17+ with libc++ 17+ or libstdc++ 13+)
 - macOS (Apple Clang with C++20 `std::format`; not built in CI)
 
 CI builds with GCC on Ubuntu 24.04 and MSVC v145 (Visual Studio 2026)
