@@ -9,7 +9,7 @@ FluxGraph is part of the Anolis ecosystem. For shared organization-level enginee
 
 Prerequisites:
 
-1. CMake 3.20+
+1. CMake 3.20+ (4.2+ for the Windows presets)
 2. C++20 toolchain with `std::format` (GCC 13+, Clang 17+, MSVC 19.32+)
 3. `VCPKG_ROOT` configured
 
@@ -21,7 +21,8 @@ cmake --build --preset dev-release
 ctest --preset dev-release --output-on-failure
 ```
 
-Windows:
+Windows (the presets use the `Visual Studio 18 2026` generator, added in CMake 4.2, with toolset
+`v145`, so they need Visual Studio 2026 and CMake 4.2+):
 
 ```powershell
 cmake --preset dev-windows-release

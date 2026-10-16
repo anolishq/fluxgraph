@@ -49,8 +49,10 @@ curl -fsSL "https://github.com/anolishq/fluxgraph/releases/download/v${VERSION}/
 
 #### Prerequisites
 
-- CMake 3.20 or later
+- CMake 3.20 or later (4.2 or later for the Windows presets)
 - C++20 compiler with `std::format` (GCC 13+, Clang 17+, MSVC 19.32+ / Visual Studio 2022 17.2+)
+- For the Windows presets, Visual Studio 2026: they use the `Visual Studio 18 2026` generator
+  (added in CMake 4.2) with toolset `v145`
 
 #### Building
 
