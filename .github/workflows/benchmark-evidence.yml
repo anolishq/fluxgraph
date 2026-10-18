@@ -24,6 +24,9 @@ on:
   schedule:
     - cron: "0 7 * * 1"
 
+permissions:
+  contents: read
+
 jobs:
   windows-benchmark:
     name: Windows benchmark evidence

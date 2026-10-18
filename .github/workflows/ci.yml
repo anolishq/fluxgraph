@@ -10,6 +10,9 @@ concurrency:
   group: fluxgraph-ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   changes:
     name: Detect code changes

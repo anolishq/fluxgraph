@@ -16,6 +16,9 @@ on:
   schedule:
     - cron: "45 7 * * 1"
 
+permissions:
+  contents: read
+
 jobs:
   linux-dimensional-validation:
     name: Linux dimensional validation evidence
