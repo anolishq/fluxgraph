@@ -21,6 +21,9 @@ on:
   schedule:
     - cron: "30 7 * * 1"
 
+permissions:
+  contents: read
+
 jobs:
   windows-validation:
     name: Windows numerical validation evidence
