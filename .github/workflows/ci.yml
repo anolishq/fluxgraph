@@ -16,7 +16,7 @@ permissions:
 jobs:
   changes:
     name: Detect code changes
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       pull-requests: read
     outputs:
@@ -53,7 +53,7 @@ jobs:
     name: Python Linting (ruff)
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
 
     steps:
@@ -83,7 +83,7 @@ jobs:
     name: Python Type Checking (mypy)
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
 
     steps:
@@ -111,7 +111,7 @@ jobs:
     name: Linux ${{ matrix.lane }}
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -191,7 +191,7 @@ jobs:
     name: Strict dimensional validation
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
 
     steps:
@@ -282,7 +282,7 @@ jobs:
     name: Diagram Render Smoke
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
       - name: Checkout
@@ -327,7 +327,7 @@ jobs:
     name: C++ Formatting (clang-format)
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -361,7 +361,7 @@ jobs:
     name: ok
     if: always()
     needs: [changes, python-lint, python-typecheck, linux-matrix, strict-dimensional-validation, windows-core, windows-diagram, diagram-render-smoke, version-sync, cpp-format, clang-tidy]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Fail if any upstream job failed or was cancelled
