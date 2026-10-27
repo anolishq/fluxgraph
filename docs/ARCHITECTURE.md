@@ -25,7 +25,7 @@ All data flows through signals identified by integer handles (SignalId):
 **Benefits:**
 
 - Fast lookups (array indexing, not map searches)
-- Simple synchronization (snapshot-based)
+- Simple synchronization (single-writer tick, fixed topological order)
 - Clear data ownership (SignalStore is single source of truth)
 
 ### Three-Layer Model
@@ -61,28 +61,25 @@ All data flows through signals identified by integer handles (SignalId):
 
 Each `engine.tick(dt, store)` executes five sequential stages:
 
-### Stage 1: Pre-Tick Snapshot
+### Stage 1: Input Boundary Freeze
 
 ```cpp
-snapshot = store.snapshot();
+// Stage 1: Input boundary freeze
+// (external writes are assumed complete before tick entry)
 ```
 
-**Purpose:** Create consistent read view of all signals
+**Purpose:** Application writes made before `tick()` form the input state; the engine takes no snapshot or copy of signal values
 
-**Why?** Without snapshot, transforms/models would see partially-updated values during execution, breaking determinism. Example problem:
+**Why?** Edges read and write the live store, so a downstream non-delay edge sees values written earlier in the same tick. Determinism comes from the fixed compiled order. Example:
 
 ```
 Transform A: output1 = input1 * 2
 Transform B: output2 = output1 + 1
 
-Without snapshot:
+In compiled topological order:
 - Transform A runs, writes output1
-- Transform B runs, reads NEW output1 (data race!)
-
-With snapshot:
-- Both read from snapshot (old values)
-- Both write to store (new values)
-- No data races, deterministic order
+- Transform B runs, reads the output1 that A wrote this tick
+- Same inputs and same order give the same outputs
 ```
 
 ### Stage 2: Model Tick
@@ -102,10 +99,10 @@ Models write directly to SignalStore with physics_driven=true flag. These signal
 ### Stage 3: Edge Execution
 
 ```cpp
-for (auto& edge : sorted_edges) {
-    double input = snapshot.read(edge.source_id);
-    double output = edge.transform->apply(input, dt);
-    store.write(edge.target_id, output, edge.unit);
+for (auto &edge : edges_) {
+    const double source_value = store.read_value(edge.source);
+    double output = edge.transform->apply(source_value, dt);
+    store.write_with_contract_unit(edge.target, output);
 }
 ```
 
@@ -122,9 +119,21 @@ for (auto& edge : sorted_edges) {
 ### Stage 4: Rule Evaluation
 
 ```cpp
-for (auto& rule : rules) {
-    if (rule.evaluate(store)) {
-        commands.push(rule.emit_command());
+for (const auto &rule : rules_) {
+    if (rule.condition(store)) {
+        for (size_t i = 0; i < rule.device_functions.size(); ++i) {
+            if (pending_commands_.size() >= pending_commands_.capacity()) {
+                throw std::runtime_error(
+                    "Engine: command backlog capacity exceeded; call "
+                    "drain_commands() more frequently");
+            }
+
+            PendingCommand cmd;
+            cmd.device = rule.device_functions[i].first;
+            cmd.function = rule.device_functions[i].second;
+            cmd.args = &rule.args_list[i];
+            pending_commands_.push_back(cmd);
+        }
     }
 }
 ```
@@ -141,7 +150,7 @@ Example: Emergency stop based on filtered temperature, not raw sensor.
 
 **Purpose:** Store now contains new state for next tick
 
-No explicit stage needed - writes happen during stages 2-4.
+No explicit stage needed - signal writes happen during stages 2-3; rule evaluation queues commands and writes no signals.
 
 ---
 
@@ -160,7 +169,8 @@ No explicit stage needed - writes happen during stages 2-4.
    c. For each outgoing edge:
       - Decrement target node's in-degree
       - If now zero, add target to queue
-4. If sorted list size < node count, graph has cycle
+4. If fewer edges were sorted than there are non-delay edges, the sort fails
+   (a backstop: the cycle check below runs first)
 ```
 
 **Example:**
@@ -180,9 +190,9 @@ Step 4: Process C, Queue=[], Sorted=[A,B,C]
 Execution order: A, B, C
 ```
 
-**Complexity:** O(V + E) where V=signals, E=edges
+**Complexity:** O((V + E) log(V + E)) where V=signals, E=edges (ordered `std::map`/`std::set` containers give a deterministic smallest-ID-first order)
 
-**Implementation:** See `src/compiler.cpp` lines 109-153.
+**Implementation:** See `topological_sort_edges` in `src/graph/compiler/algorithms.cpp`.
 
 ---
 
@@ -194,9 +204,9 @@ Execution order: A, B, C
 A -> B -> C -> A  (cycle)
 ```
 
-**Detection:** If topological sort produces fewer nodes than graph contains, cycle exists.
+**Detection:** Before the topological sort, a depth-first search over the non-delay edges (`detect_cycles_in_non_delay_subgraph` in `src/graph/compiler/algorithms.cpp`) reports a cycle when it reaches a signal already on the current path.
 
-**Why prohibit cycles?**
+**Why prohibit cycles of non-delay edges?** A feedback loop that passes through at least one `delay` edge is allowed; delay edges execute first in the edge stage. Cycles made only of non-delay edges are rejected because:
 
 1. No well-defined execution order
 2. Bootstrap problem (who computes first value?)
@@ -205,8 +215,7 @@ A -> B -> C -> A  (cycle)
 **User-facing error:**
 
 ```
-Error: Cycle detected in signal dependencies
-Signals involved: device.sensor1 -> device.filter -> device.sensor1
+GraphCompiler: Cycle detected in non-delay subgraph: 0 -> 1 -> 0. Add a delay edge in feedback path.
 ```
 
 **Future work:** Could support cycles with explicit fixpoint iteration, but adds complexity.
@@ -235,22 +244,38 @@ Models implement `compute_stability_limit()`:
 
 ```cpp
 double ThermalMassModel::compute_stability_limit() const {
-    return 2.0 * m_thermal_mass / m_heat_transfer_coeff;
+    if (heat_transfer_coeff_ <= 0.0) {
+        return std::numeric_limits<double>::infinity();
+    }
+
+    const double tau = thermal_mass_ / heat_transfer_coeff_;
+    if (integration_method_ == ThermalIntegrationMethod::ForwardEuler) {
+        return 2.0 * tau;
+    }
+
+    return kRk4NegativeRealAxisStabilityLimit * tau;  // ~2.785 * tau
 }
 ```
 
-GraphCompiler validates during compilation:
+GraphCompiler validates during compilation when `compile()` is given an `expected_dt` greater than zero (the default, `-1.0`, skips this check):
 
 ```cpp
-if (dt > model.compute_stability_limit()) {
-    throw std::runtime_error("Time step too large for model stability");
+double limit = model->compute_stability_limit();
+if (expected_dt > limit) {
+    std::ostringstream oss;
+    oss << "Stability violation: " << model->describe() << " requires dt < " << limit
+        << "s, but dt = " << expected_dt << "s";
+    throw std::runtime_error(oss.str());
 }
 ```
 
-**User guidance:** If compilation fails, either:
+`Engine::tick()` checks every model against the `dt` it is given and throws `Engine: stability violation for model '<describe>' (dt=... exceeds limit=...)`.
+
+**User guidance:** If compilation or a tick fails the stability check, either:
 
 1. Reduce dt (better accuracy anyway)
-2. Use implicit integration (future enhancement)
+2. Set `integration_method: rk4` on models that accept it, for a wider limit
+3. Use implicit integration (future enhancement)
 
 ---
 
@@ -267,10 +292,10 @@ if (dt > model.compute_stability_limit()) {
 
 **Rationale:**
 
-- POD is serializable (JSON, YAML, Protobuf)
+- POD maps directly onto JSON and YAML (the optional loaders build a GraphSpec from either)
 - Clear separation: spec=data, compiler=logic
 - Easier to generate programmatically
-- Can validate before compilation
+- Loaders check structure while parsing; semantic validation (units, signatures, cycles) runs in `GraphCompiler::compile`
 
 ### Why Single-Writer SignalStore?
 
@@ -282,7 +307,7 @@ if (dt > model.compute_stability_limit()) {
 
 - Real-time systems avoid unpredictable lock contention
 - Single tick thread is simpler mental model
-- Readers can still access safely (read-only)
+- Reads are safe only while no write or tick is in progress; concurrent readers need external synchronization (the gRPC server serializes all access with one mutex)
 - Performance: No lock overhead
 
 **Trade-off:** Cannot parallelize edge execution. For now, acceptable (tick <10ms target easily met). Future: Could shard SignalStore by signal ranges.
@@ -321,25 +346,23 @@ if (dt > model.compute_stability_limit()) {
 
 **Performance:** Virtual call ~2-5ns overhead. Transform math dominates (exp, sqrt, etc.)
 
-### Why Snapshot-Based Execution?
+### Why Immediate Propagation?
 
-**Choice:** Copy all signal values before processing
+**Choice:** Edges read and write the live store in compiled topological order; no signal values are copied before processing
 
 **Alternatives:**
 
 - Double-buffering (two SignalStores, swap)
 - Dependency tracking (only snapshot what's needed)
-- Immediate propagation (write-through)
+- Snapshot staging (copy all signal values before processing)
 
 **Rationale:**
 
-- Simplest to reason about (no race conditions)
-- Deterministic (execution order doesn't affect output)
-- Easy to debug (snapshot is frozen state)
+- Upstream writes reach downstream non-delay edges in the same tick, so non-delay edges add no delay between each other
+- A signal written by a non-delay edge reaches models and delay edges on the next tick, because both run before non-delay edges
+- Deterministic (execution order affects values within a tick, and that order is fixed at compile time)
 
-**Trade-off:** O(n) memory copy per tick. For 1000 signals, ~8KB copy (negligible).
-
-**Future optimization:** Lazy snapshot (copy-on-write), but premature optimization for now.
+**Trade-off:** The compiler must reject cycles of non-delay edges and keep a stable ordering. See [semantics_spec.md](semantics_spec.md).
 
 ---
 
@@ -350,14 +373,19 @@ if (dt > model.compute_stability_limit()) {
 ```cpp
 class SignalStore {
 private:
-    std::vector<Signal> m_signals;  // Contiguous array
+    std::vector<Signal> signals_;  // Contiguous array
+    std::vector<uint8_t> has_signal_;
+    std::vector<uint8_t> physics_driven_;
+    std::vector<std::string> declared_units_;
+    std::vector<uint8_t> has_declared_unit_;
+    size_t signal_count_ = 0;
 };
 ```
 
 **Access pattern:**
 
 ```
-SignalId=5 -> m_signals[5]   (O(1) array index)
+SignalId=5 -> signals_[5]   (O(1) array index)
 ```
 
 **Cache implications:**
@@ -365,25 +393,26 @@ SignalId=5 -> m_signals[5]   (O(1) array index)
 - Sequential iteration is cache-friendly
 - Random access still fast (array, not map)
 
-**Memory:** Approx 24 bytes per signal (value + unit + flags)
+**Memory:** About 75 bytes per slot on 64-bit libstdc++ (a 40-byte `Signal` holding a `double` and a `std::string` unit, a 32-byte declared-unit `std::string`, and three flag bytes), plus heap storage for unit strings longer than the small-string buffer
 
 ### Namespace Internals
 
-Two data structures for O(1) in both directions:
+Two ordered maps, one per direction, each with O(log n) lookup:
 
 ```cpp
 class SignalNamespace {
 private:
-    std::unordered_map<std::string, SignalId> m_path_to_id;
-    std::unordered_map<SignalId, std::string> m_id_to_path;
+    std::map<std::string, SignalId> path_to_id_;
+    std::map<SignalId, std::string> id_to_path_;
+    SignalId next_id_ = 0;
 };
 ```
 
-**intern():** O(1) average (hash map insert)
-**resolve():** O(1) average (hash map lookup)
-**lookup():** O(1) average (reverse map)
+**intern():** O(log n) (map lookup, then two inserts for a new path)
+**resolve():** O(log n) (map lookup)
+**lookup():** O(log n) (reverse map lookup, returns a copy of the path)
 
-**Memory:** ~32 bytes per signal (two map entries)
+**Memory:** Roughly 150 bytes per signal on 64-bit libstdc++ (two `std::map` nodes, each holding a `std::string` and the ID), plus heap storage for paths longer than the small-string buffer
 
 ---
 
@@ -397,15 +426,17 @@ Implement ITransform:
 class MyTransform : public ITransform {
     double apply(double input, double dt) override { ... }
     void reset() override { ... }
-    std::unique_ptr<ITransform> clone() const override { ... }
+    ITransform *clone() const override { ... }
 };
 ```
 
 Register in factory:
 
 ```cpp
-transform_factory.register_type("my_transform",
-    [](const ParamMap& p) { return std::make_unique<MyTransform>(p); });
+GraphCompiler::register_transform_factory("my_transform",
+    [](const TransformSpec &spec) -> std::unique_ptr<ITransform> {
+        return std::make_unique<MyTransform>(spec.params);
+    });
 ```
 
 See [EMBEDDING.md](EMBEDDING.md) for details.
@@ -437,7 +468,7 @@ _(Future feature)_ Implement IRule interface (not yet designed).
 ### Unit Tests
 
 - Test each component in isolation
-- Mock dependencies (e.g., FakeSignalStore)
+- Use real SignalStore and SignalNamespace instances (no mocks or fakes)
 - Focus: Correctness of individual transforms/models
 
 **Location:** tests/unit/
@@ -475,15 +506,9 @@ _(Future feature)_ Implement IRule interface (not yet designed).
 
 **Target:** 1000-signal graph in <10ms per tick
 
-### Breakdown (Rough estimates for Release build)
+### Measured (Release build)
 
-| Operation       | Time       | Notes                       |
-| --------------- | ---------- | --------------------------- |
-| Snapshot copy   | 10 us      | 1000 signals \* 10ns        |
-| Model tick      | 1-5 ms     | Depends on model complexity |
-| Edge execution  | 50-500 us  | 1000 edges \* 50ns-500ns    |
-| Rule evaluation | 10-100 us  | Simple conditionals         |
-| **Total**       | **1-6 ms** | Well under 10ms budget      |
+The complex scenario in `tests/benchmarks/tick_bench.cpp` (about 1000 signals, 500 `linear` edges, 10 `thermal_mass` models, no rules) averages 114.67 us per tick with zero allocations per tick in the committed baseline `benchmarks/policy/baselines/ci-hosted.windows-2022.json` (`scenario.tick.complex.v1.avg_tick_us`, Release build on Windows 11). No per-stage breakdown is measured. See [performance-benchmarks.md](performance-benchmarks.md) for how baselines are produced.
 
 **Bottlenecks:**
 
@@ -516,14 +541,14 @@ Level 2: [F]        (depends on D, E)
 
 ### Implicit Integration
 
-Replace forward Euler with backward Euler or RK4:
+Add backward Euler alongside the explicit methods (forward Euler is the default; RK4 is selected with `integration_method: rk4`):
 
 **Benefit:** Larger stable time steps
 **Challenge:** Iterative solvers (Newton-Raphson)
 
 ### YAML/JSON Parsing
 
-Load GraphSpec from file:
+Implemented as optional loaders: `load_yaml_file` / `load_json_file` build a GraphSpec from a file when FluxGraph is built with `FLUXGRAPH_YAML_ENABLED` / `FLUXGRAPH_JSON_ENABLED`:
 
 ```yaml
 edges:
@@ -536,7 +561,7 @@ edges:
 ```
 
 **Benefit:** No recompilation for graph changes
-**Challenge:** Adds yaml-cpp or nlohmann-json dependency
+**Dependency:** yaml-cpp or nlohmann-json, pulled in only when the matching option is enabled
 
 ### GPU Acceleration
 
@@ -578,10 +603,11 @@ Offload transform chains to GPU:
 ```
 fluxgraph/
 ├── include/fluxgraph/
-│   ├── core/              SignalStore, Namespace, Command
-│   ├── transform/         8 built-in transforms + interface
-│   ├── model/             ThermalMass + interface
+│   ├── core/              SignalStore, Namespace, types, units
+│   ├── transform/         9 built-in transforms + interface
+│   ├── model/             7 built-in models + interface, integration methods
 │   ├── graph/             GraphSpec, Compiler
+│   ├── command.hpp        Command
 │   └── engine.hpp         Five-stage execution engine
 ├── src/                   Implementation files
 ├── tests/
@@ -595,7 +621,7 @@ fluxgraph/
 
 **Header-only vs. library:**
 
-- Most code in headers for template flexibility
+- Built-in transforms and the interfaces are header-only (no templates)
 - Heavy logic (compiler, models) in .cpp for compile time
 
 ---
@@ -609,7 +635,7 @@ add_subdirectory(fluxgraph)
 target_link_libraries(your_app PRIVATE fluxgraph)
 ```
 
-**Zero external dependencies** (except GoogleTest for tests).
+**Zero external dependencies** in the core library. Optional features add GoogleTest (tests), nlohmann-json (JSON loader), yaml-cpp (YAML loader) and gRPC/Protobuf (server).
 
 **Platform support:**
 
@@ -617,7 +643,7 @@ target_link_libraries(your_app PRIVATE fluxgraph)
 - Linux (GCC 13+, Clang 17+ with libc++ 17+ or libstdc++ 13+)
 - macOS (Apple Clang with C++20 `std::format`; not built in CI)
 
-CI builds with GCC on Ubuntu 24.04 and MSVC v145 (Visual Studio 2026)
+CI builds with GCC on Ubuntu 26.04 and MSVC v145 (Visual Studio 2026)
 on Windows Server 2025.
 
 ---
@@ -627,7 +653,7 @@ on Windows Server 2025.
 FluxGraph achieves high-performance deterministic simulation through:
 
 1. **Signal-centric architecture** - Integer IDs, array storage
-2. **Five-stage tick model** - Snapshot isolation, ordered execution
+2. **Five-stage tick model** - Immediate propagation in a fixed order
 3. **Topological sort** - Dependency-aware scheduling
 4. **Modular design** - Easy to extend transforms/models
 5. **Scientific validation** - Analytical tests for correctness

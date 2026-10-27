@@ -7,7 +7,7 @@ Transforms process signal values in data flow chains. Each transform implements 
 ```cpp
 virtual double apply(double input, double dt) = 0;  // Process one sample
 virtual void reset() = 0;                            // Reset internal state
-virtual std::unique_ptr<ITransform> clone() const = 0;  // Deep copy
+virtual ITransform *clone() const = 0;               // Deep copy (caller owns the raw pointer)
 ```
 
 All transforms are **deterministic** - same inputs/dt always produce same output.
@@ -30,8 +30,8 @@ if clamp_max set: y = min(y, clamp_max)
 
 **Parameters:**
 
-- `scale` (double, default=1.0) - Multiplicative factor
-- `offset` (double, default=0.0) - Additive offset
+- `scale` (double, required) - Multiplicative factor
+- `offset` (double, required) - Additive offset
 - `clamp_min` (optional double) - Minimum output value
 - `clamp_max` (optional double) - Maximum output value
 
@@ -89,7 +89,7 @@ edge.transform.params["clamp_max"] = 100.0;
 
 ```
 tau * dy/dt = x - y
-Discrete: y_{n+1} = y_n + (dt/tau) * (x_n - y_n)
+Discrete (exact ZOH): y_{n+1} = y_n + (1 - exp(-dt/tau)) * (x_n - y_n)
 ```
 
 **Parameters:**
@@ -149,13 +149,13 @@ y(t) = x(t - delay_sec)
 
 - `delay_sec` (double, required) - Delay duration in seconds
 
-**State:** Circular buffer of past samples
+**State:** FIFO queue (`std::deque`) of past samples
 
 **Behavior:**
 
 - Output is input from delay_sec ago
 - Buffer sized for delay_sec / dt samples
-- Filled with 0.0 initially
+- Until delay_sec has elapsed, output holds the first input sample (no zero fill)
 
 **Use Cases:**
 
@@ -176,7 +176,7 @@ edge.transform.params["delay_sec"] = 0.5;  // 500ms delay
 **Memory:** Approx delay_sec/dt \* 8 bytes (one double per buffered sample)
 
 **Analytical Validation:**
-Time shift exact to 1e-6 error for step, ramp, and sine inputs (see analytical tests).
+Step input shift matches to 1e-6; sine input to 1e-3 and ramp input to 0.01 (see analytical tests).
 
 ---
 
@@ -307,7 +307,7 @@ y = (|x| < threshold) ? 0.0 : x
 **Use Cases:**
 
 - Filter noise near zero
-- Implement hysteresis
+- Not hysteresis: deadband is memoryless; use a custom stateful transform (see below)
 - Deadzone in joystick input
 
 **Example:**
@@ -346,7 +346,7 @@ y_{n+1} = y_n + clamp(x_n - y_n, -max_change, max_change)
 
 **Behavior:**
 
-- Output changes by at most max_rate \* dt per tick
+- For max_rate > 0 and dt > 0, output changes by at most max_rate \* dt per tick; the first sample after construction or reset passes straight through, and max_rate <= 0 or dt <= 0 disables limiting (passthrough)
 - Gradual approach to target
 - Prevents sudden jumps
 
@@ -394,7 +394,7 @@ where N = window_size
 
 - `window_size` (int, required) - Number of samples to average
 
-**State:** Circular buffer of past samples
+**State:** FIFO queue (`std::deque`) of the last window_size samples
 
 **Behavior:**
 
@@ -423,7 +423,7 @@ edge.transform.params["window_size"] = 10;  // Average last 10 samples
 **Frequency Response:**
 
 - Acts as low-pass FIR filter
-- Cutoff frequency: ~1/(window_size \* dt)
+- -3 dB cutoff frequency: ~0.44/(window_size \* dt); 1/(window_size \* dt) is the first spectral null
 
 **Latency:** (window_size - 1) / 2 \* dt (group delay)
 
@@ -437,7 +437,8 @@ Constant input gives exact average (EXPECT_DOUBLE_EQ), step response correct (se
 | Transform     | Stateful? | Memory      | Latency      | Use Case             |
 | ------------- | --------- | ----------- | ------------ | -------------------- |
 | Linear        | No        | 0           | 0            | Scaling, calibration |
-| FirstOrderLag | Yes       | O(1)        | ~3\*tau      | Smooth filtering     |
+| UnitConvert   | No        | 0           | 0            | Unit conversion      |
+| FirstOrderLag | Yes       | O(1)        | ~tau         | Smooth filtering     |
 | Delay         | Yes       | O(delay/dt) | delay_sec    | Transport lag        |
 | Noise         | Yes       | O(1)        | 0            | Add disturbance      |
 | Saturation    | No        | 0           | 0            | Enforce limits       |
@@ -503,13 +504,14 @@ public:
         m_state = false;
     }
 
-    std::unique_ptr<ITransform> clone() const override {
-        return std::make_unique<HysteresisTransform>(*this);
+    ITransform *clone() const override {
+        return new HysteresisTransform(*this);
     }
 };
 ```
 
-See [EMBEDDING.md](EMBEDDING.md) for registration details.
+Register it with `fluxgraph::GraphCompiler::register_transform_factory(type, factory)`, where `factory` is a `std::function<std::unique_ptr<ITransform>(const TransformSpec &)>`; use `register_transform_factory_with_signature` for strict mode (see `include/fluxgraph/graph/compiler.hpp`).
+See [EMBEDDING.md](EMBEDDING.md) for a full registration example.
 
 ---
 
@@ -537,7 +539,7 @@ Example: delay=0.5s -> dt=0.1s (5 samples) or 0.05s (10 samples)
 // Good: filter then limit
 noise -> first_order_lag -> saturation
 
-// Bad: limit then filter (spikes can still pass through limiter)
+// Worse: limit then filter (output stays in bounds, but noise is clipped before averaging, biasing the mean near the limits)
 noise -> saturation -> first_order_lag
 ```
 
@@ -573,11 +575,11 @@ edge: z = 2*x + 10
 
 ## Scientific Validation
 
-All transforms validated against analytical solutions (see tests/analytical/):
+Seven of the nine transforms are validated against analytical solutions (see tests/analytical/); Noise and UnitConvert are covered by unit tests only:
 
 - **FirstOrderLag:** Matches exp(-t/tau) to 0.001 error
 - **ThermalMass:** Matches heat equation to 0.1 degC
-- **Delay:** Exact time shift to 1e-6 error
+- **Delay:** Step input shift matches to 1e-6; sine to 1e-3 (after a transient) and ramp to 0.01
 - **Linear:** Exact (EXPECT_DOUBLE_EQ)
 - **Saturation:** Exact clamping
 - **Deadband:** Exact threshold
@@ -597,7 +599,7 @@ All transforms validated against analytical solutions (see tests/analytical/):
 - FirstOrderLag: ~5ns
 - RateLimiter: ~5ns
 - MovingAverage: ~10ns \* window_size
-- Delay: ~3ns (circular buffer)
+- Delay: ~3ns (deque buffer)
 - Noise: ~20ns (RNG call)
 
 **Release builds (-O3):** 2-5x faster
@@ -625,9 +627,10 @@ All transforms validated against analytical solutions (see tests/analytical/):
 
 ## Summary
 
-FluxGraph provides 8 scientifically-validated transforms covering:
+FluxGraph provides 9 built-in transforms covering:
 
 - Scaling (Linear)
+- Unit conversion (UnitConvert)
 - Filtering (FirstOrderLag, MovingAverage)
 - Delays (Delay)
 - Noise (Noise)
@@ -636,7 +639,7 @@ FluxGraph provides 8 scientifically-validated transforms covering:
 All transforms:
 
 - Deterministic
-- Validated analytically
+- Validated analytically, except Noise and UnitConvert (unit tests only)
 - Efficient (sub-microsecond per call in Release)
 
 **Next:** See [API.md](api-reference.md) for usage details, [EMBEDDING.md](EMBEDDING.md) for integration.

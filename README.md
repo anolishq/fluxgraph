@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/anolishq/fluxgraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anolishq/fluxgraph/actions/workflows/ci.yml)
 
-**A protocol-agnostic physics simulation library for embedded systems.**
+**A protocol-agnostic physics simulation library for embedding in C++ host applications.**
 
 FluxGraph is a standalone C++ library that provides signal storage, graph compilation,
 transforms, models, and deterministic tick execution. FluxGraph enables embeddable
@@ -30,9 +30,14 @@ FetchContent_Declare(
     fluxgraph
     URL https://github.com/anolishq/fluxgraph/releases/download/v1.0.6/fluxgraph-1.0.6-source.tar.gz
 )
+set(FLUXGRAPH_BUILD_TESTS OFF)     # v1.0.6 defaults tests and examples ON, and tests need GTest
+set(FLUXGRAPH_BUILD_EXAMPLES OFF)
 FetchContent_MakeAvailable(fluxgraph)
-target_link_libraries(your_target PRIVATE fluxgraph::fluxgraph)
+target_link_libraries(your_target PRIVATE fluxgraph)
+target_compile_features(your_target PRIVATE cxx_std_20)
 ```
+
+`fluxgraph::fluxgraph` is defined only by `find_package(fluxgraph)` against an installed package.
 
 Replace `v1.0.6` with the [latest release](https://github.com/anolishq/fluxgraph/releases/latest) tag.
 
@@ -96,9 +101,12 @@ Dependencies are resolved via vcpkg manifests and `find_package(...)` (no FetchC
 
 ### Diagram Tool (Optional)
 
-With `FLUXGRAPH_BUILD_DIAGRAM_TOOL=ON`, `fluxgraph-diagram` can emit DOT and optional rendered images:
+With `FLUXGRAPH_BUILD_DIAGRAM_TOOL=ON`, `fluxgraph-diagram` can emit DOT and optional rendered images.
+A `.json` input also needs `FLUXGRAPH_JSON_ENABLED=ON`, and `svg`/`png` output needs Graphviz `dot` (found on `PATH` unless `--dot-bin` is given):
 
 ```bash
+cmake --preset dev-release -DFLUXGRAPH_BUILD_DIAGRAM_TOOL=ON -DFLUXGRAPH_JSON_ENABLED=ON
+cmake --build --preset dev-release
 ./build/dev-release/tools/fluxgraph-diagram \
   --in ./examples/03_json_graph/graph.json \
   --out ./graph.svg \

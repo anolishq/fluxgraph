@@ -7,7 +7,7 @@ This directory contains usage examples demonstrating the FluxGraph library API, 
 Examples are built automatically when `FLUXGRAPH_BUILD_EXAMPLES=ON` (default):
 
 ```bash
-cmake -B build
+cmake -B build -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 cmake --build build --config Debug
 ```
 
@@ -43,7 +43,7 @@ Input: 4V -> Output: 9V
 **Key API Concepts:**
 
 - `GraphSpec` - Protocol-agnostic POD graph definition
-- `GraphCompiler::compile()` - Validates and optimizes graph
+- `GraphCompiler::compile()` - Validates graph and orders edges topologically
 - `Engine::load()` - Sets up execution state
 - `SignalNamespace::resolve()` - Gets signal IDs from paths
 - `SignalStore::write()` and `read_value()` - Signal I/O
@@ -70,13 +70,15 @@ Shows realistic physics simulation with:
 ```
 Thermal Mass Simulation
 =======================
-t= 0.00s  Heater=500.00W  Temp= 25.23 degC  Noisy= 25.15 degC
-t= 0.50s  Heater=500.00W  Temp= 25.45 degC  Noisy= 25.38 degC
+t= 0.00s  Heater=500.00W  Temp= 25.23 degC  Noisy= 25.17 degC
+t= 0.50s  Heater=500.00W  Temp= 25.45 degC  Noisy= 25.50 degC
 ...
-t= 5.00s  Heater=  0.00W  Temp= 27.42 degC  Noisy= 27.48 degC
-t= 5.50s  Heater=  0.00W  Temp= 27.38 degC  Noisy= 27.31 degC
+t= 5.00s  Heater= 0.00W  Temp= 27.16 degC  Noisy= 27.17 degC
+t= 5.50s  Heater= 0.00W  Temp= 27.13 degC  Noisy= 27.11 degC
 ...
 ```
+
+The `Noisy` values depend on the standard library's `std::normal_distribution`.
 
 **Physics:**
 
@@ -88,7 +90,7 @@ t= 5.50s  Heater=  0.00W  Temp= 27.38 degC  Noisy= 27.31 degC
 **Key API Concepts:**
 
 - `ModelSpec` - Physics model configuration
-- Model input/output signals (power_in, temperature_out)
+- Model input/output signals (`power_signal`, `ambient_signal`, `temp_signal`)
 - Transform chains (physics -> noise filter)
 - Timestep management (dt parameter in `tick()`)
 
@@ -106,7 +108,7 @@ Demonstrates loading graphs from JSON files:
 **Build with JSON support:**
 
 ```bash
-cmake -B build-json -DFLUXGRAPH_JSON_ENABLED=ON
+cmake -B build-json -DFLUXGRAPH_JSON_ENABLED=ON -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 cmake --build build-json --config Debug
 ```
 
@@ -154,7 +156,7 @@ Same thermal simulation as Example 3, but using YAML format:
 **Build with YAML support:**
 
 ```bash
-cmake -B build-yaml -DFLUXGRAPH_YAML_ENABLED=ON
+cmake -B build-yaml -DFLUXGRAPH_YAML_ENABLED=ON -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 cmake --build build-yaml --config Debug
 ```
 
@@ -260,7 +262,7 @@ Demonstrates a simple translational mechanical model:
 Demonstrates an electromechanical model with coupled electrical + mechanical
 dynamics:
 
-- `dc_motor` model with physical parameters (`R`, `L`, `Kt`, `Ke`, `J`, `b`)
+- `dc_motor` model with physical parameters (`resistance_ohm`, `inductance_h`, `torque_constant`, `back_emf_constant`, `inertia`, `viscous_friction`)
 - Voltage input (`V`) and load torque input (`N*m`)
 - Speed/current/torque outputs (`rad/s`, `A`, `N*m`)
 
@@ -310,7 +312,7 @@ system:
 
 **Use when:**
 
-- Modern tooling and validation (JSON Schema)
+- Modern tooling and validation
 - Exchanging with web APIs or JavaScript
 - Strict schema validation needed
 - Machine-generated configs
@@ -319,7 +321,7 @@ system:
 
 - Ubiquitous format (every language supports it)
 - Fast parsing with nlohmann/json
-- JSON Schema validation available
+- Partial JSON Schema excerpt in `docs/schema-json.md`
 - Compact syntax
 
 ### YAML Configuration (Example 4)
@@ -341,7 +343,7 @@ system:
 
 After understanding these examples:
 
-1. **Explore transforms** - See `include/fluxgraph/transform/` for all 8 types
+1. **Explore transforms** - See `include/fluxgraph/transform/` for all 9 types
 2. **Add models** - Implement custom physics models via `IModel` interface
 3. **Check tests** - `tests/unit/` and `tests/analytical/` show comprehensive usage
 4. **Read docs** - See `docs/` for architecture and design decisions
@@ -351,6 +353,7 @@ After understanding these examples:
 ```cpp
 // 1. Setup
 SignalNamespace sig_ns;
+FunctionNamespace func_ns;
 SignalStore store;
 Engine engine;
 
@@ -378,7 +381,7 @@ double result = store.read_value(output_sig);
 
 **"Unknown model type" error:**
 
-- Check ModelSpec `type` field matches an implemented model type (`thermal_mass`, `thermal_rc2`, `first_order_process`, `second_order_process`)
+- Check ModelSpec `type` field matches an implemented model type (`thermal_mass`, `thermal_rc2`, `first_order_process`, `second_order_process`, `mass_spring_damper`, `dc_motor`, `state_space_siso_discrete`)
 - Ensure all required params are present
 
 **Signals read as 0.0:**
@@ -389,7 +392,7 @@ double result = store.read_value(output_sig);
 
 **Unexpected NaN/Inf values:**
 
-- Check model stability limits (dt too large)
+- A dt above a model's stability limit makes `tick()` throw `Engine: stability violation ...` rather than produce NaN/Inf
 - Verify model parameters satisfy constraints (for example: thermal_mass > 0, heat_transfer_coeff > 0)
 - Ensure ambient temperature is initialized
 

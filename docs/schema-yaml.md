@@ -57,7 +57,7 @@ Models represent physical systems with internal state and differential equations
 ### Model Object
 
 ```yaml
-- id: unique_identifier # Unique model identifier
+- id: unique_identifier # Model identifier (required; uniqueness is not checked)
   type: model_type # Model type (thermal_mass, thermal_rc2, first_order_process, second_order_process, state_space_siso_discrete, mass_spring_damper, dc_motor)
   params: # Model-specific parameters
     param_name: value
@@ -86,7 +86,7 @@ Lumped thermal capacitance with heat transfer: `C * dT/dt = P - h * (T - T_ambie
 **Parameters:**
 | Parameter | Type | Units | Description |
 |-----------|------|-------|-------------|
-| `temp_signal` | string | - | Output signal path for temperature |
+| `temp_signal` | string | degC | Output signal path for temperature |
 | `power_signal` | string | W | Input signal path for heating power |
 | `ambient_signal` | string | degC | Input signal path for ambient temperature |
 | `thermal_mass` | number | J/K | Heat capacity (must be > 0) |
@@ -118,8 +118,8 @@ Two-node thermal RC network with ambient coupling and inter-node conductance.
 **Parameters:**
 | Parameter | Type | Units | Description |
 |-----------|------|-------|-------------|
-| `temp_signal_a` | string | - | Output signal path for node A temperature |
-| `temp_signal_b` | string | - | Output signal path for node B temperature |
+| `temp_signal_a` | string | degC | Output signal path for node A temperature |
+| `temp_signal_b` | string | degC | Output signal path for node B temperature |
 | `power_signal` | string | W | Input signal path for heating power (applied to node A) |
 | `ambient_signal` | string | degC | Input signal path for ambient temperature |
 | `thermal_mass_a` | number | J/K | Heat capacity of node A (must be > 0) |
@@ -395,7 +395,7 @@ Low-pass filter: `tau * dy/dt + y = x`
 **Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `tau_s` | number | Time constant in seconds (must be > 0) |
+| `tau_s` | number | Time constant in seconds (not range-checked; values <= 0 pass the input through) |
 
 **Example:**
 
@@ -420,7 +420,7 @@ Time-shift signal: `y(t) = x(t - delay_sec)`
 **Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `delay_sec` | number | Delay duration in seconds (must be >= 0) |
+| `delay_sec` | number | Delay duration in seconds (not range-checked; values <= 0 pass the input through) |
 
 **Example:**
 
@@ -495,7 +495,7 @@ Zero output below threshold: `y = (|x| < threshold) ? 0.0 : x`
 **Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `threshold` | number | Sensitivity threshold (must be >= 0) |
+| `threshold` | number | Sensitivity threshold (not range-checked; a negative value never zeroes the output) |
 
 **Example:**
 
@@ -518,7 +518,7 @@ Limit rate of change: `|dy/dt| <= max_rate_per_sec`
 **Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `max_rate_per_sec` | number | Maximum rate in units/second (must be > 0) |
+| `max_rate_per_sec` | number | Maximum rate in units/second; alias `max_rate` (not range-checked; values <= 0 pass the input through) |
 
 **Example:**
 
@@ -599,7 +599,7 @@ Rules trigger device actions when conditions are met.
       function: function_name
       args:
         arg_name: value
-  on_error: log_and_continue # Error handling (optional)
+  on_error: log_and_continue # Optional, defaults to log_and_continue; stored but not read by the engine
 ```
 
 **Action `args` constraint:**
@@ -699,14 +699,13 @@ edges:
 
 ### Multi-line Strings
 
-Use `|` or `>` for long conditions:
+Use `|` or `>` for a condition; surrounding whitespace is trimmed. The condition must still be a single `<signal_path> <op> <number>` comparison; `&&` and `||` are rejected at compile time:
 
 ```yaml
 rules:
   - id: complex_condition
-    condition: |
-      chamber.temp > 50.0 &&
-      chamber.temp < 100.0
+    condition: >
+      chamber.temp > 50.0
     actions:
       - device: alarm
         function: trigger
@@ -718,10 +717,15 @@ YAML supports inline and full-line comments:
 
 ```yaml
 models:
+  # Chamber model
   - id: chamber # Main thermal mass
     type: thermal_mass
     params:
+      temp_signal: chamber.temp
+      power_signal: chamber.power
+      ambient_signal: ambient.temp
       thermal_mass: 1000.0 # Aluminum block
+      heat_transfer_coeff: 10.0
       initial_temp: 25.0 # Room temperature
 ```
 
@@ -741,10 +745,10 @@ edges:
 The YAML loader provides detailed error messages with node locations:
 
 ```
-YAML parse error at edges[2].transform: Missing required field 'type'
-YAML parse error at rules[0].actions[0].args.payload: Command args must be scalar (double/int64/bool/string)
-Parameter parse error at models[0].params.x: nesting depth exceeds limit (32)
-YAML parse error in file graph.yaml: [yaml-cpp internal error]
+YAML parse error at /edges/2/transform: Missing required field 'type'
+YAML parse error at /rules/0/actions/0/args/payload: Command args must be scalar (double/int64/bool/string)
+Parameter parse error at /models/0/params/x/0/0/.../0: nesting depth exceeds limit (32)
+Error loading YAML file 'graph.yaml': YAML parse error at line N, column M: <yaml-cpp message>
 ```
 
 ## YAML Schema Validation
@@ -752,11 +756,11 @@ YAML parse error in file graph.yaml: [yaml-cpp internal error]
 For tools that support YAML Schema (based on JSON Schema):
 
 ```yaml
-# yaml-language-server: $schema=https://example.com/fluxgraph-v1.schema.json
+# yaml-language-server: $schema=<path-or-url-to-schema>
 
 models:
   - id: chamber
-    # ... VSCode will provide autocomplete and validation
+    # No FluxGraph schema file is published, so this modeline has nothing to validate against
 ```
 
 Schema file planned for v1.1.
@@ -766,6 +770,9 @@ Schema file planned for v1.1.
 ### C++ API
 
 ```cpp
+#include "fluxgraph/core/namespace.hpp"
+#include "fluxgraph/engine.hpp"
+#include "fluxgraph/graph/compiler.hpp"
 #include "fluxgraph/loaders/yaml_loader.hpp"
 
 // Load from file
@@ -785,6 +792,9 @@ edges:
 auto spec2 = fluxgraph::loaders::load_yaml_string(yaml_content);
 
 // Compile and run
+fluxgraph::SignalNamespace signal_ns;
+fluxgraph::FunctionNamespace func_ns;
+fluxgraph::Engine engine;
 fluxgraph::GraphCompiler compiler;
 auto program = compiler.compile(spec, signal_ns, func_ns);
 engine.load(std::move(program));
@@ -795,7 +805,7 @@ engine.load(std::move(program));
 Requires `-DFLUXGRAPH_YAML_ENABLED=ON` at CMake configure time:
 
 ```bash
-cmake -B build -DFLUXGRAPH_YAML_ENABLED=ON
+cmake -B build -DFLUXGRAPH_YAML_ENABLED=ON -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 cmake --build build
 ```
 
