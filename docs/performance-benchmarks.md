@@ -36,10 +36,10 @@ Windows PowerShell:
 .\scripts\bench.ps1 -Preset dev-windows-release -Config Release
 ```
 
-Optional loader benchmarks:
+Optional loader benchmarks (needs a preset with `FLUXGRAPH_JSON_ENABLED=ON` and `FLUXGRAPH_YAML_ENABLED=ON`; with `dev-release` the build step fails because the loader targets are not defined):
 
 ```bash
-bash ./scripts/bench.sh --preset dev-release --include-optional
+bash ./scripts/bench.sh --preset ci-linux-release-server --include-optional
 ```
 
 Strict status enforcement (for gated runs):
@@ -119,7 +119,7 @@ For any published performance claim, attach:
 1. Commit hash used for the run.
 2. Exact benchmark command.
 3. Full artifact directory or archived equivalent.
-4. Hardware and OS details (captured in manifest + release notes).
+4. Hardware and OS details (the manifest records the platform string but not CPU or memory; record those in release notes).
 5. Comparison baseline (previous artifact manifest).
 
 Claims without linked artifacts are treated as unsupported.

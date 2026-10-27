@@ -2,7 +2,7 @@
 
 **Status:** Baseline semantics specification  
 **Version:** 0.1.0  
-**Last Updated:** March 1, 2026
+**Last Updated:** October 27, 2026
 
 ## 1. Scope and Authority
 
@@ -10,7 +10,7 @@ This document is the normative semantic contract for FluxGraph runtime behavior.
 
 1. If this document conflicts with README, architecture notes, examples, or API docs, this document is authoritative.
 2. All public claims about execution behavior must be derivable from this document.
-3. Any semantic change requires an update to this document before merge.
+3. Any semantic change requires an update to this document before merge. No CI check enforces this.
 
 ## 2. Evaluated Execution Models and Selection
 
@@ -31,12 +31,12 @@ Cons:
 
 ## Option B: Immediate Topological Propagation Semantics
 
-Definition: edges execute in deterministic topological order and read latest visible values; upstream edge writes are visible to downstream edges in the same tick.
+Definition: non-delay edges execute in deterministic topological order and read latest visible values; upstream edge writes are visible to downstream non-delay edges in the same tick.
 
 Pros:
 
 1. Natural DAG signal-flow semantics.
-2. Explicit delays are the only source of temporal delay.
+2. Non-delay edges add no temporal delay between each other within a tick. A signal written by an edge reaches models on the next tick, because models run before edges. A signal written by a non-delay edge, or by a delay edge declared later, reaches a delay edge on the next tick, because delay edges run first, in declaration order (Section 4).
 3. Better alignment with scientific communication for causal graphs.
 
 Cons:
@@ -51,7 +51,7 @@ FluxGraph adopts **Immediate Topological Propagation Semantics**.
 
 We define a discrete tick index `k` with tick boundaries `t_k`.
 
-1. `dt_k > 0` is required for every tick.
+1. `dt_k > 0` is required for every tick. `Engine::tick` and the server `--dt` check reject `dt <= 0`; a NaN `dt` passes both checks.
 2. The state visible to application and providers before `tick(k)` is `S_k`.
 3. `tick(k)` computes `S_{k+1}` and command set `C_{k+1}`.
 4. No concurrent tick execution is permitted.
@@ -66,8 +66,8 @@ Each `tick(dt, store)` executes in this order:
 2. **Model Update Stage**
    - Models advance internal state by `dt` and write model outputs into store.
 3. **Edge Propagation Stage**
-   - Edges execute in deterministic topological order.
-   - Edge output writes are immediately visible to downstream edges in the same stage.
+   - Delay edges execute first, in declaration order. Non-delay edges then execute in deterministic topological order.
+   - Edge output writes are immediately visible to downstream non-delay edges in the same stage. A delay edge whose source is written by a non-delay edge, or by a delay edge declared after it, reads that source's value from the previous tick.
 4. **Rule Evaluation Stage**
    - Rules evaluate against post-model/post-edge state (`S_{k+1}`).
    - Matching rules emit commands for external execution.
@@ -88,36 +88,36 @@ Determinism requirements:
 
 ## 6. Delay Semantics
 
-Delay behavior is explicit and never implicit.
+Delays are declared explicitly as delay edges. Edge execution order adds one tick of lag where a delay edge reads the output of a non-delay edge, or of a delay edge declared after it (item 3).
 
 1. Delay transform parameter `delay_sec` maps to integer ticks by:
-   - `N = max(1, round(delay_sec / dt_ref))`
-2. `dt_ref` is the runtime tick period used for model execution in the deployment profile.
-3. Delay output at tick `k` is input value from tick `k-N`.
-4. Initial delay buffer fill value is `0.0` unless an explicit initializer is introduced in a future spec revision.
-5. If runtime `dt` deviates from `dt_ref` beyond tolerance, runtime must reject execution or reinitialize delay buffers according to documented policy.
+   - `N = max(1, llround(delay_sec / dt))` when `delay_sec > 0`. `delay_sec <= 0` is accepted and passes the input through with no delay.
+2. `dt` is the timestep passed to each `tick(dt, store)` call; `N` is recomputed on every tick.
+3. For `k >= N`, delay output at tick `k` is the input value from tick `k-N`, counting ticks from load or reset. The lag is `N+1` ticks when the delay's source is written by a non-delay edge, or by a delay edge declared after it (Section 4).
+4. The delay buffer starts empty, with no fill value: for `k < N` the delay outputs the input value from tick 0.
+5. No `dt` tolerance check or buffer reinitialization is implemented. The buffer drops at most one sample per tick, so after `dt` increases the delay keeps its earlier tick count; after `dt` decreases the buffer grows and repeats its oldest sample until it holds `N` samples.
 
 ## 7. Signal Ownership and Write Authority
 
-Each signal has exactly one owning writer class per tick:
+Each signal has exactly one owning writer class per tick. The compiler enforces this between edges and models; external writes are checked only as stated in rule 2:
 
-1. **Model-owned (physics-owned):** writable by model stage only.
-2. **Edge-owned (derived):** writable by edge stage only.
+1. **Model-owned (physics-owned):** written by the model stage.
+2. **Edge-owned (derived):** written by the edge stage; the compiler rejects models and other edges as writers.
 3. **External-owned (provider/application input):** writable by external update path only.
 
 Rules:
 
 1. Multi-writer targets are compile-time errors.
-2. External writes to model-owned or edge-owned signals are runtime errors.
+2. The server's `UpdateSignals` path rejects external writes to every edge target and to `thermal_mass` `temp_signal` with `PERMISSION_DENIED`. External writes to outputs of other model types are accepted, and `SignalStore::write` in library use performs no ownership check.
 3. Engine internal stages must not overwrite signals owned by different stages.
 
 ## 8. Unit Semantics
 
 Unit handling policy is strict and deterministic.
 
-1. Every signal has declared unit metadata (`"dimensionless"` allowed).
+1. Under `DimensionalPolicy::strict`, edge sources, edge targets, signals bound to model signal parameters and rule condition signals must have a declared unit contract (`"dimensionless"` allowed). Under the default `DimensionalPolicy::permissive`, which the server uses, a signal may be undeclared; its first non-dimensionless write then sets its unit.
 2. Writes must match declared unit policy exactly unless explicit conversion rules are defined.
-3. Load/compile must reject incompatible unit contracts where inferable from graph specification.
+3. Under `DimensionalPolicy::strict`, compile rejects incompatible unit contracts where inferable from graph specification. Under the default permissive policy, which the server uses, compile passes a warning to `CompilationOptions::warning_handler`, if one is set, and continues (the server sets none), except that an empty `signals[].unit` and duplicate `signals` entries with conflicting units are rejected under either policy.
 4. Runtime unit mismatch is a hard error (not silent coercion).
 5. Claims of dimensional analysis are only valid when compile/load/runtime unit contracts are all enforced.
 
@@ -143,7 +143,7 @@ This section records current implementation alignment against the normative cont
 2. Rule conditions now support comparator expressions (`<`, `<=`, `>`, `>=`, `==`, `!=`) over scalar signal paths: **partial** for Section 4 (minimum subset implemented).
 3. Stability validation is active in server load/compile path and enforced at runtime in `Engine::tick`: **conformant** with Section 9 baseline.
 4. Server CLI `--dt` is wired into service runtime timestep and compile-time stability validation: **conformant** with Section 9.
-5. External writes to protected model-owned and derived target signals are rejected in server update flow: **conformant** with Section 7 for server path.
+5. External writes to edge targets and to `thermal_mass` `temp_signal` are rejected in server update flow; outputs of other model types are not protected: **partial** for Section 7 for server path.
 6. Unit checks enforce declared/first-write consistency and runtime mismatches throw: **partial** for Section 8 (compile-time inferential checks remain limited).
 7. Delay-mediated cycle acceptance is implemented via non-delay subgraph cycle policy: **partial** pending deeper delay-buffer semantics validation in complex mixed-order graphs.
 

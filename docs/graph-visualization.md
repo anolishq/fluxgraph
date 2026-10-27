@@ -27,8 +27,8 @@ FluxGraph provides an optional graph-diagram toolchain that:
 
 ## 4. Architecture Contract
 
-1. `viz-core`: pure C++ emitter (`GraphSpec -> DOT`), no third-party dependencies.
-2. `fluxgraph-diagram` CLI: input parsing/validation, file I/O, optional renderer invocation.
+1. `viz-core` (CMake target `fluxgraph_viz_core`): C++ DOT emitter (`GraphSpec -> DOT`), output-format parsing, and the Graphviz renderer (`render_with_graphviz`, which runs the external `dot` binary); no third-party library dependencies.
+2. `fluxgraph-diagram` CLI: input parsing/validation, file I/O, and an optional call to the `viz-core` renderer.
 
 `viz-core` depends on FluxGraph public graph spec types (`GraphSpec`, `ModelSpec`, `EdgeSpec`, `RuleSpec`) and does not depend on runtime engine internals.
 
@@ -90,6 +90,7 @@ Supported flags:
 3. `--format dot|svg|png`: output format (default `dot`)
 4. `--dot-bin <path>`: optional Graphviz `dot` binary override (default `dot`)
 5. `--dot-out <path>`: optional DOT path to persist canonical DOT when rendering image output
+6. `--help`, `-h`: print usage and exit with code `0`
 
 Behavior:
 

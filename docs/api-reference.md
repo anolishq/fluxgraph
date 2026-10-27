@@ -23,11 +23,11 @@ fluxgraph::SignalStore store;
 
 #### Methods
 
-**void write(SignalId id, double value, const char\* unit)**
-Write a signal value with specified unit. First write declares the unit.
+**void write(SignalId id, double value, const std::string& unit = "dimensionless")**
+Write a signal value with specified unit. The first write whose unit is not empty and not `"dimensionless"` declares the unit; after that, a write with a different unit throws `std::runtime_error`.
 
 ```cpp
-auto temp_id = namespace.intern("chamber.temp");
+auto temp_id = ns.intern("chamber.temp");
 store.write(temp_id, 25.0, "degC");
 ```
 
@@ -39,14 +39,14 @@ double temp = store.read_value(temp_id);
 ```
 
 **Signal read(SignalId id)**
-Read full signal including value, unit, and physics-driven flag.
+Read full signal (value and unit). Use `is_physics_driven(id)` for the physics-driven flag.
 
 ```cpp
 auto signal = store.read(sensor_id);
 std::cout << "Value: " << signal.value << " " << signal.unit << std::endl;
 ```
 
-**void declare_unit(SignalId id, const char\* unit)**
+**void declare_unit(SignalId id, const std::string& expected_unit)**
 Pre-declare expected unit for a signal. Enforces consistency.
 
 ```cpp
@@ -70,7 +70,7 @@ Maps human-readable paths to integer SignalId handles for fast lookups.
 ```cpp
 #include "fluxgraph/core/namespace.hpp"
 
-fluxgraph::SignalNamespace namespace;
+fluxgraph::SignalNamespace ns;
 ```
 
 #### Methods
@@ -85,11 +85,11 @@ assert(id1 == id2);
 ```
 
 **SignalId resolve(const std::string& path)**
-Lookup existing signal ID. Returns INVALID_SIGNAL_ID if not found.
+Lookup existing signal ID. Returns `fluxgraph::INVALID_SIGNAL` if not found.
 
 ```cpp
 auto id = ns.resolve("device.sensor2");
-if (id == fluxgraph::INVALID_SIGNAL_ID) {
+if (id == fluxgraph::INVALID_SIGNAL) {
     std::cerr << "Signal not found" << std::endl;
 }
 ```
@@ -151,7 +151,7 @@ Load compiled graph into engine for execution.
 
 ```cpp
 GraphCompiler compiler;
-auto program = compiler.compile(spec, namespace, fn_namespace);
+auto program = compiler.compile(spec, ns, fn_namespace);
 engine.load(std::move(program));
 ```
 
@@ -164,11 +164,11 @@ engine.tick(0.1, store);  // 100ms time step
 
 **Five-stage execution:**
 
-1. Pre-tick snapshot (read all signals)
+1. Input boundary freeze (external writes complete before tick)
 2. Model tick (physics updates)
-3. Edge execution (transform chains)
-4. Rule evaluation (command emission)
-5. Post-tick write (commit changes)
+3. Edge execution (delay edges first in declaration order, then non-delay edges in topological order with immediate propagation)
+4. Commit outputs (currently a no-op, so rules evaluate against the post-edge state; [semantics_spec.md](semantics_spec.md) §4 and [ARCHITECTURE.md](ARCHITECTURE.md) list rule evaluation as stage 4 and commit as stage 5, which has the same observable effect)
+5. Rule evaluation (command emission)
 
 **std::vector&lt;Command&gt; drain_commands()**
 Retrieve and clear command queue.
@@ -237,6 +237,7 @@ spec.edges.push_back(edge);
 - `deadband` - Zero below threshold: y = (|x| < threshold) ? 0 : x
 - `rate_limiter` - Limit rate of change: |dy/dt| <= max_rate
 - `moving_average` - Sliding window average
+- `unit_convert` - Convert from the source signal's declared unit (from `GraphSpec::signals`) to `to_unit`, resolved at compile time. Optional `from_unit` is checked against the declared source unit, and is used as the source unit when none is declared; with neither, permissive mode applies identity (scale 1, offset 0)
 
 #### ModelSpec
 
@@ -319,15 +320,16 @@ std::string output = fluxgraph::param::as_string(
 
 #### RuleSpec
 
-Defines condition -> command mappings (future feature).
+Defines condition -> action mappings. Conditions have the form `<signal_path> <op> <number>` (`<`, `<=`, `>`, `>=`, `==`, `!=`); each tick the condition holds, the rule's actions are queued as Commands for `drain_commands()`.
 
 ```cpp
 fluxgraph::RuleSpec rule;
-rule.signal_path = "chamber.temp";
-rule.condition_type = "threshold";
-rule.threshold = 50.0;
-rule.device_name = "controller";
-rule.function_name = "emergency_stop";
+rule.id = "overtemp";
+rule.condition = "chamber.temp > 50.0";
+fluxgraph::ActionSpec action;
+action.device = "controller";
+action.function = "emergency_stop";
+rule.actions.push_back(action);
 spec.rules.push_back(rule);
 ```
 
@@ -345,8 +347,8 @@ fluxgraph::GraphCompiler compiler;
 
 #### Methods
 
-**CompiledProgram compile(const GraphSpec& spec, SignalNamespace& ns, FunctionNamespace& fn)**
-Compile graph specification into executable program.
+**CompiledProgram compile(const GraphSpec& spec, SignalNamespace& ns, FunctionNamespace& fn, double expected_dt = -1.0)**
+Compile graph specification into executable program. An overload takes `const CompilationOptions& options` in place of `expected_dt`.
 
 **Compilation steps:**
 
@@ -354,7 +356,7 @@ Compile graph specification into executable program.
 2. Resolve all signal paths to IDs via namespace
 3. Topological sort to determine execution order
 4. Detect cycles (throws exception if found)
-5. Validate model stability (checks dt vs dynamics)
+5. Validate model stability against `expected_dt` when it is > 0 (`Engine::tick` also checks the supplied dt on every tick and throws if it exceeds a model's stability limit)
 6. Package into CompiledProgram
 
 **Throws:**
@@ -365,7 +367,7 @@ Compile graph specification into executable program.
 
 ```cpp
 try {
-    auto program = compiler.compile(spec, namespace, fn_namespace);
+    auto program = compiler.compile(spec, ns, fn_namespace);
     engine.load(std::move(program));
 } catch (const std::exception& e) {
     std::cerr << "Compilation failed: " << e.what() << std::endl;
@@ -423,6 +425,7 @@ auto spec = fluxgraph::loaders::load_json_string(json);
 **Errors:**
 
 - `std::runtime_error` - JSON parse errors, missing required fields, invalid values
+- A string field of the wrong JSON type (e.g. a numeric `type` or `source`) throws `nlohmann::json::type_error`, whose message has no path; catch `std::exception` to handle both
 - Error messages include JSON pointer paths (e.g., `/edges/2/transform/type`)
 
 **See also:**
@@ -470,7 +473,7 @@ auto spec = fluxgraph::loaders::load_yaml_string(yaml);
 **Errors:**
 
 - `std::runtime_error` - YAML parse errors, missing required fields, invalid values
-- Error messages include node paths (e.g., `edges[2].transform.type`)
+- Error messages include node paths (e.g., `/edges/2/transform`); YAML syntax errors report line and column
 
 **See also:**
 
@@ -494,7 +497,7 @@ class ITransform {
 public:
     virtual double apply(double input, double dt) = 0;
     virtual void reset() = 0;
-    virtual std::unique_ptr<ITransform> clone() const = 0;
+    virtual ITransform* clone() const = 0;
     virtual ~ITransform() = default;
 };
 ```
@@ -521,8 +524,8 @@ public:
         m_state = 0.0;
     }
 
-    std::unique_ptr<ITransform> clone() const override {
-        return std::make_unique<MyTransform>(*this);
+    fluxgraph::ITransform* clone() const override {
+        return new MyTransform(*this);
     }
 };
 ```
@@ -601,20 +604,21 @@ model.params["integration_method"] = std::string("rk4"); // optional
 Commands emitted by rules for execution by external systems.
 
 ```cpp
-#include "fluxgraph/core/command.hpp"
+#include "fluxgraph/command.hpp"
 
 fluxgraph::Command cmd(device_id, function_id);
-cmd.add_arg(42.0);              // double
-cmd.add_arg(int64_t{100});      // int64_t
-cmd.add_arg(true);              // bool
-cmd.add_arg(std::string{"OK"}); // string
+cmd.args["value"] = 42.0;               // double
+cmd.args["count"] = int64_t{100};       // int64_t
+cmd.args["enable"] = true;              // bool
+cmd.args["status"] = std::string{"OK"}; // string
 ```
 
 **Access arguments:**
 
 ```cpp
-if (std::holds_alternative<double>(cmd.args[0])) {
-    double value = std::get<double>(cmd.args[0]);
+auto it = cmd.args.find("value");
+if (it != cmd.args.end() && std::holds_alternative<double>(it->second)) {
+    double value = std::get<double>(it->second);
 }
 ```
 
@@ -624,7 +628,7 @@ if (std::holds_alternative<double>(cmd.args[0])) {
 
 **Single-writer model:**
 
-- SignalStore: One writer, multiple readers safe
+- SignalStore: no internal synchronization; concurrent reads are safe only while nothing writes (including `Engine::tick`)
 - Engine: tick() must be called from single thread
 - Namespace: intern() not thread-safe, resolve() safe after setup
 
@@ -638,7 +642,7 @@ Setup phase (single-threaded):
 Execution phase (can be threaded):
 
 - Engine tick (single thread)
-- Multiple readers can call store.read() concurrently
+- Reads of the store between ticks, or serialized with tick() by external locking
 
 ---
 
@@ -648,7 +652,7 @@ Execution phase (can be threaded):
 
 ```cpp
 auto id = ns.resolve("nonexistent");
-if (id == fluxgraph::INVALID_SIGNAL_ID) {
+if (id == fluxgraph::INVALID_SIGNAL) {
     // Handle missing signal
 }
 ```
@@ -667,7 +671,7 @@ try {
 
 ```cpp
 store.declare_unit(temp_id, "degC");
-store.write(temp_id, 77.0, "degF");  // Error logged, write rejected
+store.write(temp_id, 77.0, "degF");  // Throws std::runtime_error; value unchanged
 ```
 
 **Invalid tick:**

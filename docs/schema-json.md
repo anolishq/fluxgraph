@@ -59,7 +59,7 @@ Models represent physical systems with internal state and differential equations
 
 - `id` (string, required) - Unique model identifier
 - `type` (string, required) - Model type (built-in: `"thermal_mass"`, `"thermal_rc2"`, `"first_order_process"`, `"second_order_process"`, `"state_space_siso_discrete"`, `"mass_spring_damper"`, `"dc_motor"`)
-- `params` (object, required) - Model-specific parameters (supports nested structured values)
+- `params` (object, optional) - Model-specific parameters (supports nested structured values); must be an object if present. Built-in model types fail at compile time when a required parameter is missing
 
 ### Parameter Value Types (Models and Transforms)
 
@@ -69,11 +69,11 @@ Model/transform `params` use structured values:
 2. array: JSON array of structured values
 3. object: JSON object with structured values
 
-Loader resource limits are enforced to reject abusive payloads:
+Model and transform `params` values are subject to these parse limits, with one node budget shared across the document. The JSON document is fully parsed before the limits apply, and signals, rules, ids and paths are not size-limited:
 
 1. max nesting depth: `32`
 2. max total nodes: `250000`
-3. max object members: `4096`
+3. max object members: `4096` (objects nested inside a parameter value; a top-level `params` map is bounded only by the node budget)
 4. max array elements: `65536`
 5. max string bytes: `1048576`
 
@@ -84,7 +84,7 @@ Lumped thermal capacitance with heat transfer: `C * dT/dt = P - h * (T - T_ambie
 **Parameters:**
 | Parameter | Type | Units | Description |
 |-----------|------|-------|-------------|
-| `temp_signal` | string | - | Output signal path for temperature |
+| `temp_signal` | string | degC | Output signal path for temperature |
 | `power_signal` | string | W | Input signal path for heating power |
 | `ambient_signal` | string | degC | Input signal path for ambient temperature |
 | `thermal_mass` | number | J/K | Heat capacity (must be > 0) |
@@ -118,8 +118,8 @@ Two-node thermal RC network with ambient coupling and inter-node conductance.
 **Parameters:**
 | Parameter | Type | Units | Description |
 |-----------|------|-------|-------------|
-| `temp_signal_a` | string | - | Output signal path for node A temperature |
-| `temp_signal_b` | string | - | Output signal path for node B temperature |
+| `temp_signal_a` | string | degC | Output signal path for node A temperature |
+| `temp_signal_b` | string | degC | Output signal path for node B temperature |
 | `power_signal` | string | W | Input signal path for heating power (applied to node A) |
 | `ambient_signal` | string | degC | Input signal path for ambient temperature |
 | `thermal_mass_a` | number | J/K | Heat capacity of node A (must be > 0) |
@@ -421,7 +421,7 @@ Low-pass filter: `tau * dy/dt + y = x`
 **Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `tau_s` | number | Time constant in seconds (must be > 0) |
+| `tau_s` | number | Time constant in seconds; not validated, and a value <= 0 makes the transform a pass-through |
 
 **Example:**
 
@@ -449,7 +449,7 @@ Time-shift signal: `y(t) = x(t - delay_sec)`
 **Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `delay_sec` | number | Delay duration in seconds (must be >= 0) |
+| `delay_sec` | number | Delay duration in seconds; not validated, and a value <= 0 makes the transform a pass-through |
 
 **Example:**
 
@@ -533,7 +533,7 @@ Zero output below threshold: `y = (|x| < threshold) ? 0.0 : x`
 **Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `threshold` | number | Sensitivity threshold (must be >= 0) |
+| `threshold` | number | Sensitivity threshold; not validated, and a negative value makes the transform a pass-through |
 
 **Example:**
 
@@ -559,7 +559,7 @@ Limit rate of change: `|dy/dt| <= max_rate_per_sec`
 **Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `max_rate_per_sec` | number | Maximum rate in units/second (must be > 0) |
+| `max_rate_per_sec` | number | Maximum rate in units/second (alias `max_rate`); not validated, and a value <= 0 disables limiting |
 
 **Example:**
 
@@ -662,8 +662,8 @@ Rules trigger device actions when conditions are met.
 
 - `id` (string, required) - Unique rule identifier
 - `condition` (string, required) - Simple comparison (basic parser in v1.0)
-- `actions` (array, required) - Array of action objects
-- `on_error` (string, optional) - Error handling ("log_and_continue" only in v1.0)
+- `actions` (array, optional) - Array of action objects; if absent or not an array, the rule loads with no actions
+- `on_error` (string, optional, default `"log_and_continue"`) - Any string is accepted and stored on the compiled rule; no value changes engine behaviour
 
 **Action `args` constraint:**
 
@@ -765,7 +765,7 @@ The JSON loader provides detailed error messages with JSON pointer paths:
 ```
 JSON parse error at /edges/2/transform: Missing required field 'type'
 JSON parse error at /rules/0/actions/0/args/payload: Command args must be scalar (double/int64/bool/string)
-Parameter parse error at /models/0/params/x: nesting depth exceeds limit (32)
+Parameter parse error at /models/0/params/x: string length exceeds limit (1048576 bytes)
 JSON parse error in file graph.json: [nlohmann::json parse error]
 ```
 
@@ -805,18 +805,24 @@ Full JSON Schema definition: See `schema/fluxgraph-v1.schema.json` (planned for 
 ### C++ API
 
 ```cpp
+#include "fluxgraph/core/namespace.hpp"
+#include "fluxgraph/engine.hpp"
+#include "fluxgraph/graph/compiler.hpp"
 #include "fluxgraph/loaders/json_loader.hpp"
 
 // Load from file
 auto spec = fluxgraph::loaders::load_json_file("graph.json");
 
 // Load from string
-std::string json_content = R"({ "edges": [...] })";
+std::string json_content = R"({"edges": []})";
 auto spec2 = fluxgraph::loaders::load_json_string(json_content);
 
 // Compile and run
+fluxgraph::SignalNamespace signal_ns;
+fluxgraph::FunctionNamespace func_ns;
 fluxgraph::GraphCompiler compiler;
 auto program = compiler.compile(spec, signal_ns, func_ns);
+fluxgraph::Engine engine;
 engine.load(std::move(program));
 ```
 

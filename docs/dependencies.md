@@ -16,8 +16,8 @@ This document defines FluxGraph policy for dependency management, preset usage, 
 
 ## Python Dependency Policy
 
-1. CI installs Python integration dependencies from `requirements-lock.txt`.
-2. `requirements.txt` remains a maintainer-facing range file; lockfile is execution source.
+1. CI installs Python integration dependencies with `uv sync --locked --extra dev` from `uv.lock`.
+2. `pyproject.toml` (`[project.optional-dependencies]` `dev`) is the maintainer-facing range file; `uv.lock` is the execution source.
 3. Lockfile and range updates must be reviewed together in the same PR.
 
 ## Versioning Policy
@@ -28,7 +28,7 @@ This document defines FluxGraph policy for dependency management, preset usage, 
 ## CI Lane Tiers
 
 - **Required**: Linux core build/test lane, Linux diagram-dot lane, Windows core build/test lane, Windows diagram-dot lane, and diagram render smoke lane.
-- **Advisory/matrix**: Linux JSON, YAML, and server-enabled lanes.
+- **Required (matrix)**: Linux JSON, YAML, and server-enabled lanes.
 - **Optional heavy lanes**: extended sanitizer/stress/integration runs.
 
 ## Preset Baseline and Exception Policy
@@ -36,7 +36,7 @@ This document defines FluxGraph policy for dependency management, preset usage, 
 Baseline names:
 
 - `dev-debug`, `dev-release`, `ci-linux-release`, `ci-windows-release`
-- specialized as supported: `ci-asan`, `ci-ubsan`, `ci-tsan`, `ci-coverage`
+- specialized as supported: `ci-tsan`, `ci-fuzz`, `ci-linux-tidy`
 
 Rules:
 

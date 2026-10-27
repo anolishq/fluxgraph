@@ -127,7 +127,8 @@ target_link_libraries(your_app PRIVATE fluxgraph)
 
 **Cons:**
 
-- Slower first configure (downloads every time)
+- Slower first configure of each fresh build tree (it clones FluxGraph; later configures of
+  the same build tree reuse the download)
 - Requires internet connection
 
 ---
@@ -305,13 +306,14 @@ auto spec2 = fluxgraph::loaders::load_yaml_file("graph.yaml");
 
 ### Dependency Details
 
-| Option                   | Dependency            | Linkage              | Size Impact     |
+| Option                   | Dependency            | Linkage              | Size (estimate) |
 | ------------------------ | --------------------- | -------------------- | --------------- |
 | `FLUXGRAPH_JSON_ENABLED` | nlohmann/json 3.12.0  | Header-only, PUBLIC  | ~5KB compiled   |
-| `FLUXGRAPH_YAML_ENABLED` | yaml-cpp 0.9.0        | Static lib, PUBLIC   | ~150KB compiled |
+| `FLUXGRAPH_YAML_ENABLED` | yaml-cpp 0.9.0        | Per triplet, PUBLIC  | ~150KB compiled |
 
 The versions are the ones the vcpkg baseline in `vcpkg-configuration.json` pins, which CI builds
-against.
+against. yaml-cpp is a static or shared library according to the vcpkg triplet: static on
+`x64-linux`, shared on the repo's `x64-windows-v145` and `x64-linux-tsan` triplets.
 
 **Important:** Both loaders link their dependency `PUBLIC`, so the `fluxgraph` target carries it
 onto your link line and you do not link it yourself. Your project does have to make the package
@@ -484,10 +486,20 @@ int main() {
 
 **Build and run:**
 
+Add the executable to your CMakeLists.txt:
+
+```cmake
+add_executable(chamber_sim chamber_sim.cpp)
+target_link_libraries(chamber_sim PRIVATE fluxgraph)
+```
+
 ```bash
 cmake --build build --config Release
 ./build/chamber_sim
 ```
+
+With a multi-config generator (Visual Studio, Xcode) the binary is `build/Release/chamber_sim`
+(`chamber_sim.exe` on Windows).
 
 **Result:** CSV file with temperature evolution over time.
 
@@ -499,17 +511,25 @@ cmake --build build --config Release
 
 **Single-writer:** One thread calls `engine.tick()`
 
-**Multi-reader:** Multiple threads can call `store.read()` concurrently
+**Multi-reader:** Multiple threads can call `store.read()` concurrently only while no thread
+calls `engine.tick()` or `store.write()`. `SignalStore` has no internal synchronization, so reads
+concurrent with `tick()` are data races; serialise them with your own mutex.
 
 **Namespace:** Thread-safe after setup (intern during init, resolve during execution)
 
 ### Safe Pattern
 
 ```cpp
+// SignalStore has no internal synchronization: guard tick() and reads together
+std::mutex store_mutex;
+
 // Thread 1: Simulation
 void simulation_thread() {
     while (running) {
-        engine.tick(dt, store);
+        {
+            std::lock_guard lock(store_mutex);
+            engine.tick(dt, store);
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }
@@ -517,7 +537,11 @@ void simulation_thread() {
 // Thread 2: Monitoring
 void monitor_thread() {
     while (running) {
-        double temp = store.read_value(temp_id);  // Safe concurrent read
+        double temp = 0.0;
+        {
+            std::lock_guard lock(store_mutex);
+            temp = store.read_value(temp_id);
+        }
         std::cout << "Temp: " << temp << std::endl;
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
@@ -559,7 +583,7 @@ store.reserve(1000);  // Pre-allocate for 1000 signals
 ```cpp
 // Bad: Repeated resolve
 for (int i = 0; i < 1000; ++i) {
-    auto id = ns.resolve("chamber.temp");  // Hash lookup every loop!
+    auto id = ns.resolve("chamber.temp");  // std::map lookup every loop!
     double temp = store.read_value(id);
 }
 
@@ -576,8 +600,8 @@ for (int i = 0; i < 1000; ++i) {
 // Too small: Wasted computation
 engine.tick(0.001, store);  // 1000 Hz, likely overkill
 
-// Too large: Instability
-engine.tick(1.0, store);    // May violate model stability limits
+// Too large: rejected
+engine.tick(1.0, store);    // Throws std::runtime_error if dt exceeds a model's stability limit
 
 // Just right: Match physics needs
 engine.tick(0.1, store);    // 10 Hz, good for most thermal systems
@@ -637,8 +661,8 @@ public:
         // Stateless, nothing to reset
     }
 
-    std::unique_ptr<fluxgraph::ITransform> clone() const override {
-        return std::make_unique<MyGainTransform>(*this);
+    fluxgraph::ITransform* clone() const override {
+        return new MyGainTransform(*this);
     }
 };
 ```
@@ -651,18 +675,16 @@ public:
 #include "my_transform.hpp"
 #include "fluxgraph/graph/compiler.hpp"
 
-GraphCompiler compiler;
-
-// Register factory function
-compiler.register_transform("my_gain",
-    [](const fluxgraph::ParamMap& params) -> std::unique_ptr<fluxgraph::ITransform> {
-        double gain = std::get<double>(params.at("gain"));
+// Register factory function (static and process-wide; each type registers once)
+fluxgraph::GraphCompiler::register_transform_factory("my_gain",
+    [](const fluxgraph::TransformSpec& spec) -> std::unique_ptr<fluxgraph::ITransform> {
+        double gain = std::get<double>(spec.params.at("gain"));
         return std::make_unique<MyGainTransform>(gain);
     }
 );
 
 // Now can use in GraphSpec
-EdgeSpec edge;
+fluxgraph::EdgeSpec edge;
 edge.transform.type = "my_gain";
 edge.transform.params["gain"] = 5.0;
 ```
@@ -715,8 +737,8 @@ public:
 Register:
 
 ```cpp
-compiler.register_model("motor",
-    [](const fluxgraph::ParamMap& params,
+fluxgraph::GraphCompiler::register_model_factory("motor",
+    [](const fluxgraph::ModelSpec& spec,
        fluxgraph::SignalNamespace& ns) -> std::unique_ptr<fluxgraph::IModel> {
         // Parse params, return model instance
     }
@@ -744,16 +766,16 @@ try {
 auto signal = store.read(temp_id);
 std::cout << "Value: " << signal.value << " "
           << "Unit: " << signal.unit << " "
-          << "Physics: " << signal.physics_driven << std::endl;
+          << "Physics: " << store.is_physics_driven(temp_id) << std::endl;
 ```
 
 ### 3. Compare to Known Good
 
-Run analytical tests:
+Run the analytical tests in a standalone FluxGraph build, where tests are built by default:
 
 ```bash
 cd fluxgraph/build
-ctest -R analytical
+ctest -R Analytical
 ```
 
 If test passes but your sim doesn't, compare parameters.
@@ -765,9 +787,9 @@ If test passes but your sim doesn't, compare parameters.
 ### 1. Forgot to Call tick()
 
 ```cpp
-engine.load(program);
+engine.load(std::move(program));
 // ... forgot engine.tick(dt, store) ...
-double temp = store.read_value(temp_id);  // Still initial value!
+double temp = store.read_value(temp_id);  // 0.0: model outputs are not written until tick()
 ```
 
 ### 2. Wrong Time Step Units
@@ -787,7 +809,7 @@ auto program = compiler.compile(spec, ns, fn);
 engine1.load(std::move(program));  // OK
 engine2.load(std::move(program));  // ERROR: program already moved!
 
-// FIX: Compile twice or clone program
+// FIX: Compile the spec again for each engine (CompiledProgram cannot be copied)
 ```
 
 ### 4. Not Resetting After Re-Run

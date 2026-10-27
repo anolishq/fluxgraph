@@ -24,6 +24,8 @@ The following built-in models support `integration_method`:
 2. `thermal_rc2`
 3. `first_order_process`
 4. `second_order_process`
+5. `mass_spring_damper`
+6. `dc_motor`
 
 Discrete-time structured model:
 
@@ -55,7 +57,8 @@ For the linear thermal mass model `dT/dt = (P - h*(T - T_amb)) / C`, with
 1. `forward_euler`: `dt < 2/k = 2*C/h`
 2. `rk4`: `dt < 2.785293563/k = 2.785293563*C/h`
 
-If `h <= 0`, the model is treated as unconditionally stable for this criterion.
+`h` must be finite and `> 0`; graph compilation and the `ThermalMassModel`
+constructor both reject `h <= 0`.
 
 For the two-node thermal RC model, the system is linear: `dT/dt = A*T + c`.
 Let `lambda_min` be the most negative eigenvalue of `A` (largest magnitude on
@@ -80,7 +83,9 @@ Validation runs must report:
 
 1. Error metrics (`L2`, `Linf`) versus analytical references.
 2. Convergence behavior as `dt` is refined.
-3. Determinism checks for each supported integration method.
+
+Determinism for `forward_euler` and `rk4` is checked by the integration tests
+in `tests/integration/determinism_test.cpp`, not by validation runs.
 
 ## Forward Compatibility
 
