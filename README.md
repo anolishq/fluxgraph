@@ -2,27 +2,26 @@
 
 [![CI](https://github.com/anolishq/fluxgraph/actions/workflows/ci.yml/badge.svg)](https://github.com/anolishq/fluxgraph/actions/workflows/ci.yml)
 
-**A protocol-agnostic physics simulation library for embedding in C++ host applications.**
+FluxGraph is a C++20 library for physics simulation, built to be embedded in a
+host application. You describe a system as a graph of signals, transforms and
+models. FluxGraph compiles the graph into a fixed order and runs it one tick at
+a time with deterministic results.
 
-FluxGraph is a standalone C++ library that provides signal storage, graph compilation,
-transforms, models, and deterministic tick execution. FluxGraph enables embeddable
-physics simulation in any C++ host application.
+The core library has no external dependencies. Optional loaders read graphs
+from JSON or YAML, and an optional gRPC server, `fluxgraph-server`, runs a
+graph as a standalone process. The signal store is single-writer and has no
+internal locking: one thread calls `engine.tick()`.
 
-## Features
+FluxGraph does not depend on Anolis, and the Anolis runtime does not depend on
+FluxGraph. In Anolis, the
+[simulation provider](https://github.com/anolishq/anolis-provider-sim) uses it
+in `sim` mode: built with `ENABLE_FLUXGRAPH=ON`, the provider connects to
+`fluxgraph-server` over gRPC and drives its simulated devices from the graph.
 
-- **Zero dependencies** - Core library has no external dependencies
-- **Protocol-agnostic** - No assumptions about YAML, gRPC, or protobuf in core
-- **Single-writer design** - No internal synchronization overhead
-- **Embeddable** - Works in any C++ host application
-- **Scientific rigor** - Dimensional analysis, topological correctness, stability validation
-- **C++20** - Modern C++ with clean API
+## Add it to a CMake project
 
-## Quick Start
-
-### Use as a library (recommended)
-
-FluxGraph is a header + compiled library. The easiest way to consume it is via CMake FetchContent
-pointing at a tagged release tarball:
+Fetch a release source tarball with `FetchContent` and link the `fluxgraph`
+target:
 
 ```cmake
 include(FetchContent)
@@ -30,18 +29,24 @@ FetchContent_Declare(
     fluxgraph
     URL https://github.com/anolishq/fluxgraph/releases/download/v1.0.6/fluxgraph-1.0.6-source.tar.gz
 )
-set(FLUXGRAPH_BUILD_TESTS OFF)     # v1.0.6 defaults tests and examples ON, and tests need GTest
+set(FLUXGRAPH_BUILD_TESTS OFF)     # v1.0.6 builds tests by default, and tests need GTest
 set(FLUXGRAPH_BUILD_EXAMPLES OFF)
 FetchContent_MakeAvailable(fluxgraph)
 target_link_libraries(your_target PRIVATE fluxgraph)
 target_compile_features(your_target PRIVATE cxx_std_20)
 ```
 
-`fluxgraph::fluxgraph` is defined only by `find_package(fluxgraph)` against an installed package.
+Replace `v1.0.6` with the
+[latest release](https://github.com/anolishq/fluxgraph/releases/latest) tag.
+The namespaced target `fluxgraph::fluxgraph` exists only when you use
+`find_package(fluxgraph)` against an installed package.
 
-Replace `v1.0.6` with the [latest release](https://github.com/anolishq/fluxgraph/releases/latest) tag.
+[Embedding](docs/EMBEDDING.md) covers the loaders, custom transforms and
+models, and threading.
 
-**FluxGraph server binary** (standalone gRPC simulation server):
+## Run the server
+
+Each release has a Linux x86_64 build of `fluxgraph-server`:
 
 ```bash
 VERSION=$(curl -fsSL https://api.github.com/repos/anolishq/fluxgraph/releases/latest | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
@@ -50,74 +55,9 @@ curl -fsSL "https://github.com/anolishq/fluxgraph/releases/download/v${VERSION}/
 ./bin/fluxgraph-server --help
 ```
 
-### Build from source (contributors)
+## Minimal example
 
-#### Prerequisites
-
-- CMake 3.20 or later (4.2 or later for the Windows presets)
-- C++20 compiler with `std::format` (GCC 13+, Clang 17+ with libc++ 17+ or libstdc++ 13+, MSVC 19.32+ / Visual Studio 2022 17.2+)
-- For the Windows presets, Visual Studio 2026: they use the `Visual Studio 18 2026` generator
-  (added in CMake 4.2) with toolset `v145`
-
-#### Building
-
-```bash
-# Clone
-git clone https://github.com/anolishq/fluxgraph.git
-cd fluxgraph
-
-# Prerequisite
-export VCPKG_ROOT=/path/to/vcpkg
-
-# Configure + build (preset-first)
-cmake --preset dev-release
-cmake --build --preset dev-release
-
-# Run tests
-ctest --preset dev-release
-```
-
-```powershell
-# Windows (MSVC presets)
-$env:VCPKG_ROOT = "D:\\Tools\\vcpkg"
-cmake --preset dev-windows-release
-cmake --build --preset dev-windows-release --config Release
-ctest --preset dev-windows-release
-```
-
-### Build Options
-
-Optional graph loaders can be enabled:
-
-| Option                   | Default | Description                                       |
-| ------------------------ | ------- | ------------------------------------------------- |
-| `FLUXGRAPH_BUILD_DIAGRAM_TOOL` | OFF | Build optional graph diagram CLI + DOT emitter |
-| `FLUXGRAPH_JSON_ENABLED` | OFF     | Enable JSON graph loader (requires nlohmann-json) |
-| `FLUXGRAPH_YAML_ENABLED` | OFF     | Enable YAML graph loader (requires yaml-cpp)      |
-
-Dependency/build/CI governance: [docs/dependencies.md](docs/dependencies.md).
-
-Dependencies are resolved via vcpkg manifests and `find_package(...)` (no FetchContent drift in CI).
-
-### Diagram Tool (Optional)
-
-With `FLUXGRAPH_BUILD_DIAGRAM_TOOL=ON`, `fluxgraph-diagram` can emit DOT and optional rendered images.
-A `.json` input also needs `FLUXGRAPH_JSON_ENABLED=ON`, and `svg`/`png` output needs Graphviz `dot` (found on `PATH` unless `--dot-bin` is given):
-
-```bash
-cmake --preset dev-release -DFLUXGRAPH_BUILD_DIAGRAM_TOOL=ON -DFLUXGRAPH_JSON_ENABLED=ON
-cmake --build --preset dev-release
-./build/dev-release/tools/fluxgraph-diagram \
-  --in ./examples/03_json_graph/graph.json \
-  --out ./graph.svg \
-  --format svg
-```
-
-See [docs/graph-visualization.md](docs/graph-visualization.md) for full contract and flags.
-
-### Using FluxGraph
-
-See [`examples/`](examples/) for complete usage patterns. Here's a minimal example:
+This graph has one edge that applies `2x + 1` to a signal:
 
 ```cpp
 #include <fluxgraph/engine.hpp>
@@ -160,46 +100,94 @@ int main() {
 }
 ```
 
-**More examples:**
+[`examples/`](examples/) has complete programs:
 
-- [`01_basic_transform`](./examples/01_basic_transform/) - Simple signal transformation
-- [`02_thermal_mass`](./examples/02_thermal_mass/) - Physics simulation with models
-- [`03_json_graph`](./examples/03_json_graph/) - Load graph from JSON file
-- [`04_yaml_graph`](./examples/04_yaml_graph/) - Load graph from YAML file
-- [`05_thermal_rc2`](./examples/05_thermal_rc2/) - Two-node thermal RC model example
-- [`06_first_order_process`](./examples/06_first_order_process/) - First-order process primitive (PT1)
-- [`07_second_order_process`](./examples/07_second_order_process/) - Second-order process primitive (PT2)
-- [`08_mass_spring_damper`](./examples/08_mass_spring_damper/) - Translational mass-spring-damper model example
-- [`09_dc_motor`](./examples/09_dc_motor/) - Armature-controlled DC motor model example
-- [`10_state_space_siso_discrete`](./examples/10_state_space_siso_discrete/) - Structured discrete-time state-space model example
+- [`01_basic_transform`](./examples/01_basic_transform/): signal transform
+- [`02_thermal_mass`](./examples/02_thermal_mass/): thermal mass model
+- [`03_json_graph`](./examples/03_json_graph/): load a graph from JSON
+- [`04_yaml_graph`](./examples/04_yaml_graph/): load a graph from YAML
+- [`05_thermal_rc2`](./examples/05_thermal_rc2/): two-node thermal RC model
+- [`06_first_order_process`](./examples/06_first_order_process/): first-order
+  process (PT1)
+- [`07_second_order_process`](./examples/07_second_order_process/):
+  second-order process (PT2)
+- [`08_mass_spring_damper`](./examples/08_mass_spring_damper/): translational
+  mass-spring-damper
+- [`09_dc_motor`](./examples/09_dc_motor/): armature-controlled DC motor
+- [`10_state_space_siso_discrete`](./examples/10_state_space_siso_discrete/):
+  discrete-time state-space model
 
-## Project Structure
+## Build from source
 
-```txt
-fluxgraph/
-+-- include/fluxgraph/     # Public API headers
-|   +-- core/              # Core types, signal storage, namespaces
-|   +-- transform/         # Signal transforms
-|   +-- model/             # Physics models
-+-- src/                   # Implementation
-+-- tests/                 # Unit and analytical tests
-+-- examples/              # Example applications
-+-- docs/                  # Documentation
+Requirements:
+
+- CMake 3.20 or later, or 4.2 or later for the Windows presets
+- A C++20 compiler with `std::format`: GCC 13+, Clang 17+ with libc++ 17+ or
+  libstdc++ 13+, or MSVC 19.32+ (Visual Studio 2022 17.2+)
+- vcpkg, with `VCPKG_ROOT` set
+- For the Windows presets, Visual Studio 2026: they use the
+  `Visual Studio 18 2026` generator with toolset `v145`
+
+On Linux:
+
+```bash
+git clone https://github.com/anolishq/fluxgraph.git
+cd fluxgraph
+export VCPKG_ROOT=/path/to/vcpkg
+cmake --preset dev-release
+cmake --build --preset dev-release
+ctest --preset dev-release
 ```
+
+On Windows, in PowerShell:
+
+```powershell
+$env:VCPKG_ROOT = "D:\Tools\vcpkg"
+cmake --preset dev-windows-release
+cmake --build --preset dev-windows-release --config Release
+ctest --preset dev-windows-release
+```
+
+Dependencies come from the vcpkg manifest. [Dependencies](docs/dependencies.md)
+covers the vcpkg baseline, presets and CI lanes.
+
+### Build options
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `FLUXGRAPH_JSON_ENABLED` | OFF | JSON graph loader (needs nlohmann-json) |
+| `FLUXGRAPH_YAML_ENABLED` | OFF | YAML graph loader (needs yaml-cpp) |
+| `FLUXGRAPH_BUILD_DIAGRAM_TOOL` | OFF | `fluxgraph-diagram` CLI and DOT emitter |
+| `FLUXGRAPH_BUILD_SERVER` | OFF | `fluxgraph-server` gRPC server (needs grpc and protobuf) |
+| `FLUXGRAPH_BUILD_TESTS` | ON at top level, OFF as a subproject | Unit tests (needs GTest) |
+| `FLUXGRAPH_BUILD_EXAMPLES` | ON at top level, OFF as a subproject | Example programs |
+
+In v1.0.6 and earlier, tests and examples default to ON even as a subproject.
+The presets set their own values: the `base` preset, which the others inherit,
+turns tests on and examples off, and the `dev-*` presets turn examples on.
+
+### Diagram tool
+
+`fluxgraph-diagram` writes a graph as DOT, or renders it to SVG or PNG. A
+`.json` input needs `FLUXGRAPH_JSON_ENABLED=ON`. SVG and PNG output need
+Graphviz `dot`, found on `PATH` unless `--dot-bin` is given.
+
+```bash
+cmake --preset dev-release -DFLUXGRAPH_BUILD_DIAGRAM_TOOL=ON -DFLUXGRAPH_JSON_ENABLED=ON
+cmake --build --preset dev-release
+./build/dev-release/tools/fluxgraph-diagram \
+  --in ./examples/03_json_graph/graph.json \
+  --out ./graph.svg \
+  --format svg
+```
+
+[Graph visualization](docs/graph-visualization.md) lists every flag.
 
 ## License
 
-AGPL v3 License - See [LICENSE](LICENSE) for details
+AGPL-3.0. See [LICENSE](LICENSE).
 
 ## Contributing
 
-This project is part of the Anolis ecosystem. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## Related Projects
-
-- [anolis-provider-sim](https://github.com/anolishq/anolis-provider-sim) - Simulation provider which uses FluxGraph for physics simulation
-- [anolis](https://github.com/anolishq/anolis) - Machine runtime
-
-## Version
-
-1.0.6 — see [`include/fluxgraph/version.hpp`](include/fluxgraph/version.hpp) and the [CHANGELOG](CHANGELOG.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Changes are recorded in the
+[CHANGELOG](CHANGELOG.md).
