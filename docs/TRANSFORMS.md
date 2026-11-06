@@ -159,7 +159,7 @@ y(t) = x(t - delay_sec)
 - The clock is a compensated (two-double) sum, so the lag at a constant dt does not drift over long runs
 - Samples older than the one returned are dropped, so the applied delay follows delay_sec when dt changes between calls
 - At least until delay_sec has elapsed, output holds the first input sample (no zero fill)
-- A `dt` that is not positive and finite (`dt <= 0`, NaN, ±inf) throws `std::runtime_error` and leaves the state unchanged; `Engine::tick` rejects `dt <= 0` the same way but lets NaN and +inf through to the transforms. `delay_sec <= 0` passes the input through
+- A `dt` that is not positive and finite (`dt <= 0`, NaN, ±inf) throws `std::runtime_error` and leaves the state unchanged; `Engine::tick` rejects `dt <= 0` the same way but lets a NaN `dt` (and a +inf `dt` when no model has a finite stability limit) through to the transforms (see `semantics_spec.md` §3 item 1 and §6 item 5). `delay_sec <= 0` passes the input through
 
 **Use Cases:**
 

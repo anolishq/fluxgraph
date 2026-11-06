@@ -51,7 +51,7 @@ FluxGraph adopts **Immediate Topological Propagation Semantics**.
 
 We define a discrete tick index `k` with tick boundaries `t_k`.
 
-1. `dt_k > 0` is required for every tick. `Engine::tick` and the server `--dt` check reject `dt <= 0`; a NaN `dt` passes both checks.
+1. `dt_k > 0` is required for every tick. `Engine::tick` and the server `--dt` check reject `dt <= 0`; a NaN or +inf `dt` passes both of those checks. `Engine::tick` then compares `dt` with each model's stability limit (`dt > limit`): that rejects +inf before anything runs when any model has a finite limit, and never rejects NaN.
 2. The state visible to application and providers before `tick(k)` is `S_k`.
 3. `tick(k)` computes `S_{k+1}` and command set `C_{k+1}`.
 4. No concurrent tick execution is permitted.
@@ -94,7 +94,7 @@ Delays are declared explicitly as delay edges. Edge execution order adds one tic
 2. With a constant `dt` this is a lag of `N` ticks, where `N` is `delay_sec / dt` rounded to the nearest integer with halves rounding up, minimum 1. This equals `max(1, llround(delay_sec / dt))` except where the floating-point quotient lands within the tie tolerance below `n + 0.5`: `0.15 / 0.1` evaluates to `1.4999999999999998`, `llround` gives 1, and `N` is 2. For `k >= N`, delay output at tick `k` is the input value from tick `k-N`. The lag is `N+1` ticks when the delay's source is written by a non-delay edge, or by a delay edge declared after it (Section 4).
 3. When `dt` changes between ticks, inputs older than the one selected are dropped, so the applied delay stays within half the spacing of the stored inputs around `t - delay_sec`. The exception is item 1's floor of one tick: when `delay_sec` is less than half the latest `dt`, the delay is that one tick.
 4. The delay buffer starts empty, with no fill value: at least until `t` reaches `delay_sec` the delay outputs the input value from tick 0 (on a tie, for one tick longer).
-5. A `dt` that is not positive and finite is rejected with `std::runtime_error` and leaves the delay's state unchanged. `Engine::tick` rejects `dt <= 0` itself but passes NaN and +inf on (item 1 of Section 3); a delay edge then throws out of `Engine::tick`, and the stages after that edge do not run for that tick.
+5. A `dt` that is not positive and finite is rejected with `std::runtime_error` and leaves the delay's state unchanged. `Engine::tick` passes a NaN `dt`, and a +inf `dt` when no model has a finite stability limit, through to the edges (Section 3, item 1). A delay edge then throws out of `Engine::tick`, and the stages after that edge do not run for that tick. The models and any earlier edges have already run with that `dt` in that tick, so a NaN `dt` leaves model state, and outputs such as a `thermal_mass` temperature, at NaN for every later tick. That model behaviour comes from `Engine::tick` accepting NaN, not from the delay; rejecting a non-finite `dt` at the start of `Engine::tick` is a separate change.
 
 ## 7. Signal Ownership and Write Authority
 

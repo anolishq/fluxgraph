@@ -24,8 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `apply()` with a `dt` that is not positive and finite (`dt <= 0`, NaN,
   ±inf) now throws `std::runtime_error` and leaves the delay's state unchanged,
   instead of computing `llround(inf)` or `llround(NaN)`. `Engine::tick` still
-  passes NaN and +inf `dt` to the transforms, so a delay edge makes such a tick
-  throw. The unused `time_accumulated_` member is gone. (#146)
+  passes a NaN `dt` (and a +inf `dt` when no model has a finite stability
+  limit) to the transforms, so a delay edge makes such a tick throw. By then the
+  models and any earlier edges have already run with that `dt`, so a NaN `dt`
+  still leaves model outputs such as `thermal_mass` temperatures at NaN for
+  good. That is existing `Engine::tick` behaviour, not changed here. The unused
+  `time_accumulated_` member is gone. (#146)
 - At a constant `dt` the delay's tick count can differ by one from previous
   releases where `delay_sec / dt` is meant to be a half but its floating-point
   quotient lands just below it. The count is now `delay_sec / dt` rounded with
