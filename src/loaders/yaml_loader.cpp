@@ -308,8 +308,11 @@ GraphSpec load_yaml_string(const std::string &yaml_content) {
     try {
         const YAML::Node root = YAML::Load(yaml_content);
 
-        // An empty document is an empty graph; anything else must be a map.
-        if (root.IsNull()) {
+        // Input with no document at all (empty, or only whitespace and comments)
+        // is an empty graph; yaml-cpp gives that root a null mark. A document
+        // whose root is null (`~`, `null`, a bare `---`) is rejected below, as a
+        // JSON `null` root is.
+        if (root.IsNull() && root.Mark().is_null()) {
             return spec;
         }
         if (!root.IsMap()) {

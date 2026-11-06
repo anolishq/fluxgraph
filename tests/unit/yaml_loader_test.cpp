@@ -410,13 +410,23 @@ rules:
     EXPECT_EQ(spec.rules[0].actions.size(), 0);
 }
 
-// An empty document stays an empty graph, as "{}" does.
+// Input with no document (empty, or only whitespace and comments) stays an
+// empty graph, as "{}" does.
 TEST(YamlLoaderTest, EmptyDocumentIsEmptyGraph) {
-    auto spec = load_yaml_string("");
-    EXPECT_EQ(spec.signals.size(), 0);
-    EXPECT_EQ(spec.edges.size(), 0);
-    EXPECT_EQ(spec.models.size(), 0);
-    EXPECT_EQ(spec.rules.size(), 0);
+    for (const std::string yaml : {std::string(""), std::string("  \n# only a comment\n")}) {
+        auto spec = load_yaml_string(yaml);
+        EXPECT_EQ(spec.signals.size(), 0);
+        EXPECT_EQ(spec.edges.size(), 0);
+        EXPECT_EQ(spec.models.size(), 0);
+        EXPECT_EQ(spec.rules.size(), 0);
+    }
+}
+
+// A document whose root is null is rejected, as a JSON null root is.
+TEST(YamlLoaderTest, RejectsNullRoot) {
+    expect_yaml_error("~\n", "YAML parse error at /: Expected map");
+    expect_yaml_error("null\n", "YAML parse error at /: Expected map");
+    expect_yaml_error("---\n", "YAML parse error at /: Expected map");
 }
 
 #endif  // FLUXGRAPH_YAML_ENABLED

@@ -21,7 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   They now fail with a path-qualified error when a top-level `signals`,
   `models`, `edges` or `rules` key is present but is not an array (JSON) /
   sequence (YAML), including a null value such as a bare `rules:`; when the
-  JSON root is not an object or the YAML root is neither a map nor empty; and
+  JSON root is not an object or the YAML root is not a map (input with no
+  document at all still loads as an empty graph); and
   when a rule's `actions` is missing or not an array / sequence (it is
   required, and may be empty). Files that were valid before still load. (#147)
 
