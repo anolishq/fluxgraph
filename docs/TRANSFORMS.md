@@ -177,7 +177,7 @@ edge.transform.type = "delay";
 edge.transform.params["delay_sec"] = 0.5;  // 500ms delay
 ```
 
-**Memory:** Approx delay_sec/dt \* 16 bytes (a time and a value per buffered sample)
+**Memory:** Approx delay_sec/dt \* 24 bytes (a two-double time and a value per buffered sample)
 
 **Analytical Validation:**
 Step input shift matches to 1e-6; sine input to 1e-3 and ramp input to 0.01 (see analytical tests).
@@ -557,7 +557,7 @@ engine.reset();  // Resets all transform state
 ### 4. Avoid Excessive Buffering
 
 ```cpp
-// Avoid: 10-second delay at 0.01s dt = 1000 samples = 8KB per edge
+// Avoid: 10-second delay at 0.01s dt = 1000 samples = 24KB per edge
 edge.transform.params["delay_sec"] = 10.0;  // High memory cost
 
 // Better: Use FirstOrderLag if you just need smoothing

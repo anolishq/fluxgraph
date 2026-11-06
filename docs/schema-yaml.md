@@ -434,7 +434,7 @@ edges:
         delay_sec: 0.1
 ```
 
-**Memory:** Approx `delay_sec / dt * 16` bytes (a time and a value per buffered sample)
+**Memory:** Approx `delay_sec / dt * 24` bytes (a two-double time and a value per buffered sample)
 
 ### 4. Noise Transform
 
