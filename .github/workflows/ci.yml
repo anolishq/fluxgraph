@@ -97,6 +97,11 @@ jobs:
           uv run ruff check . --output-format=github
           uv run ruff format --check .
 
+      # The release workflow's glibc floor check only runs at a tag; test the
+      # script here so a broken edit is caught on the PR. Needs only bash and objdump.
+      - name: Test scripts/check-glibc-floor.sh
+        run: bash tests/scripts/check-glibc-floor-test.sh
+
   python-typecheck:
     name: Python Type Checking (mypy)
     needs: [changes]
