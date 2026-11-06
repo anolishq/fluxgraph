@@ -65,7 +65,7 @@ jobs:
     name: Docs
     needs: [changes]
     if: needs.changes.outputs.docs == 'true'
-    uses: anolishq/.github/.github/workflows/docs-check.yml@0afd073b878c469f78a52f24020b1c3a49ae4fee # v2
+    uses: anolishq/.github/.github/workflows/docs-check.yml@7a3a0624c056ea20fcb901968c482f9ed2ffb818 # v2
 
   python-lint:
     name: Python Linting (ruff)
@@ -160,7 +160,7 @@ jobs:
           sudo apt-get install -y ninja-build g++
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@0afd073b878c469f78a52f24020b1c3a49ae4fee # v2.7
+        uses: anolishq/.github/.github/actions/setup-vcpkg@7a3a0624c056ea20fcb901968c482f9ed2ffb818 # v2.8
         with:
           triplet: x64-linux
           # server-enabled is the sole writer (its closure — grpc+protobuf+json+
@@ -222,7 +222,7 @@ jobs:
           sudo apt-get install -y ninja-build g++ python3
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@0afd073b878c469f78a52f24020b1c3a49ae4fee # v2.7
+        uses: anolishq/.github/.github/actions/setup-vcpkg@7a3a0624c056ea20fcb901968c482f9ed2ffb818 # v2.8
         with:
           triplet: x64-linux
           # Subset closure (core preset, no grpc) — read-only so it can't clobber
@@ -259,7 +259,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@0afd073b878c469f78a52f24020b1c3a49ae4fee # v2.7
+        uses: anolishq/.github/.github/actions/setup-vcpkg@7a3a0624c056ea20fcb901968c482f9ed2ffb818 # v2.8
         with:
           triplet: x64-windows-v145
 
@@ -283,7 +283,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@0afd073b878c469f78a52f24020b1c3a49ae4fee # v2.7
+        uses: anolishq/.github/.github/actions/setup-vcpkg@7a3a0624c056ea20fcb901968c482f9ed2ffb818 # v2.8
         with:
           triplet: x64-windows-v145
 
@@ -312,7 +312,7 @@ jobs:
           sudo apt-get install -y ninja-build g++ graphviz
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@0afd073b878c469f78a52f24020b1c3a49ae4fee # v2.7
+        uses: anolishq/.github/.github/actions/setup-vcpkg@7a3a0624c056ea20fcb901968c482f9ed2ffb818 # v2.8
         with:
           triplet: x64-linux
           # Subset closure (diagram preset, no grpc) — read-only so it can't
@@ -336,7 +336,7 @@ jobs:
   version-sync:
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
-    uses: anolishq/.github/.github/workflows/version-sync.yml@0afd073b878c469f78a52f24020b1c3a49ae4fee # v2
+    uses: anolishq/.github/.github/workflows/version-sync.yml@7a3a0624c056ea20fcb901968c482f9ed2ffb818 # v2
     with:
       python-version: '3.12'
       working-directory: '.'
@@ -364,7 +364,7 @@ jobs:
     if: needs.changes.outputs.cpp == 'true'
     permissions:
       contents: read
-    uses: anolishq/.github/.github/workflows/clang-tidy-diff.yml@0199b6cc7cb73a02d58f75ec8ed763ac40e54dca # clang-tidy-diff
+    uses: anolishq/.github/.github/workflows/clang-tidy-diff.yml@7a3a0624c056ea20fcb901968c482f9ed2ffb818 # clang-tidy-diff
     with:
       # x64-linux (not the gate's x64-linux-static default) so we reuse the warm
       # vcpkg cache the server-enabled CI lane writes — its closure (grpc+protobuf
