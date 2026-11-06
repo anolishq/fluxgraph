@@ -18,13 +18,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The JSON and YAML loaders silently skipped a structural field of the wrong
   type, so a malformed file loaded as an empty graph or with action-less rules.
-  They now fail with a path-qualified error when a top-level `signals`,
-  `models`, `edges` or `rules` key is present but is not an array (JSON) /
-  sequence (YAML), including a null value such as a bare `rules:`; when the
-  JSON root is not an object or the YAML root is not a map (input with no
-  document at all still loads as an empty graph); and
-  when a rule's `actions` is missing or not an array / sequence (it is
-  required, and may be empty). Files that were valid before still load. (#147)
+  These inputs loaded before and now fail with a path-qualified error:
+  - a top-level `signals`, `models`, `edges` or `rules` key that is present but
+    not an array (JSON) / sequence (YAML), including a null value such as a
+    bare `rules:`
+  - a JSON root that is not an object (an array, a scalar, `null`)
+  - a YAML root that is not a map, including a null document: `~`, `null`, a
+    bare `---`, or a lone `...` (yaml-cpp reads each as one document with null
+    content)
+  - a rule whose `actions` is missing or not an array / sequence (`actions` is
+    required, and may be empty)
+
+  Input with no document at all (empty, or only whitespace and comments) still
+  loads as an empty graph, and every other file that loaded before still loads
+  unchanged. (#147)
 
 ## [1.0.6] - 2026-07-04
 

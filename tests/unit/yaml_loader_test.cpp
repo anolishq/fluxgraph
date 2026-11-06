@@ -427,6 +427,8 @@ TEST(YamlLoaderTest, RejectsNullRoot) {
     expect_yaml_error("~\n", "YAML parse error at /: Expected map");
     expect_yaml_error("null\n", "YAML parse error at /: Expected map");
     expect_yaml_error("---\n", "YAML parse error at /: Expected map");
+    // yaml-cpp parses a lone document-end marker as one document with null content.
+    expect_yaml_error("...\n", "YAML parse error at /: Expected map");
 }
 
 #endif  // FLUXGRAPH_YAML_ENABLED
