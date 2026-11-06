@@ -817,36 +817,80 @@ TEST(GraphCompilerTest, CustomModelOutputCollidesWithEdgeTarget) {
 }
 
 TEST(GraphCompilerTest, ModelOutputSignalIdsCoversEveryModelType) {
+    // One model of each of the 7 builtin types, in a deliberate order.
+    auto model = [](std::string id, std::string type, ParamMap params) {
+        ModelSpec spec;
+        spec.id = std::move(id);
+        spec.type = std::move(type);
+        spec.params = std::move(params);
+        return spec;
+    };
+    using S = std::string;
     GraphSpec spec;
-
-    ModelSpec motor;
-    motor.id = "motor";
-    motor.type = "dc_motor";
-    motor.params["resistance_ohm"] = 2.0;
-    motor.params["inductance_h"] = 0.5;
-    motor.params["torque_constant"] = 0.1;
-    motor.params["back_emf_constant"] = 0.1;
-    motor.params["inertia"] = 0.02;
-    motor.params["viscous_friction"] = 0.2;
-    motor.params["initial_current"] = 0.0;
-    motor.params["initial_speed"] = 0.0;
-    motor.params["speed_signal"] = std::string("motor.omega");
-    motor.params["current_signal"] = std::string("motor.i");
-    motor.params["torque_signal"] = std::string("motor.tau");
-    motor.params["voltage_signal"] = std::string("motor.V");
-    motor.params["load_torque_signal"] = std::string("motor.load");
-    spec.models.push_back(motor);
-
-    ModelSpec chamber;
-    chamber.id = "chamber";
-    chamber.type = "thermal_mass";
-    chamber.params["thermal_mass"] = 1000.0;
-    chamber.params["heat_transfer_coeff"] = 10.0;
-    chamber.params["initial_temp"] = 25.0;
-    chamber.params["temp_signal"] = std::string("chamber.temp");
-    chamber.params["power_signal"] = std::string("chamber.power");
-    chamber.params["ambient_signal"] = std::string("chamber.ambient");
-    spec.models.push_back(chamber);
+    spec.models.push_back(model("motor", "dc_motor",
+                                {{"resistance_ohm", 2.0},
+                                 {"inductance_h", 0.5},
+                                 {"torque_constant", 0.1},
+                                 {"back_emf_constant", 0.1},
+                                 {"inertia", 0.02},
+                                 {"viscous_friction", 0.2},
+                                 {"initial_current", 0.0},
+                                 {"initial_speed", 0.0},
+                                 {"speed_signal", S("motor.omega")},
+                                 {"current_signal", S("motor.i")},
+                                 {"torque_signal", S("motor.tau")},
+                                 {"voltage_signal", S("motor.V")},
+                                 {"load_torque_signal", S("motor.load")}}));
+    spec.models.push_back(model("chamber", "thermal_mass",
+                                {{"thermal_mass", 1000.0},
+                                 {"heat_transfer_coeff", 10.0},
+                                 {"initial_temp", 25.0},
+                                 {"temp_signal", S("chamber.temp")},
+                                 {"power_signal", S("chamber.power")},
+                                 {"ambient_signal", S("ambient.temp")}}));
+    spec.models.push_back(model("rc2", "thermal_rc2",
+                                {{"thermal_mass_a", 1000.0},
+                                 {"thermal_mass_b", 800.0},
+                                 {"heat_transfer_coeff_a", 5.0},
+                                 {"heat_transfer_coeff_b", 4.0},
+                                 {"coupling_coeff", 2.0},
+                                 {"initial_temp_a", 20.0},
+                                 {"initial_temp_b", 20.0},
+                                 {"temp_signal_a", S("rc2.ta")},
+                                 {"temp_signal_b", S("rc2.tb")},
+                                 {"power_signal", S("rc2.p")},
+                                 {"ambient_signal", S("ambient.temp")}}));
+    spec.models.push_back(model("fop", "first_order_process",
+                                {{"gain", 1.0},
+                                 {"tau_s", 5.0},
+                                 {"initial_output", 0.0},
+                                 {"output_signal", S("fop.y")},
+                                 {"input_signal", S("fop.u")}}));
+    spec.models.push_back(model("sop", "second_order_process",
+                                {{"gain", 1.0},
+                                 {"zeta", 0.7},
+                                 {"omega_n_rad_s", 1.0},
+                                 {"initial_output", 0.0},
+                                 {"initial_output_rate", 0.0},
+                                 {"output_signal", S("sop.y")},
+                                 {"input_signal", S("sop.u")}}));
+    spec.models.push_back(model("ss", "state_space_siso_discrete",
+                                {{"A_d", matrix_param({{0.9, 0.1}, {0.0, 0.95}})},
+                                 {"B_d", vector_param({0.1, 0.05})},
+                                 {"C", vector_param({1.0, 0.0})},
+                                 {"D", 0.0},
+                                 {"x0", vector_param({0.0, 0.0})},
+                                 {"output_signal", S("ss.y")},
+                                 {"input_signal", S("ss.u")}}));
+    spec.models.push_back(model("msd", "mass_spring_damper",
+                                {{"mass", 1.0},
+                                 {"damping_coeff", 2.0},
+                                 {"spring_constant", 1.0},
+                                 {"initial_position", 0.0},
+                                 {"initial_velocity", 0.0},
+                                 {"position_signal", S("msd.x")},
+                                 {"velocity_signal", S("msd.v")},
+                                 {"force_signal", S("msd.F")}}));
 
     SignalNamespace signal_ns;
     FunctionNamespace func_ns;
@@ -857,7 +901,9 @@ TEST(GraphCompilerTest, ModelOutputSignalIdsCoversEveryModelType) {
     for (SignalId id : program.model_output_signal_ids()) {
         paths.push_back(signal_ns.lookup(id));
     }
-    EXPECT_EQ(paths, (std::vector<std::string>{"motor.omega", "motor.i", "motor.tau", "chamber.temp"}));
+    // Every output of every model, in model order, then each model's own order.
+    EXPECT_EQ(paths, (std::vector<std::string>{"motor.omega", "motor.i", "motor.tau", "chamber.temp", "rc2.ta",
+                                               "rc2.tb", "fop.y", "sop.y", "ss.y", "msd.x", "msd.v"}));
 }
 
 TEST(GraphCompilerTest, RegisterModelFactoryRejectsDuplicateType) {
