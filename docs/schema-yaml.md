@@ -371,6 +371,8 @@ Scale and offset: `y = scale * x + offset`
 | `clamp_min` | number | no | -infinity | Minimum output value |
 | `clamp_max` | number | no | +infinity | Maximum output value |
 
+`clamp_min` must not exceed `clamp_max`, and neither may be NaN; otherwise the graph fails to compile.
+
 **Example:**
 
 ```yaml
@@ -472,6 +474,8 @@ Clamp to bounds: `y = clamp(x, min, max)`
 |-----------|------|-------------|
 | `min` | number | Minimum output value |
 | `max` | number | Maximum output value |
+
+`min_value`/`max_value` are accepted as aliases. `min` must not exceed `max` (equal is allowed), and neither may be NaN; otherwise the graph fails to compile.
 
 **Example:**
 

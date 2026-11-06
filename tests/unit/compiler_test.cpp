@@ -972,6 +972,151 @@ TEST(GraphCompilerTest, SaturationSupportsMinValueAliases) {
     delete tf;
 }
 
+namespace {
+
+// Expects parse_transform(spec) to throw std::runtime_error whose message
+// contains every fragment (the path-qualified "Invalid parameter at ..." form).
+void expect_transform_rejected(const TransformSpec &spec, const std::vector<std::string> &fragments) {
+    GraphCompiler compiler;
+    try {
+        std::unique_ptr<ITransform> tf(compiler.parse_transform(spec));
+        FAIL() << "Expected runtime_error for transform " << spec.type;
+    } catch (const std::runtime_error &e) {
+        const std::string what = e.what();
+        for (const auto &fragment : fragments) {
+            EXPECT_NE(what.find(fragment), std::string::npos) << "message '" << what << "' lacks '" << fragment << "'";
+        }
+    }
+}
+
+}  // namespace
+
+TEST(GraphCompilerTest, SaturationRejectsInvertedBounds) {
+    TransformSpec spec;
+    spec.type = "saturation";
+    spec.params["min"] = 10.0;
+    spec.params["max"] = 0.0;
+    expect_transform_rejected(spec, {"Invalid parameter at transform[saturation]/max", "min"});
+}
+
+TEST(GraphCompilerTest, SaturationRejectsInvertedAliasBounds) {
+    TransformSpec spec;
+    spec.type = "saturation";
+    spec.params["min_value"] = 10.0;
+    spec.params["max_value"] = 0.0;
+    expect_transform_rejected(spec, {"Invalid parameter at transform[saturation]/max_value", "min_value"});
+}
+
+TEST(GraphCompilerTest, SaturationRejectsNaNBounds) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    {
+        TransformSpec spec;
+        spec.type = "saturation";
+        spec.params["min"] = nan;
+        spec.params["max"] = 1.0;
+        expect_transform_rejected(spec, {"Invalid parameter at transform[saturation]/min"});
+    }
+    {
+        TransformSpec spec;
+        spec.type = "saturation";
+        spec.params["min_value"] = 0.0;
+        spec.params["max_value"] = nan;
+        expect_transform_rejected(spec, {"Invalid parameter at transform[saturation]/max_value"});
+    }
+}
+
+TEST(GraphCompilerTest, SaturationAcceptsEqualBounds) {
+    TransformSpec spec;
+    spec.type = "saturation";
+    spec.params["min"] = 2.0;
+    spec.params["max"] = 2.0;
+
+    GraphCompiler compiler;
+    std::unique_ptr<ITransform> tf(compiler.parse_transform(spec));
+    ASSERT_NE(tf, nullptr);
+    EXPECT_DOUBLE_EQ(tf->apply(-5.0, 0.1), 2.0);
+    EXPECT_DOUBLE_EQ(tf->apply(5.0, 0.1), 2.0);
+}
+
+TEST(GraphCompilerTest, LinearRejectsInvertedClampBounds) {
+    TransformSpec spec;
+    spec.type = "linear";
+    spec.params["scale"] = 1.0;
+    spec.params["offset"] = 0.0;
+    spec.params["clamp_min"] = 10.0;
+    spec.params["clamp_max"] = 0.0;
+    expect_transform_rejected(spec, {"Invalid parameter at transform[linear]/clamp_max", "clamp_min"});
+}
+
+TEST(GraphCompilerTest, LinearRejectsNaNClampBounds) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    {
+        TransformSpec spec;
+        spec.type = "linear";
+        spec.params["scale"] = 1.0;
+        spec.params["offset"] = 0.0;
+        spec.params["clamp_min"] = nan;
+        expect_transform_rejected(spec, {"Invalid parameter at transform[linear]/clamp_min"});
+    }
+    {
+        TransformSpec spec;
+        spec.type = "linear";
+        spec.params["scale"] = 1.0;
+        spec.params["offset"] = 0.0;
+        spec.params["clamp_max"] = nan;
+        expect_transform_rejected(spec, {"Invalid parameter at transform[linear]/clamp_max"});
+    }
+}
+
+TEST(GraphCompilerTest, LinearAcceptsOneSidedAndEqualClampBounds) {
+    GraphCompiler compiler;
+    {
+        TransformSpec spec;
+        spec.type = "linear";
+        spec.params["scale"] = 1.0;
+        spec.params["offset"] = 0.0;
+        spec.params["clamp_min"] = 0.0;  // clamp_max keeps its +infinity default
+        std::unique_ptr<ITransform> tf(compiler.parse_transform(spec));
+        EXPECT_DOUBLE_EQ(tf->apply(-5.0, 0.1), 0.0);
+        EXPECT_DOUBLE_EQ(tf->apply(1e300, 0.1), 1e300);
+    }
+    {
+        TransformSpec spec;
+        spec.type = "linear";
+        spec.params["scale"] = 1.0;
+        spec.params["offset"] = 0.0;
+        spec.params["clamp_min"] = 4.0;
+        spec.params["clamp_max"] = 4.0;
+        std::unique_ptr<ITransform> tf(compiler.parse_transform(spec));
+        EXPECT_DOUBLE_EQ(tf->apply(-5.0, 0.1), 4.0);
+        EXPECT_DOUBLE_EQ(tf->apply(5.0, 0.1), 4.0);
+    }
+}
+
+// The whole-graph compile path rejects the edge too, so a spec with swapped
+// bounds never reaches Engine::tick.
+TEST(GraphCompilerTest, CompileRejectsSaturationEdgeWithInvertedBounds) {
+    GraphSpec spec;
+    EdgeSpec edge;
+    edge.source_path = "valve/command";
+    edge.target_path = "valve/position";
+    edge.transform.type = "saturation";
+    edge.transform.params["min"] = 100.0;
+    edge.transform.params["max"] = 0.0;
+    spec.edges.push_back(edge);
+
+    SignalNamespace signal_ns;
+    FunctionNamespace func_ns;
+    GraphCompiler compiler;
+    try {
+        (void)compiler.compile(spec, signal_ns, func_ns);
+        FAIL() << "Expected runtime_error for inverted saturation bounds";
+    } catch (const std::runtime_error &e) {
+        EXPECT_NE(std::string(e.what()).find("Invalid parameter at transform[saturation]/max"), std::string::npos)
+            << e.what();
+    }
+}
+
 TEST(GraphCompilerTest, DelayBreaksFeedbackCycle) {
     GraphSpec spec;
 
