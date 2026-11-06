@@ -17,7 +17,10 @@ jobs:
 
   release-linux-x86_64:
     name: Release (linux-x86_64)
-    runs-on: ubuntu-26.04
+    # The release binary links libc and libstdc++ dynamically from the runner, and
+    # the deploy hosts run Debian 13 trixie (glibc 2.41, GCC 14 libstdc++). Keep the
+    # runner no newer than that; the "Check glibc floor" step below enforces it.
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -76,6 +79,12 @@ jobs:
           cp "${BINARY}" staging/bin/
           tar -czf "${ARTIFACT}" -C staging .
           echo "artifact=${ARTIFACT}" >> "$GITHUB_OUTPUT"
+
+      - name: Check glibc floor
+        # Fails the release when the packaged binary needs a GLIBC_ newer than
+        # 2.41 or a GLIBCXX_ newer than 3.4.33 (Debian 13), so a later runner
+        # move cannot ship a binary the deploy hosts cannot load.
+        run: bash scripts/check-glibc-floor.sh staging/bin/fluxgraph-server
 
       - name: Package source tarball
         run: |

@@ -102,6 +102,22 @@ Artifacts are written under `artifacts/dimensional-validation/<timestamp>_<prese
 - `ctest_dimensional.stdout.log`, `ctest_dimensional.stderr.log`
 - configure/build logs when build is enabled
 
+## Release glibc floor
+
+Check that a Linux binary loads on the deploy hosts (Debian 13: glibc 2.41,
+`GLIBCXX_3.4.33`). The release workflow runs it on the packaged
+`fluxgraph-server`:
+
+- `bash ./scripts/check-glibc-floor.sh build-server/server/fluxgraph-server`
+
+Options:
+
+- `--max-glibc` / `--max-glibcxx`: override the floor versions.
+- `OBJDUMP`: environment variable naming the `objdump` to run.
+
+Exit status is 0 within the floor, 1 when a symbol needs a newer version, and 2
+when the binary cannot be read.
+
 ## Common Presets
 
 - `dev-debug`
