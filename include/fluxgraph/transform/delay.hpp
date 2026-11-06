@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstddef>
 #include <deque>
 #include <stdexcept>
@@ -12,8 +13,10 @@ namespace fluxgraph {
 ///
 /// Each call advances the transform's clock by `dt` (the first call after
 /// construction or reset() is t = 0) and stores the input with that time. The
-/// output is the stored input whose time is nearest to t - delay_sec, never the
-/// input of the current call. Samples older than the one returned are dropped,
+/// output is the stored input whose time is nearest to t - delay_sec, excluding
+/// the current call's input (except on the first call after construction or
+/// reset(), when that input is the only one stored and is returned). Samples
+/// older than the one returned are dropped,
 /// so the applied delay follows delay_sec when dt changes. Until t reaches
 /// delay_sec (and, on a tie, for one call after) the output is the first input.
 ///
@@ -36,10 +39,11 @@ public:
     /// @param delay_sec Delay time in seconds; <= 0 passes the input through.
     explicit DelayTransform(double delay_sec) : delay_sec_(delay_sec) {}
 
-    /// @throws std::runtime_error if dt <= 0, as Engine::tick does.
+    /// @throws std::runtime_error if dt is not positive and finite (Engine::tick
+    /// rejects dt <= 0 the same way). The transform's state is left unchanged.
     double apply(double input, double dt) override {
-        if (dt <= 0.0) {
-            throw std::runtime_error("DelayTransform: dt must be positive");
+        if (!(dt > 0.0) || !std::isfinite(dt)) {
+            throw std::runtime_error("DelayTransform: dt must be positive and finite");
         }
         if (delay_sec_ <= 0.0) {
             return input;  // No delay

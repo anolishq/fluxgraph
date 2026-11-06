@@ -21,9 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from 0.1 s to 0.5 s) or held one stale value after `dt` shrank. Samples now
   carry their time, and the output is the stored input nearest
   `t - delay_sec`, so the delay follows `delay_sec` across `dt` changes.
-  `apply()` with `dt <= 0` now throws
-  `std::runtime_error`, as `Engine::tick` does, instead of computing
-  `llround(inf)`; the unused `time_accumulated_` member is gone. (#146)
+  `apply()` with a `dt` that is not positive and finite (`dt <= 0`, NaN,
+  ±inf) now throws `std::runtime_error` and leaves the delay's state unchanged,
+  instead of computing `llround(inf)` or `llround(NaN)`. `Engine::tick` still
+  passes NaN and +inf `dt` to the transforms, so a delay edge makes such a tick
+  throw. The unused `time_accumulated_` member is gone. (#146)
 - At a constant `dt` the delay's tick count can differ by one from previous
   releases where `delay_sec / dt` is meant to be a half but its floating-point
   quotient lands just below it. The count is now `delay_sec / dt` rounded with

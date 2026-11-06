@@ -154,12 +154,12 @@ y(t) = x(t - delay_sec)
 **Behavior:**
 
 - Each call advances the transform's clock by `dt` (the first call after construction or `reset()` is t = 0) and stores the input with that time
-- Output is the stored input whose time is nearest t - delay_sec, never the current call's input; a tie (distances equal to within 1e-9 of the sample spacing) goes to the older sample
+- Output is the stored input whose time is nearest t - delay_sec, excluding the current call's input (except on the first call after construction or `reset()`, which returns its own input because it is the only one stored); a tie (distances equal to within 1e-9 of the sample spacing) goes to the older sample
 - With a constant dt this is the input from N calls earlier: delay_sec / dt rounded to the nearest integer, halves rounding up, minimum 1. That is max(1, llround(delay_sec / dt)) except where the floating-point quotient lands just below n + 0.5: 0.15 / 0.1 evaluates to 1.4999999999999998, llround gives 1, and N is 2
 - The clock is a compensated (two-double) sum, so the lag at a constant dt does not drift over long runs
 - Samples older than the one returned are dropped, so the applied delay follows delay_sec when dt changes between calls
 - At least until delay_sec has elapsed, output holds the first input sample (no zero fill)
-- `dt <= 0` throws `std::runtime_error`, as `Engine::tick` does; `delay_sec <= 0` passes the input through
+- A `dt` that is not positive and finite (`dt <= 0`, NaN, ±inf) throws `std::runtime_error` and leaves the state unchanged; `Engine::tick` rejects `dt <= 0` the same way but lets NaN and +inf through to the transforms. `delay_sec <= 0` passes the input through
 
 **Use Cases:**
 

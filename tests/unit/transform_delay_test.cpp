@@ -7,6 +7,10 @@
 #include <stdexcept>
 #include <vector>
 
+#include "fluxgraph/core/namespace.hpp"
+#include "fluxgraph/core/signal_store.hpp"
+#include "fluxgraph/engine.hpp"
+#include "fluxgraph/graph/compiler.hpp"
 #include "fluxgraph/transform/delay.hpp"
 
 using namespace fluxgraph;
@@ -239,4 +243,64 @@ TEST(DelayTransformTest, ResetClearsHistory) {
     const auto delays = applied_delays(tf, t, first, repeat(0.1, 30));
     EXPECT_NEAR(delays[0], 0.0, 1e-12);  // first output after reset is the first input
     EXPECT_NEAR(delays.back(), 1.0, 1e-9);
+}
+
+// A NaN or +inf dt used to reach the clock and make it NaN for good: no sample was
+// ever dropped again and the output froze. Both are rejected like dt <= 0, and the
+// state is left as it was.
+TEST(DelayTransformTest, RejectsNonFiniteDt) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+    DelayTransform tf(0.2);
+    tf.apply(10.0, 0.1);
+    tf.apply(20.0, 0.1);
+    EXPECT_THROW(tf.apply(99.0, nan), std::runtime_error);
+    EXPECT_THROW(tf.apply(99.0, inf), std::runtime_error);
+    EXPECT_THROW(tf.apply(99.0, -inf), std::runtime_error);
+    EXPECT_EQ(tf.apply(30.0, 0.1), 10.0);
+    EXPECT_EQ(tf.apply(40.0, 0.1), 20.0);
+    EXPECT_EQ(tf.apply(50.0, 0.1), 30.0);
+}
+
+// The same through Engine::tick, which lets NaN and +inf dt through its own
+// dt <= 0 check. The delay edge throws, so the exception leaves Engine::tick (the
+// stages after that edge do not run for the rejected tick), and the delay keeps
+// its 3-tick lag on every later tick.
+TEST(DelayTransformTest, NonFiniteDtThroughEngineIsRejectedAndDelayRecovers) {
+    for (const double bad_dt : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity()}) {
+        GraphSpec spec;
+        EdgeSpec edge;
+        edge.source_path = "input";
+        edge.target_path = "output";
+        edge.transform.type = "delay";
+        edge.transform.params["delay_sec"] = 0.3;
+        spec.edges.push_back(edge);
+
+        SignalNamespace signal_ns;
+        FunctionNamespace func_ns;
+        SignalStore store;
+        GraphCompiler compiler;
+        Engine engine;
+        engine.load(compiler.compile(spec, signal_ns, func_ns));
+        const SignalId in = signal_ns.resolve("input");
+        const SignalId out = signal_ns.resolve("output");
+
+        // Input = index of the accepted tick, so the output must be that index minus 3.
+        int accepted = 0;
+        long mismatches = 0;
+        for (int k = 0; k < 1000; ++k) {
+            store.write(in, static_cast<double>(accepted), "dimensionless");
+            if (k == 100) {
+                EXPECT_THROW(engine.tick(bad_dt, store), std::runtime_error) << "dt=" << bad_dt;
+                continue;
+            }
+            engine.tick(0.1, store);
+            if (accepted >= 3 && store.read_value(out) != static_cast<double>(accepted - 3)) {
+                ++mismatches;
+            }
+            ++accepted;
+        }
+        EXPECT_EQ(mismatches, 0) << "dt=" << bad_dt;
+        EXPECT_EQ(store.read_value(out), static_cast<double>(accepted - 1 - 3)) << "dt=" << bad_dt;
+    }
 }
