@@ -146,21 +146,46 @@ TEST(DelayTransformTest, DelayHoldsWhenDtShrinks) {
     EXPECT_NEAR(delays.back(), 1.0, 1e-9);
 }
 
-// Constant dt keeps the documented N = max(1, llround(delay_sec / dt)) behaviour.
+// At a constant dt the lag is N ticks: delay_sec / dt rounded to the nearest
+// integer, minimum 1, with a half (n + 0.5, to within 1e-9 of a tick) rounding up
+// to the older sample. A ratio meant to be n.5 counts as a half even when its
+// floating-point quotient lands just below it: 0.15 / 0.1 is 1.4999999999999998,
+// for which llround (the rule before #146) gives 1; here N = 2.
 TEST(DelayTransformTest, ConstantDtMatchesTickCount) {
     struct Case {
         double delay_sec;
         double dt;
+        int n;
     };
-    for (const Case c : {Case{1.0, 0.1}, Case{0.25, 0.1}, Case{0.24, 0.1}, Case{0.04, 0.1}, Case{0.3, 0.01}}) {
-        const auto n = static_cast<int>(std::max(1LL, std::llround(c.delay_sec / c.dt)));
+    for (const Case c : {Case{1.0, 0.1, 10}, Case{0.25, 0.1, 3}, Case{0.24, 0.1, 2}, Case{0.04, 0.1, 1},
+                         Case{0.3, 0.01, 30}, Case{0.15, 0.1, 2}}) {
         DelayTransform tf(c.delay_sec);
         for (int k = 0; k < 100; ++k) {
             const double y = tf.apply(static_cast<double>(k), c.dt);
-            EXPECT_EQ(y, static_cast<double>(std::max(0, k - n)))
-                << "delay_sec=" << c.delay_sec << " dt=" << c.dt << " k=" << k << " N=" << n;
+            EXPECT_EQ(y, static_cast<double>(std::max(0, k - c.n)))
+                << "delay_sec=" << c.delay_sec << " dt=" << c.dt << " k=" << k << " N=" << c.n;
         }
     }
+}
+
+// The lag at a constant dt must not change over a long run. With the clock kept
+// as a plain accumulated double, rounding grew with the clock until a half-tick
+// tie flipped: 0.25 / 0.1 went from lag 3 to lag 2 at tick 10,485,762.
+TEST(DelayTransformTest, ConstantDtLagIsStableOverLongRuns) {
+    constexpr long kTicks = 11000000;  // past the tick where the lag used to flip
+    DelayTransform tf(0.25);
+    long mismatches = 0;
+    long first_mismatch = -1;
+    for (long k = 0; k < kTicks; ++k) {
+        const double y = tf.apply(static_cast<double>(k), 0.1);
+        if (k >= 3 && y != static_cast<double>(k - 3)) {
+            if (first_mismatch < 0) {
+                first_mismatch = k;
+            }
+            ++mismatches;
+        }
+    }
+    EXPECT_EQ(mismatches, 0) << "lag left 3 ticks first at tick " << first_mismatch;
 }
 
 // #146: dt == 0 used to call llround(inf); dt < 0 a negative count. Both are now
