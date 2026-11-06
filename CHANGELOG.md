@@ -14,6 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project no longer needs GTest or builds the examples. They still default to
   ON when fluxgraph is the top-level project. (#119)
 
+### Added
+
+- `CompiledProgram::model_output_signal_ids()` returns every compiled model's
+  `output_signal_ids()`, in model order. (#148)
+
+### Fixed
+
+- The gRPC server protected and marked `physics_driven` only `thermal_mass`
+  `temp_signal` outputs. `UpdateSignals` accepted writes to outputs of every
+  other model type (`dc_motor`, `mass_spring_damper`, `thermal_rc2`, ...) and
+  the next tick overwrote them, and `ReadSignals` reported those outputs as not
+  physics-driven after `LoadConfig` or `Reset`. The server now takes the set
+  from `CompiledProgram::model_output_signal_ids()`: writes to any model output
+  return `PERMISSION_DENIED`, and every model output is physics-driven from
+  load and after `Reset`. (#148)
+
 ## [1.0.6] - 2026-07-04
 
 Maintenance release — CI, docs, and a one-time source reformat; no library

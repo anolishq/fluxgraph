@@ -816,6 +816,50 @@ TEST(GraphCompilerTest, CustomModelOutputCollidesWithEdgeTarget) {
     EXPECT_THROW(compiler.compile(spec, signal_ns, func_ns), std::runtime_error);
 }
 
+TEST(GraphCompilerTest, ModelOutputSignalIdsCoversEveryModelType) {
+    GraphSpec spec;
+
+    ModelSpec motor;
+    motor.id = "motor";
+    motor.type = "dc_motor";
+    motor.params["resistance_ohm"] = 2.0;
+    motor.params["inductance_h"] = 0.5;
+    motor.params["torque_constant"] = 0.1;
+    motor.params["back_emf_constant"] = 0.1;
+    motor.params["inertia"] = 0.02;
+    motor.params["viscous_friction"] = 0.2;
+    motor.params["initial_current"] = 0.0;
+    motor.params["initial_speed"] = 0.0;
+    motor.params["speed_signal"] = std::string("motor.omega");
+    motor.params["current_signal"] = std::string("motor.i");
+    motor.params["torque_signal"] = std::string("motor.tau");
+    motor.params["voltage_signal"] = std::string("motor.V");
+    motor.params["load_torque_signal"] = std::string("motor.load");
+    spec.models.push_back(motor);
+
+    ModelSpec chamber;
+    chamber.id = "chamber";
+    chamber.type = "thermal_mass";
+    chamber.params["thermal_mass"] = 1000.0;
+    chamber.params["heat_transfer_coeff"] = 10.0;
+    chamber.params["initial_temp"] = 25.0;
+    chamber.params["temp_signal"] = std::string("chamber.temp");
+    chamber.params["power_signal"] = std::string("chamber.power");
+    chamber.params["ambient_signal"] = std::string("chamber.ambient");
+    spec.models.push_back(chamber);
+
+    SignalNamespace signal_ns;
+    FunctionNamespace func_ns;
+    GraphCompiler compiler;
+    const CompiledProgram program = compiler.compile(spec, signal_ns, func_ns);
+
+    std::vector<std::string> paths;
+    for (SignalId id : program.model_output_signal_ids()) {
+        paths.push_back(signal_ns.lookup(id));
+    }
+    EXPECT_EQ(paths, (std::vector<std::string>{"motor.omega", "motor.i", "motor.tau", "chamber.temp"}));
+}
+
 TEST(GraphCompilerTest, RegisterModelFactoryRejectsDuplicateType) {
     const std::string type = "test.duplicate_model";
     if (!GraphCompiler::is_model_registered(type)) {

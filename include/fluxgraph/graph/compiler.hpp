@@ -126,6 +126,10 @@ struct CompiledProgram {
     std::vector<std::pair<SignalId, std::string>> signal_unit_contracts;
     size_t required_signal_capacity = 0;
     size_t required_command_capacity = 0;
+
+    /// Every model's output_signal_ids(), in model order. These are the
+    /// physics-owned signals; the compiler rejects any other writer to them.
+    std::vector<SignalId> model_output_signal_ids() const;
 };
 
 /// Compiles GraphSpec into executable CompiledProgram

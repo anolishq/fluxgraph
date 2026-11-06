@@ -374,6 +374,9 @@ try {
 }
 ```
 
+**`std::vector<SignalId> CompiledProgram::model_output_signal_ids() const`**
+Every compiled model's `output_signal_ids()`, in model order. These are the physics-owned signals: the compiler rejects an edge or another model that writes one. Read them before moving the program into `Engine::load`; the server uses them to refuse external writes and to mark the signals physics-driven.
+
 ---
 
 ## Graph Loaders
