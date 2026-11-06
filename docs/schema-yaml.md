@@ -4,7 +4,7 @@ FluxGraph YAML files define signal processing graphs with a human-friendly synta
 
 ## YAML Structure
 
-A graph file has four top-level sequences (all optional):
+A graph file is a YAML map with four top-level sequences. Each is optional, but a key that is present must hold a sequence (an empty `[]` is fine; a bare `rules:` with no value is null and is rejected), and a root that is neither a map nor empty is rejected:
 
 ```yaml
 signals:
@@ -594,7 +594,7 @@ Rules trigger device actions when conditions are met.
 ```yaml
 - id: unique_identifier # Unique rule identifier
   condition: "signal > value" # Simple comparison
-  actions: # Array of action objects
+  actions: # Required sequence of action objects; may be empty ([])
     - device: device_id
       function: function_name
       args:
@@ -747,6 +747,9 @@ The YAML loader provides detailed error messages with node locations:
 ```
 YAML parse error at /edges/2/transform: Missing required field 'type'
 YAML parse error at /rules/0/actions/0/args/payload: Command args must be scalar (double/int64/bool/string)
+YAML parse error at /rules: Expected sequence
+YAML parse error at /rules/1: Missing required field 'actions'
+YAML parse error at /: Expected map
 Parameter parse error at /models/0/params/x/0/0/.../0: nesting depth exceeds limit (32)
 Error loading YAML file 'graph.yaml': YAML parse error at line N, column M: <yaml-cpp message>
 ```

@@ -4,7 +4,7 @@ FluxGraph JSON files define signal processing graphs using a simple, validated s
 
 ## JSON Structure
 
-A graph file has four top-level arrays (all optional):
+A graph file is a JSON object with four top-level arrays. Each is optional, but a key that is present must hold an array (an empty array is fine), and a root that is not an object is rejected:
 
 ```json
 {
@@ -662,7 +662,7 @@ Rules trigger device actions when conditions are met.
 
 - `id` (string, required) - Unique rule identifier
 - `condition` (string, required) - Simple comparison (basic parser in v1.0)
-- `actions` (array, optional) - Array of action objects; if absent or not an array, the rule loads with no actions
+- `actions` (array, required) - Array of action objects; may be empty. A rule without `actions`, or whose `actions` is not an array, fails to load
 - `on_error` (string, optional, default `"log_and_continue"`) - Any string is accepted and stored on the compiled rule; no value changes engine behaviour
 
 **Action `args` constraint:**
@@ -765,6 +765,9 @@ The JSON loader provides detailed error messages with JSON pointer paths:
 ```
 JSON parse error at /edges/2/transform: Missing required field 'type'
 JSON parse error at /rules/0/actions/0/args/payload: Command args must be scalar (double/int64/bool/string)
+JSON parse error at /rules: Expected array
+JSON parse error at /rules/1: Missing required field 'actions'
+JSON parse error at /: Expected object
 Parameter parse error at /models/0/params/x: string length exceeds limit (1048576 bytes)
 JSON parse error in file graph.json: [nlohmann::json parse error]
 ```

@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project no longer needs GTest or builds the examples. They still default to
   ON when fluxgraph is the top-level project. (#119)
 
+### Fixed
+
+- The JSON and YAML loaders silently skipped a structural field of the wrong
+  type, so a malformed file loaded as an empty graph or with action-less rules.
+  They now fail with a path-qualified error when a top-level `signals`,
+  `models`, `edges` or `rules` key is present but is not an array (JSON) /
+  sequence (YAML), including a null value such as a bare `rules:`; when the
+  JSON root is not an object or the YAML root is neither a map nor empty; and
+  when a rule's `actions` is missing or not an array / sequence (it is
+  required, and may be empty). Files that were valid before still load. (#147)
+
 ## [1.0.6] - 2026-07-04
 
 Maintenance release — CI, docs, and a one-time source reformat; no library
