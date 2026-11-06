@@ -90,12 +90,11 @@ Determinism requirements:
 
 Delays are declared explicitly as delay edges. Edge execution order adds one tick of lag where a delay edge reads the output of a non-delay edge, or of a delay edge declared after it (item 3).
 
-1. Delay transform parameter `delay_sec` maps to integer ticks by:
-   - `N = max(1, llround(delay_sec / dt))` when `delay_sec > 0`. `delay_sec <= 0` is accepted and passes the input through with no delay.
-2. `dt` is the timestep passed to each `tick(dt, store)` call; `N` is recomputed on every tick.
-3. For `k >= N`, delay output at tick `k` is the input value from tick `k-N`, counting ticks from load or reset. The lag is `N+1` ticks when the delay's source is written by a non-delay edge, or by a delay edge declared after it (Section 4).
-4. The delay buffer starts empty, with no fill value: for `k < N` the delay outputs the input value from tick 0.
-5. No `dt` tolerance check or buffer reinitialization is implemented. The buffer drops at most one sample per tick, so after `dt` increases the delay keeps its earlier tick count; after `dt` decreases the buffer grows and repeats its oldest sample until it holds `N` samples.
+1. A delay keeps each input with its time. Tick 0 (after load or reset) is time 0, and each later tick advances time by its `dt`. At time `t` the delay outputs the stored input whose time is nearest `t - delay_sec`, excluding the current tick's input; a tie goes to the older input. `delay_sec <= 0` is accepted and passes the input through with no delay.
+2. With a constant `dt` this is a lag of `N = max(1, llround(delay_sec / dt))` ticks: for `k >= N`, delay output at tick `k` is the input value from tick `k-N`. The lag is `N+1` ticks when the delay's source is written by a non-delay edge, or by a delay edge declared after it (Section 4).
+3. When `dt` changes between ticks, inputs older than the one selected are dropped, so the applied delay stays within half the spacing of the stored inputs around `t - delay_sec`. The exception is item 1's floor of one tick: when `delay_sec` is less than half the latest `dt`, the delay is that one tick.
+4. The delay buffer starts empty, with no fill value: until `t` reaches `delay_sec` the delay outputs the input value from tick 0.
+5. `dt <= 0` is rejected with `std::runtime_error`, as `Engine::tick` rejects it.
 
 ## 7. Signal Ownership and Write Authority
 

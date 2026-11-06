@@ -149,13 +149,15 @@ y(t) = x(t - delay_sec)
 
 - `delay_sec` (double, required) - Delay duration in seconds
 
-**State:** FIFO queue (`std::deque`) of past samples
+**State:** FIFO queue (`std::deque`) of past samples, each stored with its time
 
 **Behavior:**
 
-- Output is input from delay_sec ago
-- Buffer sized for delay_sec / dt samples
+- Each call advances the transform's clock by `dt` (the first call after construction or `reset()` is t = 0) and stores the input with that time
+- Output is the stored input whose time is nearest t - delay_sec, never the current call's input; a tie goes to the older sample. With a constant dt this is the input from N = max(1, llround(delay_sec / dt)) calls earlier
+- Samples older than the one returned are dropped, so the applied delay follows delay_sec when dt changes between calls
 - Until delay_sec has elapsed, output holds the first input sample (no zero fill)
+- `dt <= 0` throws `std::runtime_error`, as `Engine::tick` does; `delay_sec <= 0` passes the input through
 
 **Use Cases:**
 
@@ -173,7 +175,7 @@ edge.transform.type = "delay";
 edge.transform.params["delay_sec"] = 0.5;  // 500ms delay
 ```
 
-**Memory:** Approx delay_sec/dt \* 8 bytes (one double per buffered sample)
+**Memory:** Approx delay_sec/dt \* 16 bytes (a time and a value per buffered sample)
 
 **Analytical Validation:**
 Step input shift matches to 1e-6; sine input to 1e-3 and ramp input to 0.01 (see analytical tests).

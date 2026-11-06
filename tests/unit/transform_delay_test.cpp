@@ -1,5 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <memory>
+#include <stdexcept>
+#include <vector>
+
 #include "fluxgraph/transform/delay.hpp"
 
 using namespace fluxgraph;
@@ -86,4 +93,125 @@ TEST(DelayTransformTest, VariableTimeStep) {
     double y = tf.apply(3.0, 0.1);
 
     EXPECT_EQ(y, 1.0);  // First sample after 0.5s
+}
+
+namespace {
+
+// Drives `tf` with input = current time, so (t - output) is the delay actually applied.
+// Tick 0 is t = 0; each later call advances t by its dt. Returns the applied delay per call.
+std::vector<double> applied_delays(DelayTransform &tf, double &t, bool &first, const std::vector<double> &dts) {
+    std::vector<double> delays;
+    for (double dt : dts) {
+        if (!first) {
+            t += dt;
+        }
+        first = false;
+        delays.push_back(t - tf.apply(t, dt));
+    }
+    return delays;
+}
+
+std::vector<double> repeat(double dt, int n) { return std::vector<double>(static_cast<size_t>(n), dt); }
+
+}  // namespace
+
+// #146: after dt grows, the buffer kept the old sample count, so the applied
+// delay settled at count * new_dt (5 s for 10 samples at 0.5 s) instead of 1 s.
+TEST(DelayTransformTest, DelayHoldsWhenDtGrows) {
+    DelayTransform tf(1.0);
+    double t = 0.0;
+    bool first = true;
+    (void)applied_delays(tf, t, first, repeat(0.1, 20));  // t = 1.9, history filled
+    const auto delays = applied_delays(tf, t, first, repeat(0.5, 40));
+    for (size_t i = 0; i < delays.size(); ++i) {
+        // The output is the stored sample nearest t - delay_sec, so the error is at
+        // most half the coarser sample spacing (0.25 s), well within one sample.
+        EXPECT_LE(std::abs(delays[i] - 1.0), 0.25 + 1e-9) << "step " << i << " after dt grew";
+    }
+    // Once the history is all at the new dt, the delay is exact (1.0 = 2 * 0.5).
+    EXPECT_NEAR(delays.back(), 1.0, 1e-9);
+}
+
+// #146: after dt shrinks, nothing was popped until the buffer reached the new
+// sample count, so the output held one stale value while time moved on.
+TEST(DelayTransformTest, DelayHoldsWhenDtShrinks) {
+    DelayTransform tf(1.0);
+    double t = 0.0;
+    bool first = true;
+    (void)applied_delays(tf, t, first, repeat(0.5, 6));  // t = 2.5
+    const auto delays = applied_delays(tf, t, first, repeat(0.1, 40));
+    for (size_t i = 0; i < delays.size(); ++i) {
+        EXPECT_LE(std::abs(delays[i] - 1.0), 0.25 + 1e-9) << "step " << i << " after dt shrank";
+    }
+    EXPECT_NEAR(delays.back(), 1.0, 1e-9);
+}
+
+// Constant dt keeps the documented N = max(1, llround(delay_sec / dt)) behaviour.
+TEST(DelayTransformTest, ConstantDtMatchesTickCount) {
+    struct Case {
+        double delay_sec;
+        double dt;
+    };
+    for (const Case c : {Case{1.0, 0.1}, Case{0.25, 0.1}, Case{0.24, 0.1}, Case{0.04, 0.1}, Case{0.3, 0.01}}) {
+        const auto n = static_cast<int>(std::max(1LL, std::llround(c.delay_sec / c.dt)));
+        DelayTransform tf(c.delay_sec);
+        for (int k = 0; k < 100; ++k) {
+            const double y = tf.apply(static_cast<double>(k), c.dt);
+            EXPECT_EQ(y, static_cast<double>(std::max(0, k - n)))
+                << "delay_sec=" << c.delay_sec << " dt=" << c.dt << " k=" << k << " N=" << n;
+        }
+    }
+}
+
+// #146: dt == 0 used to call llround(inf); dt < 0 a negative count. Both are now
+// rejected, as Engine::tick rejects them.
+TEST(DelayTransformTest, RejectsNonPositiveDt) {
+    DelayTransform tf(1.0);
+    EXPECT_THROW(tf.apply(1.0, 0.0), std::runtime_error);
+    EXPECT_THROW(tf.apply(1.0, -0.1), std::runtime_error);
+
+    DelayTransform passthrough(0.0);
+    EXPECT_THROW(passthrough.apply(1.0, 0.0), std::runtime_error);
+}
+
+// A rejected call leaves the state unchanged.
+TEST(DelayTransformTest, RejectedDtDoesNotDisturbState) {
+    DelayTransform tf(0.2);
+    tf.apply(10.0, 0.1);
+    tf.apply(20.0, 0.1);
+    EXPECT_THROW(tf.apply(99.0, 0.0), std::runtime_error);
+    EXPECT_EQ(tf.apply(30.0, 0.1), 10.0);
+    EXPECT_EQ(tf.apply(40.0, 0.1), 20.0);
+}
+
+// The clone carries the sample times, so it applies the same delay after dt changes.
+TEST(DelayTransformTest, CloneCarriesSampleTimes) {
+    DelayTransform tf(1.0);
+    double t = 0.0;
+    bool first = true;
+    (void)applied_delays(tf, t, first, repeat(0.1, 20));
+
+    std::unique_ptr<ITransform> copy(tf.clone());
+    for (int i = 0; i < 10; ++i) {
+        t += 0.5;
+        const double y_orig = tf.apply(t, 0.5);
+        const double y_copy = copy->apply(t, 0.5);
+        EXPECT_EQ(y_orig, y_copy);
+        EXPECT_LE(std::abs((t - y_copy) - 1.0), 0.25 + 1e-9);
+    }
+}
+
+// Reset drops the stored history: the next output is the next input, and the
+// delay is correct again once delay_sec of new history has accumulated.
+TEST(DelayTransformTest, ResetClearsHistory) {
+    DelayTransform tf(1.0);
+    double t = 0.0;
+    bool first = true;
+    (void)applied_delays(tf, t, first, repeat(0.5, 10));
+    tf.reset();
+    t = 0.0;
+    first = true;
+    const auto delays = applied_delays(tf, t, first, repeat(0.1, 30));
+    EXPECT_NEAR(delays[0], 0.0, 1e-12);  // first output after reset is the first input
+    EXPECT_NEAR(delays.back(), 1.0, 1e-9);
 }

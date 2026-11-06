@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project no longer needs GTest or builds the examples. They still default to
   ON when fluxgraph is the top-level project. (#119)
 
+### Fixed
+
+- `DelayTransform` applied the wrong delay after `dt` changed: it kept the
+  sample count from the earlier `dt` (a 1 s delay settled at 5 s after `dt` went
+  from 0.1 s to 0.5 s) or held one stale value after `dt` shrank. Samples now
+  carry their time, and the output is the stored input nearest
+  `t - delay_sec`, so the delay follows `delay_sec` across `dt` changes. With a
+  constant `dt` the output is unchanged. `apply()` with `dt <= 0` now throws
+  `std::runtime_error`, as `Engine::tick` does, instead of computing
+  `llround(inf)`; the unused `time_accumulated_` member is gone. (#146)
+
 ## [1.0.6] - 2026-07-04
 
 Maintenance release — CI, docs, and a one-time source reformat; no library
