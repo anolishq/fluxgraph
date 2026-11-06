@@ -82,8 +82,9 @@ jobs:
 
       - name: Check glibc floor
         # Fails the release when the packaged binary needs a GLIBC_ newer than
-        # 2.41 or a GLIBCXX_ newer than 3.4.33 (Debian 13), so a later runner
-        # move cannot ship a binary the deploy hosts cannot load.
+        # 2.41, a GLIBCXX_ newer than 3.4.33 or a CXXABI_ newer than 1.3.15
+        # (Debian 13), so a later runner move cannot ship a binary the deploy
+        # hosts cannot load.
         run: bash scripts/check-glibc-floor.sh staging/bin/fluxgraph-server
 
       - name: Package source tarball

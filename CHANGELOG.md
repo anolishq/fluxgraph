@@ -18,8 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Build the `linux-x86_64` release binary on `ubuntu-24.04` again (it had moved
   to `ubuntu-26.04`), and fail the release when the packaged `fluxgraph-server`
-  needs a `GLIBC_` newer than 2.41 or a `GLIBCXX_` newer than 3.4.33, the
-  versions Debian 13 ships. The check is `scripts/check-glibc-floor.sh`. (#159)
+  needs a `GLIBC_` newer than 2.41, a `GLIBCXX_` newer than 3.4.33 or a
+  `CXXABI_` newer than 1.3.15, the versions Debian 13 ships. The check is
+  `scripts/check-glibc-floor.sh`, tested in CI by
+  `tests/scripts/check-glibc-floor-test.sh`. (#159)
 
 ## [1.0.6] - 2026-07-04
 
