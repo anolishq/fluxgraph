@@ -26,6 +26,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `std::invalid_argument`. Equal bounds and the default infinite `linear`
   bounds still work. (#145)
 
+- The JSON and YAML loaders silently skipped a structural field of the wrong
+  type, so a malformed file loaded as an empty graph or with action-less rules.
+  These inputs loaded before and now fail with a path-qualified error:
+  - a top-level `signals`, `models`, `edges` or `rules` key that is present but
+    not an array (JSON) / sequence (YAML), including a null value such as a
+    bare `rules:`
+  - a JSON root that is not an object (an array, a scalar, `null`)
+  - a YAML root that is not a map, including a null document: `~`, `null`, a
+    bare `---`, or a lone `...` (yaml-cpp reads each as one document with null
+    content)
+  - a rule whose `actions` is missing or not an array / sequence (`actions` is
+    required, and may be empty)
+
+  Input with no document at all (empty, or only whitespace and comments) still
+  loads as an empty graph, and every other file that loaded before still loads
+  unchanged. (#147)
+
 ### CI
 
 - Build the `linux-x86_64` release binary on `ubuntu-24.04` again (it had moved

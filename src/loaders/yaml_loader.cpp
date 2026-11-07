@@ -243,36 +243,41 @@ RuleSpec parse_rule(const YAML::Node &node, size_t index) {
     spec.id = node["id"].as<std::string>();
     spec.condition = node["condition"].as<std::string>();
 
-    // Parse actions array
-    if (node["actions"] && node["actions"].IsSequence()) {
-        for (size_t i = 0; i < node["actions"].size(); ++i) {
-            const YAML::Node &action_node = node["actions"][i];
-            std::string action_path = path + "/actions/" + std::to_string(i);
+    // Parse actions sequence (required; may be empty)
+    const YAML::Node actions = node["actions"];
+    if (!actions) {
+        throw std::runtime_error("YAML parse error at " + path + ": Missing required field 'actions'");
+    }
+    if (!actions.IsSequence()) {
+        throw std::runtime_error("YAML parse error at " + path + "/actions: Expected sequence");
+    }
+    for (size_t i = 0; i < actions.size(); ++i) {
+        const YAML::Node action_node = actions[i];
+        std::string action_path = path + "/actions/" + std::to_string(i);
 
-            ActionSpec action;
-            if (!action_node["device"]) {
-                throw std::runtime_error("YAML parse error at " + action_path + ": Missing required field 'device'");
-            }
-            if (!action_node["function"]) {
-                throw std::runtime_error("YAML parse error at " + action_path + ": Missing required field 'function'");
-            }
-
-            action.device = action_node["device"].as<std::string>();
-            action.function = action_node["function"].as<std::string>();
-
-            if (action_node["args"]) {
-                if (!action_node["args"].IsMap()) {
-                    throw std::runtime_error("YAML parse error at " + action_path + "/args: Expected map");
-                }
-                for (auto it = action_node["args"].begin(); it != action_node["args"].end(); ++it) {
-                    std::string key = it->first.as<std::string>();
-                    std::string arg_path = std::format("{}/args/{}", action_path, key);
-                    action.args[key] = yaml_to_variant(it->second, arg_path);
-                }
-            }
-
-            spec.actions.push_back(action);
+        ActionSpec action;
+        if (!action_node["device"]) {
+            throw std::runtime_error("YAML parse error at " + action_path + ": Missing required field 'device'");
         }
+        if (!action_node["function"]) {
+            throw std::runtime_error("YAML parse error at " + action_path + ": Missing required field 'function'");
+        }
+
+        action.device = action_node["device"].as<std::string>();
+        action.function = action_node["function"].as<std::string>();
+
+        if (action_node["args"]) {
+            if (!action_node["args"].IsMap()) {
+                throw std::runtime_error("YAML parse error at " + action_path + "/args: Expected map");
+            }
+            for (auto it = action_node["args"].begin(); it != action_node["args"].end(); ++it) {
+                std::string key = it->first.as<std::string>();
+                std::string arg_path = std::format("{}/args/{}", action_path, key);
+                action.args[key] = yaml_to_variant(it->second, arg_path);
+            }
+        }
+
+        spec.actions.push_back(action);
     }
 
     if (node["on_error"]) {
@@ -284,6 +289,16 @@ RuleSpec parse_rule(const YAML::Node &node, size_t index) {
     return spec;
 }
 
+// Returns root[key] (an invalid node when absent). Throws when present but not a sequence;
+// a key with no value is null, which is not a sequence.
+YAML::Node optional_sequence(const YAML::Node &root, const char *key) {
+    const YAML::Node node = root[key];
+    if (node && !node.IsSequence()) {
+        throw std::runtime_error(std::string("YAML parse error at /") + key + ": Expected sequence");
+    }
+    return node;
+}
+
 }  // anonymous namespace
 
 GraphSpec load_yaml_string(const std::string &yaml_content) {
@@ -291,39 +306,47 @@ GraphSpec load_yaml_string(const std::string &yaml_content) {
     detail::ParamParseBudget param_budget;
 
     try {
-        YAML::Node root = YAML::Load(yaml_content);
+        const YAML::Node root = YAML::Load(yaml_content);
 
-        // Parse signals array
-        if (root["signals"] && root["signals"].IsSequence()) {
+        // Input with no document at all (empty, or only whitespace and comments)
+        // is an empty graph; yaml-cpp gives that root a null mark. A document
+        // whose root is null (`~`, `null`, a bare `---`) is rejected below, as a
+        // JSON `null` root is.
+        if (root.IsNull() && root.Mark().is_null()) {
+            return spec;
+        }
+        if (!root.IsMap()) {
+            throw std::runtime_error("YAML parse error at /: Expected map");
+        }
+
+        // Each section is optional, but a present section must be a sequence.
+        if (const YAML::Node signals = optional_sequence(root, "signals")) {
             size_t index = 0;
-            for (const auto &signal_node : root["signals"]) {
+            for (const auto &signal_node : signals) {
                 spec.signals.push_back(parse_signal(signal_node, index));
                 ++index;
             }
         }
 
-        // Parse edges array
-        if (root["edges"] && root["edges"].IsSequence()) {
+        if (const YAML::Node edges = optional_sequence(root, "edges")) {
             size_t index = 0;
-            for (const auto &edge_node : root["edges"]) {
+            for (const auto &edge_node : edges) {
                 spec.edges.push_back(parse_edge(edge_node, index, param_budget));
                 ++index;
             }
         }
 
-        // Parse models array
-        if (root["models"] && root["models"].IsSequence()) {
+        if (const YAML::Node models = optional_sequence(root, "models")) {
             size_t index = 0;
-            for (const auto &model_node : root["models"]) {
+            for (const auto &model_node : models) {
                 spec.models.push_back(parse_model(model_node, index, param_budget));
                 ++index;
             }
         }
 
-        // Parse rules array
-        if (root["rules"] && root["rules"].IsSequence()) {
+        if (const YAML::Node rules = optional_sequence(root, "rules")) {
             size_t index = 0;
-            for (const auto &rule_node : root["rules"]) {
+            for (const auto &rule_node : rules) {
                 spec.rules.push_back(parse_rule(rule_node, index));
                 ++index;
             }
