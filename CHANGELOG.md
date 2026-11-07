@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project no longer needs GTest or builds the examples. They still default to
   ON when fluxgraph is the top-level project. (#119)
 
+### Fixed
+
+- The `saturation` and `linear` transforms rejected nothing about their bounds:
+  `min > max` (or `clamp_min > clamp_max`) reached `std::clamp`, which is
+  undefined behaviour (every input came out as `max`, or the process aborted
+  under `_GLIBCXX_ASSERTIONS`), and a NaN bound silently disabled that side of
+  the clamp. Compiling such an edge now fails with
+  `Invalid parameter at transform[saturation]/...` (or `transform[linear]/...`),
+  and the `SaturationTransform` and `LinearTransform` constructors throw
+  `std::invalid_argument`. Equal bounds and the default infinite `linear`
+  bounds still work. (#145)
+
 ### CI
 
 - Build the `linux-x86_64` release binary on `ubuntu-24.04` again (it had moved
