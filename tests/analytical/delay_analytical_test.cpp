@@ -39,8 +39,6 @@ TEST(DelayTransformAnalytical, SineWavePhaseShift) {
 
     double dt = 0.01;
     double freq = 1.0;  // 1 Hz
-    double period = 1.0 / freq;
-    double phase_shift = 2.0 * M_PI * delay.apply(0.0, 0.0);  // Get delay value... wait, can't access private
 
     std::vector<double> input_signal;
     std::vector<double> output_signal;

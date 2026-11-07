@@ -151,13 +151,17 @@ y(t) = x(t - delay_sec)
 
 - `delay_sec` (double, required) - Delay duration in seconds
 
-**State:** FIFO queue (`std::deque`) of past samples
+**State:** FIFO queue (`std::deque`) of past samples, each stored with its time
 
 **Behavior:**
 
-- Output is input from delay_sec ago
-- Buffer sized for delay_sec / dt samples
-- Until delay_sec has elapsed, output holds the first input sample (no zero fill)
+- Each call advances the transform's clock by `dt` (the first call after construction or `reset()` is t = 0) and stores the input with that time
+- Output is the stored input whose time is nearest t - delay_sec, excluding the current call's input (except on the first call after construction or `reset()`, which returns its own input because it is the only one stored); a tie (distances equal to within 1e-9 of the sample spacing) goes to the older sample
+- With a constant dt this is the input from N calls earlier: delay_sec / dt rounded to the nearest integer, halves rounding up, minimum 1. That is max(1, llround(delay_sec / dt)) except where the floating-point quotient lands just below n + 0.5: 0.15 / 0.1 evaluates to 1.4999999999999998, llround gives 1, and N is 2
+- The clock is a compensated (two-double) sum, so the lag at a constant dt does not drift over long runs
+- Samples older than the one returned are dropped, so the applied delay follows delay_sec when dt changes between calls
+- At least until delay_sec has elapsed, output holds the first input sample (no zero fill)
+- A `dt` that is not positive and finite (`dt <= 0`, NaN, ±inf) throws `std::runtime_error` and leaves the state unchanged; `Engine::tick` rejects `dt <= 0` the same way but lets a NaN `dt` (and a +inf `dt` when no model has a finite stability limit) through to the transforms (see `semantics_spec.md` §3 item 1 and §6 item 5). `delay_sec <= 0` passes the input through
 
 **Use Cases:**
 
@@ -175,7 +179,7 @@ edge.transform.type = "delay";
 edge.transform.params["delay_sec"] = 0.5;  // 500ms delay
 ```
 
-**Memory:** Approx delay_sec/dt \* 8 bytes (one double per buffered sample)
+**Memory:** Approx delay_sec/dt \* 24 bytes (a two-double time and a value per buffered sample)
 
 **Analytical Validation:**
 Step input shift matches to 1e-6; sine input to 1e-3 and ramp input to 0.01 (see analytical tests).
@@ -557,7 +561,7 @@ engine.reset();  // Resets all transform state
 ### 4. Avoid Excessive Buffering
 
 ```cpp
-// Avoid: 10-second delay at 0.01s dt = 1000 samples = 8KB per edge
+// Avoid: 10-second delay at 0.01s dt = 1000 samples = 24KB per edge
 edge.transform.params["delay_sec"] = 10.0;  // High memory cost
 
 // Better: Use FirstOrderLag if you just need smoothing

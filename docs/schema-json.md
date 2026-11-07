@@ -468,7 +468,7 @@ Time-shift signal: `y(t) = x(t - delay_sec)`
 }
 ```
 
-**Memory:** Approx `delay_sec / dt * 8` bytes (circular buffer)
+**Memory:** Approx `delay_sec / dt * 24` bytes (a two-double time and a value per buffered sample)
 
 ### 4. Noise Transform
 

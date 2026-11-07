@@ -57,6 +57,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   return `PERMISSION_DENIED`, and every model output is physics-driven from
   load and after `Reset`. (#148)
 
+- `DelayTransform` applied the wrong delay after `dt` changed: it kept the
+  sample count from the earlier `dt` (a 1 s delay settled at 5 s after `dt` went
+  from 0.1 s to 0.5 s) or held one stale value after `dt` shrank. Samples now
+  carry their time, and the output is the stored input nearest
+  `t - delay_sec`, so the delay follows `delay_sec` across `dt` changes.
+  `apply()` with a `dt` that is not positive and finite (`dt <= 0`, NaN,
+  ±inf) now throws `std::runtime_error` and leaves the delay's state unchanged,
+  instead of computing `llround(inf)` or `llround(NaN)`. `Engine::tick` still
+  passes a NaN `dt` (and a +inf `dt` when no model has a finite stability
+  limit) to the transforms, so a delay edge makes such a tick throw. By then the
+  models and any earlier edges have already run with that `dt`, so a NaN `dt`
+  still leaves model outputs such as `thermal_mass` temperatures at NaN for
+  good. That is existing `Engine::tick` behaviour, not changed here. The unused
+  `time_accumulated_` member is gone. (#146)
+- At a constant `dt` the delay's tick count can differ by one from previous
+  releases where `delay_sec / dt` is meant to be a half but its floating-point
+  quotient lands just below it. The count is now `delay_sec / dt` rounded with
+  halves going up (to the older sample), so `0.15 / 0.1` (which evaluates to
+  1.4999999999999998) gives 2 ticks where `llround` gave 1. Other ratios keep
+  the `max(1, llround(delay_sec / dt))` count, and the count stays fixed over
+  long runs. (#146)
+
 ### CI
 
 - Build the `linux-x86_64` release binary on `ubuntu-24.04` again (it had moved
