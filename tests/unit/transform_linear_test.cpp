@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <limits>
+#include <stdexcept>
 
 #include "fluxgraph/transform/linear.hpp"
 
@@ -63,4 +64,29 @@ TEST(LinearTransformTest, Reset) {
 TEST(LinearTransformTest, TimeStepIndependent) {
     LinearTransform tf(2.0, 3.0);
     EXPECT_EQ(tf.apply(5.0, 0.01), tf.apply(5.0, 1.0));
+}
+
+// std::clamp requires !(hi < lo); inverted clamp bounds were undefined behaviour (#145).
+TEST(LinearTransformTest, ConstructorRejectsInvertedClampBounds) {
+    EXPECT_THROW(LinearTransform(1.0, 0.0, 10.0, 0.0), std::invalid_argument);
+}
+
+// A NaN clamp bound silently disabled that side of the clamp (#145).
+TEST(LinearTransformTest, ConstructorRejectsNaNClampBounds) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+    EXPECT_THROW(LinearTransform(1.0, 0.0, nan, inf), std::invalid_argument);
+    EXPECT_THROW(LinearTransform(1.0, 0.0, -inf, nan), std::invalid_argument);
+}
+
+TEST(LinearTransformTest, EqualClampBoundsAreValid) {
+    LinearTransform tf(2.0, 1.0, 3.0, 3.0);
+    EXPECT_EQ(tf.apply(-10.0, 0.1), 3.0);
+    EXPECT_EQ(tf.apply(10.0, 0.1), 3.0);
+}
+
+TEST(LinearTransformTest, DefaultClampBoundsAreUnbounded) {
+    LinearTransform tf(1.0, 0.0);
+    EXPECT_EQ(tf.apply(-1e300, 0.1), -1e300);
+    EXPECT_EQ(tf.apply(1e300, 0.1), 1e300);
 }
