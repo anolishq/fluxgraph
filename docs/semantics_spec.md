@@ -107,7 +107,7 @@ Each signal has exactly one owning writer class per tick. The compiler enforces 
 Rules:
 
 1. Multi-writer targets are compile-time errors.
-2. The server's `UpdateSignals` path rejects external writes to every edge target and to `thermal_mass` `temp_signal` with `PERMISSION_DENIED`. External writes to outputs of other model types are accepted, and `SignalStore::write` in library use performs no ownership check.
+2. The server's `UpdateSignals` path rejects external writes to every edge target and to every model output (each compiled model's `output_signal_ids()`, for every model type) with `PERMISSION_DENIED`. The server marks those model outputs `physics_driven` on load and again on `Reset`. `SignalStore::write` in library use performs no ownership check.
 3. Engine internal stages must not overwrite signals owned by different stages.
 
 ## 8. Unit Semantics
@@ -142,7 +142,7 @@ This section records current implementation alignment against the normative cont
 2. Rule conditions now support comparator expressions (`<`, `<=`, `>`, `>=`, `==`, `!=`) over scalar signal paths: **partial** for Section 4 (minimum subset implemented).
 3. Stability validation is active in server load/compile path and enforced at runtime in `Engine::tick`: **conformant** with Section 9 baseline.
 4. Server CLI `--dt` is wired into service runtime timestep and compile-time stability validation: **conformant** with Section 9.
-5. External writes to edge targets and to `thermal_mass` `temp_signal` are rejected in server update flow; outputs of other model types are not protected: **partial** for Section 7 for server path.
+5. External writes to edge targets and to every model output are rejected in server update flow: **conformant** with Section 7 for server path.
 6. Unit checks enforce declared/first-write consistency and runtime mismatches throw: **partial** for Section 8 (compile-time inferential checks remain limited).
 7. Delay-mediated cycle acceptance is implemented via non-delay subgraph cycle policy: **partial** pending deeper delay-buffer semantics validation in complex mixed-order graphs.
 

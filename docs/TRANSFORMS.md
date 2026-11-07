@@ -32,8 +32,10 @@ if clamp_max set: y = min(y, clamp_max)
 
 - `scale` (double, required) - Multiplicative factor
 - `offset` (double, required) - Additive offset
-- `clamp_min` (optional double) - Minimum output value
-- `clamp_max` (optional double) - Maximum output value
+- `clamp_min` (optional double, default -infinity) - Minimum output value
+- `clamp_max` (optional double, default +infinity) - Maximum output value
+
+Neither bound may be NaN, and `clamp_min` must not exceed `clamp_max` (equal bounds are allowed). A graph that breaks this fails to compile with `Invalid parameter at transform[linear]/...`, and the `LinearTransform` constructor throws `std::invalid_argument`.
 
 **State:** Stateless (dt-independent)
 
@@ -251,8 +253,10 @@ y = clamp(x, min_value, max_value)
 
 **Parameters:**
 
-- `min_value` (double, required) - Minimum output
+- `min_value` (double, required; `min` is accepted as an alias) - Minimum output
 - `max_value` (double, required) - Maximum output
+
+Neither bound may be NaN, and `min_value` must not exceed `max_value` (equal bounds are allowed). A graph that breaks this fails to compile with `Invalid parameter at transform[saturation]/...`, and the `SaturationTransform` constructor throws `std::invalid_argument`.
 
 **State:** Stateless
 

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <format>
 #include <stdexcept>
 
 #include "fluxgraph/graph/param_utils.hpp"
@@ -44,6 +45,24 @@ void require_finite_positive(const double value, const std::string &path) {
 void require_finite_non_negative(const double value, const std::string &path) {
     if (!std::isfinite(value) || value < 0.0) {
         throw std::runtime_error("Invalid parameter at " + path + ": expected >= 0");
+    }
+}
+
+void require_not_nan(const double value, const std::string &path) {
+    if (std::isnan(value)) {
+        throw std::runtime_error(std::format("Invalid parameter at {}: expected a number, got NaN", path));
+    }
+}
+
+void require_clamp_bounds(const double lower, const std::string &lower_path, const double upper,
+                          const std::string &upper_path) {
+    require_not_nan(lower, lower_path);
+    require_not_nan(upper, upper_path);
+    if (lower > upper) {
+        const auto slash = lower_path.find_last_of('/');
+        const std::string lower_name = slash == std::string::npos ? lower_path : lower_path.substr(slash + 1);
+        throw std::runtime_error(
+            std::format("Invalid parameter at {}: expected >= {} ({}), got {}", upper_path, lower_name, lower, upper));
     }
 }
 

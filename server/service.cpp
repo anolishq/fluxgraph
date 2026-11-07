@@ -71,6 +71,7 @@ grpc::Status FluxGraphServiceImpl::LoadConfig(grpc::ServerContext * /*context*/,
         // Compile graph
         GraphCompiler compiler;
         auto program = compiler.compile(spec, signal_ns_, func_ns_, dt_);
+        const std::vector<SignalId> model_output_ids = program.model_output_signal_ids();
 
         // Load into engine
         engine_.load(std::move(program));
@@ -96,10 +97,11 @@ grpc::Status FluxGraphServiceImpl::LoadConfig(grpc::ServerContext * /*context*/,
             }
         }
 
-        // Build write-authority map from spec.
+        // Build write-authority map.
         // - All edge targets are derived outputs and protected from external
         // writes.
-        // - Model output signals are physics-owned and protected.
+        // - Every model output (IModel::output_signal_ids() of each compiled
+        // model, whatever its type) is physics-owned and protected.
         for (const auto &edge : spec.edges) {
             const SignalId target_id = signal_ns_.resolve(edge.target_path);
             if (target_id != INVALID_SIGNAL) {
@@ -107,19 +109,10 @@ grpc::Status FluxGraphServiceImpl::LoadConfig(grpc::ServerContext * /*context*/,
             }
         }
 
-        for (const auto &model : spec.models) {
-            if (model.type == "thermal_mass") {
-                const auto temp_it = model.params.find("temp_signal");
-                if (temp_it != model.params.end() && std::holds_alternative<std::string>(temp_it->second)) {
-                    const auto &temp_path = std::get<std::string>(temp_it->second);
-                    const SignalId temp_id = signal_ns_.resolve(temp_path);
-                    if (temp_id != INVALID_SIGNAL) {
-                        protected_write_signals_.insert(temp_id);
-                        physics_owned_signals_.insert(temp_id);
-                        store_.mark_physics_driven(temp_id, true);
-                    }
-                }
-            }
+        for (const SignalId output_id : model_output_ids) {
+            protected_write_signals_.insert(output_id);
+            physics_owned_signals_.insert(output_id);
+            store_.mark_physics_driven(output_id, true);
         }
 
         // Update config hash

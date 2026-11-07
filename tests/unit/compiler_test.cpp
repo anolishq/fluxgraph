@@ -816,6 +816,96 @@ TEST(GraphCompilerTest, CustomModelOutputCollidesWithEdgeTarget) {
     EXPECT_THROW(compiler.compile(spec, signal_ns, func_ns), std::runtime_error);
 }
 
+TEST(GraphCompilerTest, ModelOutputSignalIdsCoversEveryModelType) {
+    // One model of each of the 7 builtin types, in a deliberate order.
+    auto model = [](std::string id, std::string type, ParamMap params) {
+        ModelSpec spec;
+        spec.id = std::move(id);
+        spec.type = std::move(type);
+        spec.params = std::move(params);
+        return spec;
+    };
+    using S = std::string;
+    GraphSpec spec;
+    spec.models.push_back(model("motor", "dc_motor",
+                                {{"resistance_ohm", 2.0},
+                                 {"inductance_h", 0.5},
+                                 {"torque_constant", 0.1},
+                                 {"back_emf_constant", 0.1},
+                                 {"inertia", 0.02},
+                                 {"viscous_friction", 0.2},
+                                 {"initial_current", 0.0},
+                                 {"initial_speed", 0.0},
+                                 {"speed_signal", S("motor.omega")},
+                                 {"current_signal", S("motor.i")},
+                                 {"torque_signal", S("motor.tau")},
+                                 {"voltage_signal", S("motor.V")},
+                                 {"load_torque_signal", S("motor.load")}}));
+    spec.models.push_back(model("chamber", "thermal_mass",
+                                {{"thermal_mass", 1000.0},
+                                 {"heat_transfer_coeff", 10.0},
+                                 {"initial_temp", 25.0},
+                                 {"temp_signal", S("chamber.temp")},
+                                 {"power_signal", S("chamber.power")},
+                                 {"ambient_signal", S("ambient.temp")}}));
+    spec.models.push_back(model("rc2", "thermal_rc2",
+                                {{"thermal_mass_a", 1000.0},
+                                 {"thermal_mass_b", 800.0},
+                                 {"heat_transfer_coeff_a", 5.0},
+                                 {"heat_transfer_coeff_b", 4.0},
+                                 {"coupling_coeff", 2.0},
+                                 {"initial_temp_a", 20.0},
+                                 {"initial_temp_b", 20.0},
+                                 {"temp_signal_a", S("rc2.ta")},
+                                 {"temp_signal_b", S("rc2.tb")},
+                                 {"power_signal", S("rc2.p")},
+                                 {"ambient_signal", S("ambient.temp")}}));
+    spec.models.push_back(model("fop", "first_order_process",
+                                {{"gain", 1.0},
+                                 {"tau_s", 5.0},
+                                 {"initial_output", 0.0},
+                                 {"output_signal", S("fop.y")},
+                                 {"input_signal", S("fop.u")}}));
+    spec.models.push_back(model("sop", "second_order_process",
+                                {{"gain", 1.0},
+                                 {"zeta", 0.7},
+                                 {"omega_n_rad_s", 1.0},
+                                 {"initial_output", 0.0},
+                                 {"initial_output_rate", 0.0},
+                                 {"output_signal", S("sop.y")},
+                                 {"input_signal", S("sop.u")}}));
+    spec.models.push_back(model("ss", "state_space_siso_discrete",
+                                {{"A_d", matrix_param({{0.9, 0.1}, {0.0, 0.95}})},
+                                 {"B_d", vector_param({0.1, 0.05})},
+                                 {"C", vector_param({1.0, 0.0})},
+                                 {"D", 0.0},
+                                 {"x0", vector_param({0.0, 0.0})},
+                                 {"output_signal", S("ss.y")},
+                                 {"input_signal", S("ss.u")}}));
+    spec.models.push_back(model("msd", "mass_spring_damper",
+                                {{"mass", 1.0},
+                                 {"damping_coeff", 2.0},
+                                 {"spring_constant", 1.0},
+                                 {"initial_position", 0.0},
+                                 {"initial_velocity", 0.0},
+                                 {"position_signal", S("msd.x")},
+                                 {"velocity_signal", S("msd.v")},
+                                 {"force_signal", S("msd.F")}}));
+
+    SignalNamespace signal_ns;
+    FunctionNamespace func_ns;
+    GraphCompiler compiler;
+    const CompiledProgram program = compiler.compile(spec, signal_ns, func_ns);
+
+    std::vector<std::string> paths;
+    for (SignalId id : program.model_output_signal_ids()) {
+        paths.push_back(signal_ns.lookup(id));
+    }
+    // Every output of every model, in model order, then each model's own order.
+    EXPECT_EQ(paths, (std::vector<std::string>{"motor.omega", "motor.i", "motor.tau", "chamber.temp", "rc2.ta",
+                                               "rc2.tb", "fop.y", "sop.y", "ss.y", "msd.x", "msd.v"}));
+}
+
 TEST(GraphCompilerTest, RegisterModelFactoryRejectsDuplicateType) {
     const std::string type = "test.duplicate_model";
     if (!GraphCompiler::is_model_registered(type)) {
@@ -970,6 +1060,151 @@ TEST(GraphCompilerTest, SaturationSupportsMinValueAliases) {
     EXPECT_DOUBLE_EQ(tf->apply(5.0, 0.1), 1.0);
     EXPECT_DOUBLE_EQ(tf->apply(-5.0, 0.1), -1.0);
     delete tf;
+}
+
+namespace {
+
+// Expects parse_transform(spec) to throw std::runtime_error whose message
+// contains every fragment (the path-qualified "Invalid parameter at ..." form).
+void expect_transform_rejected(const TransformSpec &spec, const std::vector<std::string> &fragments) {
+    GraphCompiler compiler;
+    try {
+        std::unique_ptr<ITransform> tf(compiler.parse_transform(spec));
+        FAIL() << "Expected runtime_error for transform " << spec.type;
+    } catch (const std::runtime_error &e) {
+        const std::string what = e.what();
+        for (const auto &fragment : fragments) {
+            EXPECT_NE(what.find(fragment), std::string::npos) << "message '" << what << "' lacks '" << fragment << "'";
+        }
+    }
+}
+
+}  // namespace
+
+TEST(GraphCompilerTest, SaturationRejectsInvertedBounds) {
+    TransformSpec spec;
+    spec.type = "saturation";
+    spec.params["min"] = 10.0;
+    spec.params["max"] = 0.0;
+    expect_transform_rejected(spec, {"Invalid parameter at transform[saturation]/max", "min"});
+}
+
+TEST(GraphCompilerTest, SaturationRejectsInvertedAliasBounds) {
+    TransformSpec spec;
+    spec.type = "saturation";
+    spec.params["min_value"] = 10.0;
+    spec.params["max_value"] = 0.0;
+    expect_transform_rejected(spec, {"Invalid parameter at transform[saturation]/max_value", "min_value"});
+}
+
+TEST(GraphCompilerTest, SaturationRejectsNaNBounds) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    {
+        TransformSpec spec;
+        spec.type = "saturation";
+        spec.params["min"] = nan;
+        spec.params["max"] = 1.0;
+        expect_transform_rejected(spec, {"Invalid parameter at transform[saturation]/min"});
+    }
+    {
+        TransformSpec spec;
+        spec.type = "saturation";
+        spec.params["min_value"] = 0.0;
+        spec.params["max_value"] = nan;
+        expect_transform_rejected(spec, {"Invalid parameter at transform[saturation]/max_value"});
+    }
+}
+
+TEST(GraphCompilerTest, SaturationAcceptsEqualBounds) {
+    TransformSpec spec;
+    spec.type = "saturation";
+    spec.params["min"] = 2.0;
+    spec.params["max"] = 2.0;
+
+    GraphCompiler compiler;
+    std::unique_ptr<ITransform> tf(compiler.parse_transform(spec));
+    ASSERT_NE(tf, nullptr);
+    EXPECT_DOUBLE_EQ(tf->apply(-5.0, 0.1), 2.0);
+    EXPECT_DOUBLE_EQ(tf->apply(5.0, 0.1), 2.0);
+}
+
+TEST(GraphCompilerTest, LinearRejectsInvertedClampBounds) {
+    TransformSpec spec;
+    spec.type = "linear";
+    spec.params["scale"] = 1.0;
+    spec.params["offset"] = 0.0;
+    spec.params["clamp_min"] = 10.0;
+    spec.params["clamp_max"] = 0.0;
+    expect_transform_rejected(spec, {"Invalid parameter at transform[linear]/clamp_max", "clamp_min"});
+}
+
+TEST(GraphCompilerTest, LinearRejectsNaNClampBounds) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    {
+        TransformSpec spec;
+        spec.type = "linear";
+        spec.params["scale"] = 1.0;
+        spec.params["offset"] = 0.0;
+        spec.params["clamp_min"] = nan;
+        expect_transform_rejected(spec, {"Invalid parameter at transform[linear]/clamp_min"});
+    }
+    {
+        TransformSpec spec;
+        spec.type = "linear";
+        spec.params["scale"] = 1.0;
+        spec.params["offset"] = 0.0;
+        spec.params["clamp_max"] = nan;
+        expect_transform_rejected(spec, {"Invalid parameter at transform[linear]/clamp_max"});
+    }
+}
+
+TEST(GraphCompilerTest, LinearAcceptsOneSidedAndEqualClampBounds) {
+    GraphCompiler compiler;
+    {
+        TransformSpec spec;
+        spec.type = "linear";
+        spec.params["scale"] = 1.0;
+        spec.params["offset"] = 0.0;
+        spec.params["clamp_min"] = 0.0;  // clamp_max keeps its +infinity default
+        std::unique_ptr<ITransform> tf(compiler.parse_transform(spec));
+        EXPECT_DOUBLE_EQ(tf->apply(-5.0, 0.1), 0.0);
+        EXPECT_DOUBLE_EQ(tf->apply(1e300, 0.1), 1e300);
+    }
+    {
+        TransformSpec spec;
+        spec.type = "linear";
+        spec.params["scale"] = 1.0;
+        spec.params["offset"] = 0.0;
+        spec.params["clamp_min"] = 4.0;
+        spec.params["clamp_max"] = 4.0;
+        std::unique_ptr<ITransform> tf(compiler.parse_transform(spec));
+        EXPECT_DOUBLE_EQ(tf->apply(-5.0, 0.1), 4.0);
+        EXPECT_DOUBLE_EQ(tf->apply(5.0, 0.1), 4.0);
+    }
+}
+
+// The whole-graph compile path rejects the edge too, so a spec with swapped
+// bounds never reaches Engine::tick.
+TEST(GraphCompilerTest, CompileRejectsSaturationEdgeWithInvertedBounds) {
+    GraphSpec spec;
+    EdgeSpec edge;
+    edge.source_path = "valve/command";
+    edge.target_path = "valve/position";
+    edge.transform.type = "saturation";
+    edge.transform.params["min"] = 100.0;
+    edge.transform.params["max"] = 0.0;
+    spec.edges.push_back(edge);
+
+    SignalNamespace signal_ns;
+    FunctionNamespace func_ns;
+    GraphCompiler compiler;
+    try {
+        (void)compiler.compile(spec, signal_ns, func_ns);
+        FAIL() << "Expected runtime_error for inverted saturation bounds";
+    } catch (const std::runtime_error &e) {
+        EXPECT_NE(std::string(e.what()).find("Invalid parameter at transform[saturation]/max"), std::string::npos)
+            << e.what();
+    }
 }
 
 TEST(GraphCompilerTest, DelayBreaksFeedbackCycle) {

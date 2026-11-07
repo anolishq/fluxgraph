@@ -22,6 +22,9 @@ const ParamObject &as_object(const ParamValue &value, const std::string &path);
 void require_finite(double value, const std::string &path);
 void require_finite_positive(double value, const std::string &path);
 void require_finite_non_negative(double value, const std::string &path);
+void require_not_nan(double value, const std::string &path);
+// Bounds for std::clamp: neither NaN, and lower <= upper (std::clamp is UB otherwise).
+void require_clamp_bounds(double lower, const std::string &lower_path, double upper, const std::string &upper_path);
 
 std::string format_scalar_constraint_rule(const ScalarConstraint &constraint);
 bool satisfies_scalar_constraint(double value, const ScalarConstraint &constraint);

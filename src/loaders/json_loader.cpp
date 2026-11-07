@@ -51,6 +51,18 @@ ParamValue json_to_param_value(const json &j, const std::string &path, detail::P
     }
 }
 
+// Returns j[key] when present; nullptr when absent. Throws when present but not an array.
+const json *optional_array(const json &j, const char *key, const std::string &path) {
+    const auto it = j.find(key);
+    if (it == j.end()) {
+        return nullptr;
+    }
+    if (!it->is_array()) {
+        throw std::runtime_error("JSON parse error at " + path + ": Expected array");
+    }
+    return &*it;
+}
+
 // Convert JSON value to Variant
 Variant json_to_variant(const json &j, const std::string &path) {
     if (j.is_number_float()) {
@@ -179,35 +191,37 @@ RuleSpec parse_rule(const json &j, const std::string &base_path, size_t index) {
     spec.id = j["id"].get<std::string>();
     spec.condition = j["condition"].get<std::string>();
 
-    // Parse actions array
-    if (j.contains("actions") && j["actions"].is_array()) {
-        for (size_t i = 0; i < j["actions"].size(); ++i) {
-            auto &action_json = j["actions"][i];
-            std::string action_path = path + "/actions/" + std::to_string(i);
+    // Parse actions array (required; may be empty)
+    if (!j.contains("actions")) {
+        throw std::runtime_error("JSON parse error at " + path + ": Missing required field 'actions'");
+    }
+    const json &actions = *optional_array(j, "actions", path + "/actions");
+    for (size_t i = 0; i < actions.size(); ++i) {
+        const auto &action_json = actions[i];
+        std::string action_path = path + "/actions/" + std::to_string(i);
 
-            ActionSpec action;
-            if (!action_json.contains("device")) {
-                throw std::runtime_error("JSON parse error at " + action_path + ": Missing required field 'device'");
-            }
-            if (!action_json.contains("function")) {
-                throw std::runtime_error("JSON parse error at " + action_path + ": Missing required field 'function'");
-            }
-
-            action.device = action_json["device"].get<std::string>();
-            action.function = action_json["function"].get<std::string>();
-
-            if (action_json.contains("args")) {
-                if (!action_json["args"].is_object()) {
-                    throw std::runtime_error("JSON parse error at " + action_path + "/args: Expected object");
-                }
-                for (auto &[key, value] : action_json["args"].items()) {
-                    std::string arg_path = std::format("{}/args/{}", action_path, key);
-                    action.args[key] = json_to_variant(value, arg_path);
-                }
-            }
-
-            spec.actions.push_back(action);
+        ActionSpec action;
+        if (!action_json.contains("device")) {
+            throw std::runtime_error("JSON parse error at " + action_path + ": Missing required field 'device'");
         }
+        if (!action_json.contains("function")) {
+            throw std::runtime_error("JSON parse error at " + action_path + ": Missing required field 'function'");
+        }
+
+        action.device = action_json["device"].get<std::string>();
+        action.function = action_json["function"].get<std::string>();
+
+        if (action_json.contains("args")) {
+            if (!action_json["args"].is_object()) {
+                throw std::runtime_error("JSON parse error at " + action_path + "/args: Expected object");
+            }
+            for (auto &[key, value] : action_json["args"].items()) {
+                std::string arg_path = std::format("{}/args/{}", action_path, key);
+                action.args[key] = json_to_variant(value, arg_path);
+            }
+        }
+
+        spec.actions.push_back(action);
     }
 
     if (j.contains("on_error")) {
@@ -224,34 +238,35 @@ GraphSpec parse_json(const json &j) {
     GraphSpec spec;
     detail::ParamParseBudget param_budget;
 
-    // Parse signals (optional)
-    if (j.contains("signals") && j["signals"].is_array()) {
+    if (!j.is_object()) {
+        throw std::runtime_error("JSON parse error at /: Expected object");
+    }
+
+    // Each section is optional, but a present section must be an array.
+    if (const json *signals = optional_array(j, "signals", "/signals")) {
         size_t index = 0;
-        for (const auto &signal_json : j["signals"]) {
+        for (const auto &signal_json : *signals) {
             spec.signals.push_back(parse_signal(signal_json, "/signals", index++));
         }
     }
 
-    // Parse models (optional)
-    if (j.contains("models") && j["models"].is_array()) {
+    if (const json *models = optional_array(j, "models", "/models")) {
         size_t index = 0;
-        for (auto &model_json : j["models"]) {
+        for (const auto &model_json : *models) {
             spec.models.push_back(parse_model(model_json, "/models", index++, param_budget));
         }
     }
 
-    // Parse edges (optional)
-    if (j.contains("edges") && j["edges"].is_array()) {
+    if (const json *edges = optional_array(j, "edges", "/edges")) {
         size_t index = 0;
-        for (auto &edge_json : j["edges"]) {
+        for (const auto &edge_json : *edges) {
             spec.edges.push_back(parse_edge(edge_json, "/edges", index++, param_budget));
         }
     }
 
-    // Parse rules (optional)
-    if (j.contains("rules") && j["rules"].is_array()) {
+    if (const json *rules = optional_array(j, "rules", "/rules")) {
         size_t index = 0;
-        for (auto &rule_json : j["rules"]) {
+        for (const auto &rule_json : *rules) {
             spec.rules.push_back(parse_rule(rule_json, "/rules", index++));
         }
     }
