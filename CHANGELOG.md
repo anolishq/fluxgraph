@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `CompiledProgram::model_output_signal_ids()` returns every compiled model's
+  `output_signal_ids()`, in model order. (#148)
+
 ### Changed
 
 - `FLUXGRAPH_BUILD_TESTS` and `FLUXGRAPH_BUILD_EXAMPLES` default to OFF when
@@ -42,6 +47,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Input with no document at all (empty, or only whitespace and comments) still
   loads as an empty graph, and every other file that loaded before still loads
   unchanged. (#147)
+
+- The gRPC server protected and marked `physics_driven` only `thermal_mass`
+  `temp_signal` outputs. `UpdateSignals` accepted writes to outputs of every
+  other model type (`dc_motor`, `mass_spring_damper`, `thermal_rc2`, ...) and
+  the next tick overwrote them, and `ReadSignals` reported those outputs as not
+  physics-driven after `LoadConfig` or `Reset`. The server now takes the set
+  from `CompiledProgram::model_output_signal_ids()`: writes to any model output
+  return `PERMISSION_DENIED`, and every model output is physics-driven from
+  load and after `Reset`. (#148)
 
 ### CI
 

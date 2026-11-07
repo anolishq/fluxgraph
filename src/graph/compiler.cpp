@@ -16,6 +16,15 @@
 
 namespace fluxgraph {
 
+std::vector<SignalId> CompiledProgram::model_output_signal_ids() const {
+    std::vector<SignalId> ids;
+    for (const auto &model : models) {
+        const auto outputs = model->output_signal_ids();
+        ids.insert(ids.end(), outputs.begin(), outputs.end());
+    }
+    return ids;
+}
+
 using compiler_internal::as_string;
 using compiler_internal::compile_condition_expr;
 using compiler_internal::detect_cycles_in_non_delay_subgraph;
