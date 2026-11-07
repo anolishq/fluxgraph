@@ -87,6 +87,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CXXABI_` newer than 1.3.15, the versions Debian 13 ships. The check is
   `scripts/check-glibc-floor.sh`, tested in CI by
   `tests/scripts/check-glibc-floor-test.sh`. (#159)
+- The weekly dimensional validation evidence workflow restores the vcpkg
+  binary cache but no longer saves it. It builds only gtest under the
+  x64-linux key the server-enabled lane saves with grpc; finishing first after
+  a cache key change, it would leave that lane unable to save and later jobs,
+  clang-tidy among them, building grpc from source.
 
 ## [1.0.6] - 2026-07-04
 
