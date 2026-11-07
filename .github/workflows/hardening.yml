@@ -57,7 +57,10 @@ jobs:
       - name: Setup vcpkg
         uses: anolishq/.github/.github/actions/setup-vcpkg@7a3a0624c056ea20fcb901968c482f9ed2ffb818 # v2.8
         with:
-          triplet: x64-linux
+          # ci-tsan builds x64-linux-tsan. The triplet names the cache key, so
+          # naming x64-linux here restored the x64-linux build's packages,
+          # which this job cannot use, and it rebuilt the tsan closure every run.
+          triplet: x64-linux-tsan
 
       - name: Configure
         run: cmake --preset ci-tsan -DPython3_EXECUTABLE="$(pwd)/.venv/bin/python"
