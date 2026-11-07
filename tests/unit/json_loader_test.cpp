@@ -5,8 +5,24 @@
 #include <gtest/gtest.h>
 
 #include <stdexcept>
+#include <string>
 
 using namespace fluxgraph::loaders;
+
+namespace {
+
+// Expects load_json_string(json) to throw std::runtime_error whose message contains `fragment`.
+void expect_json_error(const std::string &json, const std::string &fragment) {
+    try {
+        (void)load_json_string(json);
+        FAIL() << "Expected runtime_error containing '" << fragment << "' for: " << json;
+    } catch (const std::runtime_error &e) {
+        EXPECT_NE(std::string(e.what()).find(fragment), std::string::npos)
+            << "message '" << e.what() << "' lacks '" << fragment << "'";
+    }
+}
+
+}  // namespace
 
 TEST(JsonLoaderTest, LoadSimpleEdge) {
     std::string json = R"({
@@ -316,6 +332,60 @@ TEST(JsonLoaderTest, InvalidJson) {
     std::string json = "{ invalid json }";
 
     EXPECT_THROW({ load_json_string(json); }, std::runtime_error);
+}
+
+// #147: a structural field with the wrong type used to be skipped silently.
+TEST(JsonLoaderTest, RejectsNonArraySignals) {
+    expect_json_error(R"({"signals": {"path": "a.x", "unit": "W"}})", "JSON parse error at /signals: Expected array");
+}
+
+TEST(JsonLoaderTest, RejectsNonArrayModels) {
+    expect_json_error(R"({"models": {"id": "m", "type": "thermal_mass"}})",
+                      "JSON parse error at /models: Expected array");
+}
+
+TEST(JsonLoaderTest, RejectsNonArrayEdges) {
+    expect_json_error(R"({"edges": "oops"})", "JSON parse error at /edges: Expected array");
+}
+
+TEST(JsonLoaderTest, RejectsNonArrayRules) {
+    expect_json_error(
+        R"({"rules": {"id": "r1", "condition": "a.x > 1", "actions": [{"device": "heater", "function": "off"}]}})",
+        "JSON parse error at /rules: Expected array");
+}
+
+TEST(JsonLoaderTest, RejectsNullSection) {
+    expect_json_error(R"({"rules": null})", "JSON parse error at /rules: Expected array");
+}
+
+TEST(JsonLoaderTest, RejectsNonObjectRoot) {
+    expect_json_error(R"([{"signals": [{"path": "a.x", "unit": "W"}]}])", "JSON parse error at /: Expected object");
+    expect_json_error(R"("graph")", "JSON parse error at /: Expected object");
+    expect_json_error("null", "JSON parse error at /: Expected object");
+}
+
+TEST(JsonLoaderTest, RejectsNonArrayRuleActions) {
+    expect_json_error(R"({"rules": [{"id": "r1", "condition": "a.x > 1",
+                                      "actions": {"device": "heater", "function": "off"}}]})",
+                      "JSON parse error at /rules/0/actions: Expected array");
+}
+
+TEST(JsonLoaderTest, RejectsMissingRuleActions) {
+    expect_json_error(R"({"rules": [
+                             {"id": "r1", "condition": "a.x > 1", "actions": [{"device": "heater", "function": "off"}]},
+                             {"id": "r2", "condition": "a.x > 2"}
+                         ]})",
+                      "JSON parse error at /rules/1: Missing required field 'actions'");
+}
+
+TEST(JsonLoaderTest, EmptySectionsAndEmptyActionsStillLoad) {
+    auto spec = load_json_string(
+        R"({"signals": [], "models": [], "edges": [], "rules": [{"id": "r1", "condition": "a.x > 1", "actions": []}]})");
+    EXPECT_EQ(spec.signals.size(), 0);
+    EXPECT_EQ(spec.models.size(), 0);
+    EXPECT_EQ(spec.edges.size(), 0);
+    ASSERT_EQ(spec.rules.size(), 1);
+    EXPECT_EQ(spec.rules[0].actions.size(), 0);
 }
 
 #endif  // FLUXGRAPH_JSON_ENABLED

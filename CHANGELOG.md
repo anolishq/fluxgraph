@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `CompiledProgram::model_output_signal_ids()` returns every compiled model's
+  `output_signal_ids()`, in model order. (#148)
+
 ### Changed
 
 - `FLUXGRAPH_BUILD_TESTS` and `FLUXGRAPH_BUILD_EXAMPLES` default to OFF when
@@ -14,12 +19,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project no longer needs GTest or builds the examples. They still default to
   ON when fluxgraph is the top-level project. (#119)
 
-### Added
-
-- `CompiledProgram::model_output_signal_ids()` returns every compiled model's
-  `output_signal_ids()`, in model order. (#148)
-
 ### Fixed
+
+- The `saturation` and `linear` transforms rejected nothing about their bounds:
+  `min > max` (or `clamp_min > clamp_max`) reached `std::clamp`, which is
+  undefined behaviour (every input came out as `max`, or the process aborted
+  under `_GLIBCXX_ASSERTIONS`), and a NaN bound silently disabled that side of
+  the clamp. Compiling such an edge now fails with
+  `Invalid parameter at transform[saturation]/...` (or `transform[linear]/...`),
+  and the `SaturationTransform` and `LinearTransform` constructors throw
+  `std::invalid_argument`. Equal bounds and the default infinite `linear`
+  bounds still work. (#145)
+
+- The JSON and YAML loaders silently skipped a structural field of the wrong
+  type, so a malformed file loaded as an empty graph or with action-less rules.
+  These inputs loaded before and now fail with a path-qualified error:
+  - a top-level `signals`, `models`, `edges` or `rules` key that is present but
+    not an array (JSON) / sequence (YAML), including a null value such as a
+    bare `rules:`
+  - a JSON root that is not an object (an array, a scalar, `null`)
+  - a YAML root that is not a map, including a null document: `~`, `null`, a
+    bare `---`, or a lone `...` (yaml-cpp reads each as one document with null
+    content)
+  - a rule whose `actions` is missing or not an array / sequence (`actions` is
+    required, and may be empty)
+
+  Input with no document at all (empty, or only whitespace and comments) still
+  loads as an empty graph, and every other file that loaded before still loads
+  unchanged. (#147)
 
 - The gRPC server protected and marked `physics_driven` only `thermal_mass`
   `temp_signal` outputs. `UpdateSignals` accepted writes to outputs of every
@@ -29,6 +56,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from `CompiledProgram::model_output_signal_ids()`: writes to any model output
   return `PERMISSION_DENIED`, and every model output is physics-driven from
   load and after `Reset`. (#148)
+
+### CI
+
+- Build the `linux-x86_64` release binary on `ubuntu-24.04` again (it had moved
+  to `ubuntu-26.04`), and fail the release when the packaged `fluxgraph-server`
+  needs a `GLIBC_` newer than 2.41, a `GLIBCXX_` newer than 3.4.33 or a
+  `CXXABI_` newer than 1.3.15, the versions Debian 13 ships. The check is
+  `scripts/check-glibc-floor.sh`, tested in CI by
+  `tests/scripts/check-glibc-floor-test.sh`. (#159)
 
 ## [1.0.6] - 2026-07-04
 
