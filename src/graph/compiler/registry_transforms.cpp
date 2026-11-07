@@ -26,13 +26,16 @@ void register_builtin_transforms(FactoryRegistry &registry) {
             double offset = as_double(require_param(spec.params, "offset", context), context + "/offset");
             double clamp_min = -std::numeric_limits<double>::infinity();
             double clamp_max = std::numeric_limits<double>::infinity();
+            const std::string clamp_min_path = context + "/clamp_min";
+            const std::string clamp_max_path = context + "/clamp_max";
 
             if (auto it = spec.params.find("clamp_min"); it != spec.params.end()) {
-                clamp_min = as_double(it->second, context + "/clamp_min");
+                clamp_min = as_double(it->second, clamp_min_path);
             }
             if (auto it = spec.params.find("clamp_max"); it != spec.params.end()) {
-                clamp_max = as_double(it->second, context + "/clamp_max");
+                clamp_max = as_double(it->second, clamp_max_path);
             }
+            require_clamp_bounds(clamp_min, clamp_min_path, clamp_max, clamp_max_path);
 
             return std::make_unique<LinearTransform>(scale, offset, clamp_min, clamp_max);
         },
@@ -65,17 +68,22 @@ void register_builtin_transforms(FactoryRegistry &registry) {
         const std::string context = "transform[saturation]";
         double min_val = 0.0;
         double max_val = 0.0;
+        std::string min_path = context + "/min";
+        std::string max_path = context + "/max";
         if (auto it = spec.params.find("min"); it != spec.params.end()) {
-            min_val = as_double(it->second, context + "/min");
+            min_val = as_double(it->second, min_path);
         } else {
-            min_val = as_double(require_param(spec.params, "min_value", context), context + "/min_value");
+            min_path = context + "/min_value";
+            min_val = as_double(require_param(spec.params, "min_value", context), min_path);
         }
 
         if (auto it = spec.params.find("max"); it != spec.params.end()) {
-            max_val = as_double(it->second, context + "/max");
+            max_val = as_double(it->second, max_path);
         } else {
-            max_val = as_double(require_param(spec.params, "max_value", context), context + "/max_value");
+            max_path = context + "/max_value";
+            max_val = as_double(require_param(spec.params, "max_value", context), max_path);
         }
+        require_clamp_bounds(min_val, min_path, max_val, max_path);
         return std::make_unique<SaturationTransform>(min_val, max_val);
     });
 

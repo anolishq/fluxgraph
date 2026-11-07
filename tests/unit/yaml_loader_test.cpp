@@ -5,8 +5,24 @@
 #include <gtest/gtest.h>
 
 #include <stdexcept>
+#include <string>
 
 using namespace fluxgraph::loaders;
+
+namespace {
+
+// Expects load_yaml_string(yaml) to throw std::runtime_error whose message contains `fragment`.
+void expect_yaml_error(const std::string &yaml, const std::string &fragment) {
+    try {
+        (void)load_yaml_string(yaml);
+        FAIL() << "Expected runtime_error containing '" << fragment << "' for: " << yaml;
+    } catch (const std::runtime_error &e) {
+        EXPECT_NE(std::string(e.what()).find(fragment), std::string::npos)
+            << "message '" << e.what() << "' lacks '" << fragment << "'";
+    }
+}
+
+}  // namespace
 
 TEST(YamlLoaderTest, LoadSimpleEdge) {
     std::string yaml = R"yaml(
@@ -300,6 +316,119 @@ TEST(YamlLoaderTest, InvalidYaml) {
     std::string yaml = "{ invalid: yaml: syntax }";
 
     EXPECT_THROW({ load_yaml_string(yaml); }, std::runtime_error);
+}
+
+// #147: a structural field with the wrong type used to be skipped silently.
+TEST(YamlLoaderTest, RejectsNonSequenceSignals) {
+    expect_yaml_error(R"yaml(
+signals:
+  path: a.x
+  unit: W
+)yaml",
+                      "YAML parse error at /signals: Expected sequence");
+}
+
+TEST(YamlLoaderTest, RejectsNonSequenceModels) {
+    expect_yaml_error(R"yaml(
+models:
+  id: m
+  type: thermal_mass
+)yaml",
+                      "YAML parse error at /models: Expected sequence");
+}
+
+TEST(YamlLoaderTest, RejectsNonSequenceEdges) {
+    expect_yaml_error("edges: oops\n", "YAML parse error at /edges: Expected sequence");
+}
+
+TEST(YamlLoaderTest, RejectsNonSequenceRules) {
+    expect_yaml_error(R"yaml(
+rules:
+  id: r1
+  condition: a.x > 1
+  actions:
+    - device: heater
+      function: "off"
+)yaml",
+                      "YAML parse error at /rules: Expected sequence");
+}
+
+TEST(YamlLoaderTest, RejectsNullSection) {
+    expect_yaml_error("rules:\n", "YAML parse error at /rules: Expected sequence");
+}
+
+TEST(YamlLoaderTest, RejectsNonMapRoot) {
+    expect_yaml_error(R"yaml(
+- signals:
+    - path: a.x
+      unit: W
+)yaml",
+                      "YAML parse error at /: Expected map");
+    expect_yaml_error("graph\n", "YAML parse error at /: Expected map");
+}
+
+TEST(YamlLoaderTest, RejectsNonSequenceRuleActions) {
+    expect_yaml_error(R"yaml(
+rules:
+  - id: r1
+    condition: a.x > 1
+    actions:
+      device: heater
+      function: "off"
+)yaml",
+                      "YAML parse error at /rules/0/actions: Expected sequence");
+}
+
+TEST(YamlLoaderTest, RejectsMissingRuleActions) {
+    expect_yaml_error(R"yaml(
+rules:
+  - id: r1
+    condition: a.x > 1
+    actions:
+      - device: heater
+        function: "off"
+  - id: r2
+    condition: a.x > 2
+)yaml",
+                      "YAML parse error at /rules/1: Missing required field 'actions'");
+}
+
+TEST(YamlLoaderTest, EmptySectionsAndEmptyActionsStillLoad) {
+    auto spec = load_yaml_string(R"yaml(
+signals: []
+models: []
+edges: []
+rules:
+  - id: r1
+    condition: a.x > 1
+    actions: []
+)yaml");
+    EXPECT_EQ(spec.signals.size(), 0);
+    EXPECT_EQ(spec.models.size(), 0);
+    EXPECT_EQ(spec.edges.size(), 0);
+    ASSERT_EQ(spec.rules.size(), 1);
+    EXPECT_EQ(spec.rules[0].actions.size(), 0);
+}
+
+// Input with no document (empty, or only whitespace and comments) stays an
+// empty graph, as "{}" does.
+TEST(YamlLoaderTest, EmptyDocumentIsEmptyGraph) {
+    for (const std::string yaml : {std::string(""), std::string("  \n# only a comment\n")}) {
+        auto spec = load_yaml_string(yaml);
+        EXPECT_EQ(spec.signals.size(), 0);
+        EXPECT_EQ(spec.edges.size(), 0);
+        EXPECT_EQ(spec.models.size(), 0);
+        EXPECT_EQ(spec.rules.size(), 0);
+    }
+}
+
+// A document whose root is null is rejected, as a JSON null root is.
+TEST(YamlLoaderTest, RejectsNullRoot) {
+    expect_yaml_error("~\n", "YAML parse error at /: Expected map");
+    expect_yaml_error("null\n", "YAML parse error at /: Expected map");
+    expect_yaml_error("---\n", "YAML parse error at /: Expected map");
+    // yaml-cpp parses a lone document-end marker as one document with null content.
+    expect_yaml_error("...\n", "YAML parse error at /: Expected map");
 }
 
 #endif  // FLUXGRAPH_YAML_ENABLED

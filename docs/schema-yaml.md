@@ -4,7 +4,7 @@ FluxGraph YAML files define signal processing graphs with a human-friendly synta
 
 ## YAML Structure
 
-A graph file has four top-level sequences (all optional):
+A graph file is a YAML map with four top-level sequences. Each is optional, but a key that is present must hold a sequence (an empty `[]` is fine; a bare `rules:` with no value is null and is rejected), and any other root is rejected, including a null one (`~`, `null`, a bare `---`, or a lone `...`, which yaml-cpp reads as a document with null content). Input with no document at all (empty, or only whitespace and comments) loads as an empty graph:
 
 ```yaml
 signals:
@@ -371,6 +371,8 @@ Scale and offset: `y = scale * x + offset`
 | `clamp_min` | number | no | -infinity | Minimum output value |
 | `clamp_max` | number | no | +infinity | Maximum output value |
 
+`clamp_min` must not exceed `clamp_max`, and neither may be NaN; otherwise the graph fails to compile.
+
 **Example:**
 
 ```yaml
@@ -434,7 +436,7 @@ edges:
         delay_sec: 0.1
 ```
 
-**Memory:** Approx `delay_sec / dt * 8` bytes (circular buffer)
+**Memory:** Approx `delay_sec / dt * 24` bytes (a two-double time and a value per buffered sample)
 
 ### 4. Noise Transform
 
@@ -472,6 +474,8 @@ Clamp to bounds: `y = clamp(x, min, max)`
 |-----------|------|-------------|
 | `min` | number | Minimum output value |
 | `max` | number | Maximum output value |
+
+`min_value`/`max_value` are accepted as aliases. `min` must not exceed `max` (equal is allowed), and neither may be NaN; otherwise the graph fails to compile.
 
 **Example:**
 
@@ -594,7 +598,7 @@ Rules trigger device actions when conditions are met.
 ```yaml
 - id: unique_identifier # Unique rule identifier
   condition: "signal > value" # Simple comparison
-  actions: # Array of action objects
+  actions: # Required sequence of action objects; may be empty ([])
     - device: device_id
       function: function_name
       args:
@@ -747,6 +751,9 @@ The YAML loader provides detailed error messages with node locations:
 ```
 YAML parse error at /edges/2/transform: Missing required field 'type'
 YAML parse error at /rules/0/actions/0/args/payload: Command args must be scalar (double/int64/bool/string)
+YAML parse error at /rules: Expected sequence
+YAML parse error at /rules/1: Missing required field 'actions'
+YAML parse error at /: Expected map
 Parameter parse error at /models/0/params/x/0/0/.../0: nesting depth exceeds limit (32)
 Error loading YAML file 'graph.yaml': YAML parse error at line N, column M: <yaml-cpp message>
 ```

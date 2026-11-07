@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `CompiledProgram::model_output_signal_ids()` returns every compiled model's
+  `output_signal_ids()`, in model order. (#148)
+
 ### Changed
 
 - `FLUXGRAPH_BUILD_TESTS` and `FLUXGRAPH_BUILD_EXAMPLES` default to OFF when
@@ -14,8 +19,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project no longer needs GTest or builds the examples. They still default to
   ON when fluxgraph is the top-level project. (#119)
 
+### Fixed
+
+- The `saturation` and `linear` transforms rejected nothing about their bounds:
+  `min > max` (or `clamp_min > clamp_max`) reached `std::clamp`, which is
+  undefined behaviour (every input came out as `max`, or the process aborted
+  under `_GLIBCXX_ASSERTIONS`), and a NaN bound silently disabled that side of
+  the clamp. Compiling such an edge now fails with
+  `Invalid parameter at transform[saturation]/...` (or `transform[linear]/...`),
+  and the `SaturationTransform` and `LinearTransform` constructors throw
+  `std::invalid_argument`. Equal bounds and the default infinite `linear`
+  bounds still work. (#145)
+
+- The JSON and YAML loaders silently skipped a structural field of the wrong
+  type, so a malformed file loaded as an empty graph or with action-less rules.
+  These inputs loaded before and now fail with a path-qualified error:
+  - a top-level `signals`, `models`, `edges` or `rules` key that is present but
+    not an array (JSON) / sequence (YAML), including a null value such as a
+    bare `rules:`
+  - a JSON root that is not an object (an array, a scalar, `null`)
+  - a YAML root that is not a map, including a null document: `~`, `null`, a
+    bare `---`, or a lone `...` (yaml-cpp reads each as one document with null
+    content)
+  - a rule whose `actions` is missing or not an array / sequence (`actions` is
+    required, and may be empty)
+
+  Input with no document at all (empty, or only whitespace and comments) still
+  loads as an empty graph, and every other file that loaded before still loads
+  unchanged. (#147)
+
+- The gRPC server protected and marked `physics_driven` only `thermal_mass`
+  `temp_signal` outputs. `UpdateSignals` accepted writes to outputs of every
+  other model type (`dc_motor`, `mass_spring_damper`, `thermal_rc2`, ...) and
+  the next tick overwrote them, and `ReadSignals` reported those outputs as not
+  physics-driven after `LoadConfig` or `Reset`. The server now takes the set
+  from `CompiledProgram::model_output_signal_ids()`: writes to any model output
+  return `PERMISSION_DENIED`, and every model output is physics-driven from
+  load and after `Reset`. (#148)
+
+- `DelayTransform` applied the wrong delay after `dt` changed: it kept the
+  sample count from the earlier `dt` (a 1 s delay settled at 5 s after `dt` went
+  from 0.1 s to 0.5 s) or held one stale value after `dt` shrank. Samples now
+  carry their time, and the output is the stored input nearest
+  `t - delay_sec`, so the delay follows `delay_sec` across `dt` changes.
+  `apply()` with a `dt` that is not positive and finite (`dt <= 0`, NaN,
+  ±inf) now throws `std::runtime_error` and leaves the delay's state unchanged,
+  instead of computing `llround(inf)` or `llround(NaN)`. `Engine::tick` still
+  passes a NaN `dt` (and a +inf `dt` when no model has a finite stability
+  limit) to the transforms, so a delay edge makes such a tick throw. By then the
+  models and any earlier edges have already run with that `dt`, so a NaN `dt`
+  still leaves model outputs such as `thermal_mass` temperatures at NaN for
+  good. That is existing `Engine::tick` behaviour, not changed here. The unused
+  `time_accumulated_` member is gone. (#146)
+- At a constant `dt` the delay's tick count can differ by one from previous
+  releases where `delay_sec / dt` is meant to be a half but its floating-point
+  quotient lands just below it. The count is now `delay_sec / dt` rounded with
+  halves going up (to the older sample), so `0.15 / 0.1` (which evaluates to
+  1.4999999999999998) gives 2 ticks where `llround` gave 1. Other ratios keep
+  the `max(1, llround(delay_sec / dt))` count, and the count stays fixed over
+  long runs. (#146)
+
 ### CI
 
+- Build the `linux-x86_64` release binary on `ubuntu-24.04` again (it had moved
+  to `ubuntu-26.04`), and fail the release when the packaged `fluxgraph-server`
+  needs a `GLIBC_` newer than 2.41, a `GLIBCXX_` newer than 3.4.33 or a
+  `CXXABI_` newer than 1.3.15, the versions Debian 13 ships. The check is
+  `scripts/check-glibc-floor.sh`, tested in CI by
+  `tests/scripts/check-glibc-floor-test.sh`. (#159)
 - The weekly dimensional validation evidence workflow restores the vcpkg
   binary cache but no longer saves it. It builds only gtest under the
   x64-linux key the server-enabled lane saves with grpc; finishing first after
