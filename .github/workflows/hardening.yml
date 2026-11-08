@@ -33,7 +33,10 @@ jobs:
   tsan:
     name: ThreadSanitizer (server)
     runs-on: ubuntu-26.04
-    timeout-minutes: 150
+    # A cold x64-linux-tsan cache builds grpc twice (host x64-linux and
+    # x64-linux-tsan) and can pass 150 min. A run that times out saves
+    # nothing, so the next one starts cold again. A warm run takes minutes.
+    timeout-minutes: 240
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
