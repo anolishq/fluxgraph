@@ -58,7 +58,7 @@ jobs:
         run: uv sync --locked --extra dev
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@2f08cae7f3b9bfaa817b822e256d9f66b1fdb18d # v2.10
+        uses: anolishq/.github/.github/actions/setup-vcpkg@f4817837f29993c35b5350fbb5dfe2563437fcde # v2.11
         with:
           # ci-tsan builds x64-linux-tsan. The triplet names the cache key, so
           # naming x64-linux here restored the x64-linux build's packages,
@@ -105,7 +105,7 @@ jobs:
 
   valgrind:
     name: Valgrind leak-check
-    uses: anolishq/.github/.github/workflows/valgrind-leak.yml@2f08cae7f3b9bfaa817b822e256d9f66b1fdb18d # v2
+    uses: anolishq/.github/.github/workflows/valgrind-leak.yml@f4817837f29993c35b5350fbb5dfe2563437fcde # v2
     with:
       triplet: x64-linux
       build-preset: ci-linux-release
@@ -115,7 +115,7 @@ jobs:
 
   fuzz:
     name: Fuzz (libFuzzer)
-    uses: anolishq/.github/.github/workflows/fuzz.yml@2f08cae7f3b9bfaa817b822e256d9f66b1fdb18d # v2
+    uses: anolishq/.github/.github/workflows/fuzz.yml@f4817837f29993c35b5350fbb5dfe2563437fcde # v2
     with:
       triplet: x64-linux
       build-preset: ci-fuzz
