@@ -46,6 +46,11 @@ Upgrade notes:
   fluxgraph is added with `add_subdirectory` or `FetchContent`, so an embedding
   project no longer needs GTest or builds the examples. They still default to
   ON when fluxgraph is the top-level project. (#119)
+- The `fluxgraph` target declares `cxx_std_20` as a public compile feature, so
+  a project that links it, including through the installed
+  `fluxgraph::fluxgraph`, is compiled as C++20 without setting the standard
+  itself. FluxGraph already required C++20; only the installed package failed
+  to pass that on. (#122)
 
 ### Fixed
 
