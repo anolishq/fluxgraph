@@ -1,6 +1,6 @@
 # 7.2.3, 7.2.5: an input has the state the host wrote. A write of not_ready
 # has no sample and does not grow old.
-rules: [7.2.3, 7.2.5]
+rules: [7.2.2, 7.2.5]
 period: 1s
 inputs: {x: {max_age: 1s}}
 blocks:

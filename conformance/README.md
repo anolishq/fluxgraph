@@ -1,23 +1,28 @@
 # Conformance for the version 2 semantics (proposal)
 
 Tests of [the version 2 proposal](../docs/semantics_spec_v2.md), third
-revision, not of the library. Nothing here is built or run by the library's
-presets.
+revision as amended, not of the library. Nothing here is built or run by
+the library's presets.
+
+The third revision did not pass review, and is being amended a section at
+a time. Everything here follows the text as amended so far. The rules still
+to be amended are tested as they stand, wrong or not: a vector says what
+the text says, not what it should say.
 
 | Path | What it is |
 | --- | --- |
 | `vectors/` | One YAML file per case: a graph, the calls a host makes to it with what it writes before each, and the state and value expected of each output. |
 | `reference.py`, `formula.py` | A small Python reading of the proposal: the engine and blocks, and the formula language. Stdlib only. Not the library, and shares no code with it. |
-| `second/` | A second reading, written from the proposal's text alone, without sight of the reference, the vectors or any earlier draft. `ASSUMPTIONS.md` lists what the text did not settle. |
+| `second/` | A second reading, written from the proposal's text alone, without sight of the reference, the vectors or any earlier draft, and kept up to each amendment the same way. `ASSUMPTIONS.md` lists what the third revision's text did not settle, and `ASSUMPTIONS-amendment-1.md` what the first amendment's did not. |
 | `run.py` | Runs the vectors against the reference, or with `--second` against the second reading. Needs PyYAML. |
 | `mutate.py` | Breaks the reference one rule at a time and checks that a vector notices. |
 | `compare.py` | Runs the two readings side by side on random inputs and call times and compares every output after every call. |
 
 ```bash
-python3 conformance/run.py            # 153 vectors: ALL AGREE
-python3 conformance/run.py --second   # 153 vectors: ALL AGREE
-python3 conformance/mutate.py         # 287 breakages: 287 noticed; every vector failed by one
-python3 conformance/compare.py        # 888107 comparisons, 0 differences
+python3 conformance/run.py            # 171 vectors: ALL AGREE
+python3 conformance/run.py --second   # 171 vectors: ALL AGREE
+python3 conformance/mutate.py         # 321 breakages: 321 noticed; every vector failed by one
+python3 conformance/compare.py        # 862031 comparisons, 0 differences
 ```
 
 The format of a vector is described at the top of `run.py`.
@@ -86,10 +91,44 @@ What was done about it:
 `compare.py` was itself checked by running it against broken copies of the
 reference.
 
+## Amendment 1: time and the host interface
+
+Review of the third revision reproduced seven faults in its time rules.
+The amendment was written, the second reading was brought up to it from
+the amended text alone, and the amendment was reviewed by itself.
+
+- As first written, the second reading agreed with the reference on all
+  163 vectors and on 862,031 random comparisons. The comparison now runs
+  with the host's clock near 100 s and near 1.7e9 s, with rebases, clocks
+  that start again, and several writes before a call.
+- That agreement showed the text was clear. The review showed its central
+  rule was wrong. A write was taken up at the first tick at or after its
+  time, and the one written last stood. With a host loop at one period and
+  20 ms of jitter, sampling a millisecond before each call, the call saw
+  its own sample on 1,061 of 2,000 calls, and 516 samples were never seen.
+  A write stamped 100 s ahead came `good` 100 s later. An old sample that
+  arrived late displaced a newer one.
+- The rule was rewritten: the last tick of a call may see what the host has
+  in hand, the write with the latest time stands, and one stamped further
+  ahead than `max_ahead` is thrown away at the call. On the same loop the
+  call sees its own sample 2,000 times of 2,000.
+- The breakages the review found the vectors had let through are in
+  `mutate.py`, each with a vector that fails it, where the rule they break
+  is still a rule.
+- One case is kept as a vector with its true and unwelcome result: a host
+  that stalls and then hands over only its latest sample still gets a
+  latched trip and eight times the energy
+  (`stall-host-keeps-only-latest.yaml`). The engine cannot see what it was
+  never given, and the text now says what a host has to do.
+
 ## What this does not cover
 
 - **A fault both readings share.** `compare.py` only compares them. The
-  estimator's inputs, above, were one.
+  estimator's inputs, above, were one, and the first form of amendment 1's
+  take-up rule was another.
+- **A threshold on a computed value.** Values are compared to one part in
+  10⁹, and two implementations that agree to that can still fall on either
+  side of a comparison, a deadband or a hysteresis.
 - **Tie-breaking by block id** (rule 5.2). The order among blocks that do
   not depend on each other does not change any output, so no vector can see
   it.

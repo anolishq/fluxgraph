@@ -1,0 +1,15 @@
+# 6.11: a write to a name that is not an input, of the wrong type, or with
+# a time that is not a whole number of nanoseconds, is refused and changes nothing.
+rules: [6.11]
+period: 1s
+inputs: {x: {max_age: none}, b: {type: boolean, max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+  - {id: g, type: formula, in: {b: b}, settings: {expr: "not b"}, out: {y: nb}}
+calls:
+  - {$refused_write: [pressure, good, 1.0, 0]}
+  - {$refused_write: [x, good, true, 0]}
+  - {$refused_write: [b, good, 1.0, 0]}
+  - {$refused_write: [x, good, 1.0, 0.0000000005]}
+  - {y: not_ready, nb: not_ready}
+  - {x: 4, b: true, y: 4, nb: false}

@@ -1,7 +1,7 @@
-# 6.5, 6.6: a call runs every tick that is due. What was written before it
-# is taken up at the last of them. The ticks before see what stood, a period
-# older each time, until its maximum age ends it.
-rules: [6.5, 6.6, 6.8, 7.2.5]
+# 6.6, 6.8: a call runs every tick that is due. A write stamped at the
+# call's time is seen by the last of them. The ticks before see what stood,
+# a period older each time, until its maximum age ends it.
+rules: [6.6, 6.8, 6.10, 7.2.4]
 period: 1s
 inputs: {x: {max_age: 2s}}
 blocks:

@@ -1,0 +1,18 @@
+# 6.8: what stands is the write with the latest time. An older sample that
+# arrives late does not displace it, nor does an old failed read. Of two
+# with the same time, the one written later stands.
+rules: [6.8, 6.7]
+period: 1s
+inputs: {x: {max_age: 5s}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+calls:
+  - {now: 0, x: 1, y: 1}
+  - {now: 1, x: 5, y: 5}
+  - {now: 2, x: {v: 9, at: 0.5}, y: 5}            # older than what stands
+  - {now: 3, x: {v: bad, at: 0.7}, y: 5}
+  - {now: 4, x: {v: 7, at: -5000}, y: 5}          # very old: accepted, and never stands
+  - {now: 5, x: {v: 6, at: 1}, y: 6}              # the same time as what stands, written later
+  - {now: 6, first: {x: {v: 20, at: 5.9}}, x: {v: 30, at: 5.5}, y: 20}   # two before one call: the later time
+  - {now: 7, y: 20}
+  - {now: 11, ran: 4, y: bad}                     # sampled at 5.9 s: 5.1 s old

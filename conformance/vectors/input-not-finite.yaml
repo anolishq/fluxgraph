@@ -1,5 +1,5 @@
 # 7.2.4: a value that is not finite is bad, whatever state it was written with.
-rules: [7.2.4]
+rules: [7.2.3]
 period: 1s
 inputs: {x: {max_age: none}}
 blocks:

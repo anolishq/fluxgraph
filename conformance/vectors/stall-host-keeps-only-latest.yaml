@@ -1,0 +1,14 @@
+# 6.8, and the host's part in it: a host that stalls and then hands over
+# only its latest sample has given the engine nothing for the ticks
+# between. They run on what stood. `over` was true at 0 s and false from
+# 0.5 s; the engine is told only of 7.5 s. The timer runs out at tick 6.
+rules: [6.8]
+period: 1s
+inputs: {over: {type: boolean, max_age: 10s}, kw: {max_age: 10s}}
+blocks:
+  - {id: h, type: held_for, in: {x: over}, settings: {time: 5s, on_bad: reset}}
+  - {id: l, type: latch, in: {set: h.y}, out: {y: trip}}
+  - {id: i, type: integrate, in: {x: kw}, out: {y: energy}}
+calls:
+  - {now: 0, over: true, kw: 100, trip: false, energy: 100}
+  - {now: 8, ran: 8, over: {v: false, at: 7.5}, kw: {v: 0, at: 7.5}, trip: true, energy: 800}

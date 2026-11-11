@@ -1,5 +1,5 @@
 # 6.2: refused: a counted length of time that is not a whole number of periods.
-rules: [6.2]
+rules: [6.3]
 period: 1s
 inputs: {x: {max_age: none}}
 blocks:

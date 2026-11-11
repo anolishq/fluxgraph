@@ -22,16 +22,31 @@ from fractions import Fraction
 from formula import BAD, BOOLEAN, GOOD, NOT_READY, NUMBER, UNCERTAIN, CompileError, Formula, Val, usable, worst
 
 STATES = (GOOD, UNCERTAIN, NOT_READY, BAD)
-_DURATION = re.compile(r"^([0-9]+(?:\.[0-9]+)?)(ms|s|m|h)$")
-_UNIT = {"ms": Fraction(1, 1000), "s": Fraction(1), "m": Fraction(60), "h": Fraction(3600)}
+_DURATION = re.compile(r"^([0-9]+(?:\.[0-9]+)?)(ns|us|ms|s|m|h)$")
+_UNIT = {
+    "ns": Fraction(1, 10**9),
+    "us": Fraction(1, 10**6),
+    "ms": Fraction(1, 1000),
+    "s": Fraction(1),
+    "m": Fraction(60),
+    "h": Fraction(3600),
+}
+NS = 10**9
 
 
-def length(text):
-    """Section 9 rule 3: a length of time, exactly, in seconds."""
+def length(text, whole=True):
+    """Section 9 rule 3: a length of time, exactly, in seconds. It is a whole number of nanoseconds."""
     m = _DURATION.match(text) if isinstance(text, str) else None
     if not m:
         raise CompileError(f"{text!r} is not a length of time (use 500ms, 3s, 2m, 1h)")
-    return Fraction(m.group(1)) * _UNIT[m.group(2)]
+    seconds_ = Fraction(m.group(1)) * _UNIT[m.group(2)]
+    if whole and (seconds_ * NS).denominator != 1:  # 6 rule 2
+        raise CompileError(f"{text!r} is not a whole number of nanoseconds")
+    return seconds_
+
+
+def nanoseconds(text):
+    return int(length(text) * NS)
 
 
 def seconds(text):
@@ -39,7 +54,7 @@ def seconds(text):
 
 
 def round_up(x):
-    """Section 6 rule 2: up to a whole number, a value within 1e-9 of one being that one."""
+    """Section 6 rule 3: up to a whole number, a value within 1e-9 of one being that one."""
     return math.ceil(x - 1e-9)
 
 
@@ -70,15 +85,15 @@ def read_settings(where, spec, raw, period):
             continue
         value, what = raw[name], f"{where}: setting {name!r}"
         try:
-            if kind in ("ticks", "ticks1"):  # a counted length: a whole number of periods (6 rule 2)
+            if kind in ("ticks", "ticks1"):  # a counted length: a whole number of periods (6 rule 3)
                 n = length(value) / period
                 if n.denominator != 1:
                     raise CompileError(f"is {value}, which is not a whole number of periods")
                 if n < (1 if kind == "ticks1" else 0):
                     raise CompileError("is at least one period")
                 value = int(n)
-            elif kind == "seconds":
-                value = length(value)
+            elif kind == "seconds":  # it scales a value, and is no time the engine keeps (6 rule 3)
+                value = length(value, whole=False)
             elif kind == "number":
                 if not is_number(value):
                     raise CompileError("is a finite number")
@@ -140,7 +155,10 @@ class Block:
         """Second phase: the state, from every input."""
 
     def gap(self, k):
-        """Section 8 rule 4: time went by unseen; k is the gap's tick."""
+        """Section 8 rule 6: time went by unseen; k is the gap's tick."""
+
+    def forget_times(self):
+        """Section 8 rule 5: a rebase. The clock may be another clock: forget every sample time."""
 
 
 class FormulaBlock(Block):
@@ -208,6 +226,9 @@ class Delay(Block):
     def gap(self, k):
         self.past = collections.deque(Val(UNCERTAIN, v.v, v.at, k) if v.state == GOOD else v for v in self.past)
 
+    def forget_times(self):
+        self.past = collections.deque(Val(v.state, v.v, None, v.cause) for v in self.past)
+
 
 class Window(Block):
     """Section 7.3."""
@@ -267,6 +288,9 @@ class Window(Block):
 
     def gap(self, k):
         self.buf.clear()
+
+    def forget_times(self):
+        self.last_at = None
 
 
 class Deadband(Block):
@@ -790,7 +814,9 @@ class Estimator(Block):
                     self.p = [[self.p[a][b] - g[a] * row[b] for b in range(n)] for a in range(n)]
                     self.used[port] = z.at
             out[f"refused_{port}"] = Val(GOOD, float(self.refused[port]))
-            out[f"since_{port}"] = Val(NOT_READY) if self.used[port] is None else Val(GOOD, t - self.used[port])
+            out[f"since_{port}"] = (
+                Val(NOT_READY) if self.used[port] is None else Val(GOOD, max(0, t - self.used[port]) / NS)
+            )
         for i, name in enumerate(self.names):  # rule 5
             sigma = math.sqrt(max(self.p[i][i], 0.0))
             wide = name in self.limits and sigma > self.limits[name]
@@ -801,6 +827,10 @@ class Estimator(Block):
     def gap(self, k):
         for i in range(len(self.names)):
             self.p[i][i] += self.p0[i]
+
+    def forget_times(self):
+        self.considered = dict.fromkeys(self.meas)
+        self.used = dict.fromkeys(self.meas)
 
 
 CATALOGUE = {
@@ -845,7 +875,7 @@ class Engine:
         period = length(graph["period"])
         if period <= 0:
             raise CompileError("the period is more than zero")
-        self.period, self.slack = float(period), float(period) * 1e-6  # 6 rule 10
+        self.period = nanoseconds(graph["period"])  # every time in the engine is whole nanoseconds (6 rule 2)
         self.max_catch_up = graph.get("max_catch_up", 100)
         if isinstance(self.max_catch_up, bool) or not isinstance(self.max_catch_up, int) or self.max_catch_up < 1:
             raise CompileError("max_catch_up is a whole number, at least 1")
@@ -862,11 +892,17 @@ class Engine:
                 raise CompileError(f"{where}: type is number or boolean")
             if "max_age" not in spec:
                 raise CompileError(f"{where}: max_age is required: a length of time, or none")
-            max_age = math.inf if spec["max_age"] == "none" else float(length(spec["max_age"]))
-            max_ahead = float(length(spec["max_ahead"])) if "max_ahead" in spec else self.period
+            try:
+                max_age = math.inf if spec["max_age"] == "none" else nanoseconds(spec["max_age"])
+            except CompileError as exc:
+                raise CompileError(f"{where}: max_age: {exc}") from exc
             initial = spec.get("initial")
             if initial is not None and (not _is_constant(initial) or _type_of(initial) != kind):
                 raise CompileError(f"{where}: its initial value is a finite {kind}")
+            try:
+                max_ahead = nanoseconds(spec["max_ahead"]) if "max_ahead" in spec else self.period
+            except CompileError as exc:
+                raise CompileError(f"{where}: max_ahead: {exc}") from exc
             self.inputs[name] = {"type": kind, "max_age": max_age, "max_ahead": max_ahead, "initial": initial}
 
         specs = graph.get("blocks") or []
@@ -885,7 +921,7 @@ class Engine:
                 raise CompileError(f"{where}: unknown type {b.get('type')!r}")
             cls = CATALOGUE[b["type"]]
             try:
-                block = cls(read_settings(where, cls.settings, b.get("settings") or {}, period), period)
+                block = cls(read_settings(where, cls.settings, b.get("settings") or {}, period), period)  # in seconds
             except CompileError as exc:
                 raise CompileError(str(exc) if str(exc).startswith(where) else f"{where}: {exc}") from exc
             self.blocks[b["id"]] = block
@@ -1032,11 +1068,13 @@ class Engine:
     def reset(self):
         self.blocks = copy.deepcopy(self.initial_blocks)
         self.k = 0  # the next tick to run
-        self.zero = None  # the time of tick 0, or what it would be after a gap
-        self.since = None  # the time the graph has run since: tick 0's, or the last gap's
+        self.zero = None  # the time tick 0 is at, or would be at, in nanoseconds
+        self.since = None  # the time the graph has run since: tick 0's, or the last rebase's
         self.last_now = None
-        self.standing, self.pending = {}, {}  # input -> [state, value, sample time, refused]
-        self.restored = False
+        self.standing = {}  # input -> (state, value, time): the write last taken up
+        self.pending = {name: [] for name in self.inputs}  # the writes not yet taken up, as made
+        self.rebasing = False
+        self.info = None  # what the last call that ran a tick has to say (6 rule 10)
 
     def save(self):
         return self.fingerprint, copy.deepcopy((self.blocks, self.k))
@@ -1048,15 +1086,25 @@ class Engine:
         if state[1] == 0:  # saved before any tick: a reset, not a gap (8 rule 3)
             return self.reset()
         self.blocks, self.k = copy.deepcopy(state)
-        self.standing, self.pending = {}, {}
-        self.last_now, self.restored = None, True  # the next call is a gap, at any time
+        self.rebase()
 
-    def write(self, name, state, value=None, sampled=None):
-        """The host writes an input: a state, a value, and the time it was sampled."""
+    def rebase(self):
+        """The host's clock has stepped, or a state was restored: the next call is a gap, at any time."""
+        self.pending = {name: [] for name in self.inputs}  # 8 rule 5: what was written before is done with
+        if self.zero is None and self.k == 0:
+            return  # nothing has run: the next call runs tick 0, and is no gap
+        self.last_now, self.rebasing = None, True
+
+    def write(self, name, state, value=None, at=None):
+        """The host writes an input: a state, a value, and a time (6 rule 7). Refusals are rule 11."""
         if name not in self.inputs:
             raise KeyError(f"{name} is not an input of this graph")
         if state not in STATES:
             raise ValueError(f"{state!r} is not a state")
+        if isinstance(at, bool) or not isinstance(at, int):
+            raise ValueError("a write carries a time, a whole number of nanoseconds")
+        if isinstance(at, int) and not -(2**63) <= at < 2**63:
+            raise ValueError("a time fits in 64 bits")
         if state in (GOOD, UNCERTAIN):
             if self.inputs[name]["type"] == BOOLEAN and not isinstance(value, bool):
                 raise ValueError(f"{name} is a boolean")
@@ -1064,68 +1112,81 @@ class Engine:
                 if isinstance(value, bool) or not isinstance(value, (int, float)):
                     raise ValueError(f"{name} is a number")
                 value = float(value)
-            if not isinstance(sampled, (int, float)) or not math.isfinite(sampled):
-                raise ValueError("a usable value is written with the time it was sampled")
-        self.pending[name] = [state, value, sampled, False]
+        else:
+            value = None
+        self.pending[name].append((state, value, at))
+
+    def _take_up(self, t, last):
+        """6 rule 8: the writes this tick may see are done with, and the one with the latest time stands."""
+        limit = max(t, self.last_now) if last else t  # the last tick of a call sees what the host has in hand
+        for name, writes in self.pending.items():
+            for write in [w for w in writes if w[2] <= limit]:
+                stands = self.standing.get(name)
+                if stands is None or write[2] >= stands[2]:  # of two with one time, the later written
+                    self.standing[name] = write
+            self.pending[name] = [w for w in writes if w[2] > limit]
 
     def _input(self, name, k, t):
         """Section 7.2."""
         spec = self.inputs[name]
         if name not in self.standing:
             ran = t - self.since
-            if spec["initial"] is not None and not ran > spec["max_age"] + self.slack:
+            if spec["initial"] is not None and ran <= spec["max_age"]:
                 value = spec["initial"]
                 return Val(UNCERTAIN, value if isinstance(value, bool) else float(value), None, k)
-            return Val(BAD) if ran > spec["max_age"] + self.slack else Val(NOT_READY)
-        state, value, sampled, refused = self.standing[name]
+            return Val(BAD) if ran > spec["max_age"] else Val(NOT_READY)
+        state, value, at = self.standing[name]
         if state in (NOT_READY, BAD):
             return Val(state)
         if spec["type"] == NUMBER and not math.isfinite(value):
             return Val(BAD)
-        if refused or t - sampled > spec["max_age"] + self.slack:
+        if t - at > spec["max_age"]:
             return Val(BAD)
-        return Val(state, value, sampled, k if state == UNCERTAIN else None)
+        return Val(state, value, at, k if state == UNCERTAIN else None)
 
     # ---- time (section 6)
 
     def tick(self, now):
         """Run every tick that is due. -> (ticks run, the outputs of the last, or None)."""
-        if isinstance(now, bool) or not isinstance(now, (int, float)) or not math.isfinite(now):
-            raise ValueError("the time passed to tick is a finite number")
+        if isinstance(now, bool) or not isinstance(now, int) or not -(2**63) <= now < 2**63:
+            raise ValueError("the time passed to tick is a whole number of nanoseconds that fits in 64 bits")
         if self.last_now is not None and now < self.last_now:
             raise ValueError("the time passed to tick does not go backwards")
         self.last_now = now
-        if self.zero is None:  # rule 4
+        for name, writes in self.pending.items():  # rule 8: stamped too far ahead
+            self.pending[name] = [w for w in writes if w[2] - now <= self.inputs[name]["max_ahead"]]
+        if self.zero is None:  # rule 5
             self.zero = self.since = now
-        due = 0
-        if not self.restored:
-            while self.zero + (self.k + due) * self.period <= now + self.period / 2 + self.slack:  # rule 5
-                due += 1
-                if due > self.max_catch_up:
-                    break
-            if due == 0:
-                return 0, None
-        if self.restored or due > self.max_catch_up:  # a gap: rule 7, and section 8 rule 4
-            self.restored = False
+        gap = False
+        if self.rebasing:  # 8 rule 5: one tick, at the call's time, on what may be another clock
+            self.rebasing, gap, due = False, True, 1
             self.zero, self.since = now - self.k * self.period, now
             self.standing = {}
             for block in self.blocks.values():
+                block.forget_times()
+        else:
+            # rule 6: the ticks whose time is no more than half a period after now
+            ahead = 2 * now + self.period - 2 * (self.zero + self.k * self.period)
+            due = ahead // (2 * self.period) + 1 if ahead >= 0 else 0
+            if due == 0:
+                self.info = None
+                return 0, None
+            if due > self.max_catch_up:  # 8 rule 4: a stall. One tick, the last that was due
+                gap = True
+                self.zero += (due - 1) * self.period
+                due = 1
+        if gap:
+            for block in self.blocks.values():  # 8 rule 6
                 block.gap(self.k)
-            due = 1
         out = None
         for i in range(due):
-            if i == due - 1:  # rule 6: what was written is taken up at the last tick
-                t = self.zero + self.k * self.period
-                for name, entry in self.pending.items():
-                    if entry[0] in (GOOD, UNCERTAIN):  # 7.2 rule 4
-                        entry[3] = entry[2] - t > self.inputs[name]["max_ahead"] + self.slack
-                    self.standing[name] = entry
-                self.pending = {}
-            out = self._run()
+            out = self._run(last=i == due - 1)
+        self.info = {"gap": gap, "tick": self.k - 1, "time": self.zero + (self.k - 1) * self.period}
         return due, out
 
-    def _run(self):
+    def _run(self, last):
         k, t = self.k, self.zero + self.k * self.period
+        self._take_up(t, last)
         inputs = {name: self._input(name, k, t) for name in self.inputs}
         now = {}
 

@@ -32,5 +32,8 @@ calls:
   - {u: 2, z: {v: 1, at: 4.5}, x: 0.6603351955307262, sigma: 0.7556121496312715, innovation: 0.7916666666666666, rejected: 1, since: 0.5}
   - {$save: a}
   - {$restore: a}
-  # tick 6, a gap: the variance grows by 4 first, then predict, on tick 5's input of 2. nothing stands on z.
-  - {now: 50, u: 2, x: 2.330167597765363, sigma: 1.463809219183838, innovation: not_ready, rejected: 1, since: 45.5}
+  # tick 6, a rebase: the variance grows by 4 first, then predict, on tick 5's input of 2. nothing
+  # stands on z, and the time of the measurement last used is forgotten. the clock here starts again.
+  - {now: 3, gap: true, tick: 6, time: 3, u: 2, x: 2.330167597765363, sigma: 1.463809219183838, innovation: not_ready, rejected: 1, since: not_ready}
+  # a measurement stamped earlier than the one last considered before the rebase is considered
+  - {now: 4, u: 2, z: {v: 3.165083798882682, at: 3.5}, x: 3.165083798882682, innovation: 0, since: 0.5}

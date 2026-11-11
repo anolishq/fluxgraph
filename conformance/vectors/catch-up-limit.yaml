@@ -1,0 +1,10 @@
+# 6.9: a call that would run exactly max_catch_up ticks runs them, and is not a gap.
+rules: [6.9]
+period: 1s
+max_catch_up: 3
+blocks:
+  - {id: i, type: integrate, in: {x: 1}, out: {y: n}}
+calls:
+  - {now: 0, n: 1}
+  - {now: 3, ran: 3, n: 4}
+  - {now: 7, ran: 1, gap: true, tick: 4, time: 7, n: {u: 5}}

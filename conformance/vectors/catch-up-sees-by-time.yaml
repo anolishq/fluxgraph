@@ -1,0 +1,12 @@
+# 6.8: a catch-up tick may see a write whose time is not after its own. The
+# call's last tick may see up to the call's time. A stall from 0 to 4 s
+# with a 10 stamped 1.4 s and a 100 stamped 3.9 s: tick 1 adds the 1 that
+# stood, ticks 2 and 3 add 10, tick 4 adds 100.
+rules: [6.8]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: i, type: integrate, in: {x: x}, out: {y: total}}
+calls:
+  - {now: 0, x: 1, total: 1}
+  - {now: 4, ran: 4, first: {x: {v: 10, at: 1.4}}, x: {v: 100, at: 3.9}, total: 122}

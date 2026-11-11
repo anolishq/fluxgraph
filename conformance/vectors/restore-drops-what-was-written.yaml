@@ -10,5 +10,5 @@ calls:
   - {$save: a}
   - {now: 0.3, ran: 0, x: 9}     # written, and not taken up: no tick was due
   - {$restore: a}
-  - {now: 5, y: not_ready}
+  - {now: 5, gap: true, y: not_ready}
   - {now: 6, x: 3, y: 3}

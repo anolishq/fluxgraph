@@ -2,14 +2,17 @@
 """Run the reference and the second implementation side by side on random inputs.
 
 The vectors pin down the cases someone thought of. This looks for the ones
-nobody did. Each graph below is run at a period of 1 s, which is exact in
-binary, and of 100 ms, which is not: twenty seeded runs of 250 calls at
-each. Inputs are written or not, in any of the four states, finite or not,
-sampled now, earlier or ahead, and sometimes written again with the sample
-time they had. Calls come on time, early, late, twice, after a stall of
-several periods, and after one long enough to be a gap. Among the calls the
-engines are saved, restored and reset. What is compared after every call:
-how many ticks it ran, and the state and value of every published output.
+nobody did. Each graph below is run at periods of 1 s and 100 ms, with the
+host's clock starting near 100 s and near 1.7e9 s: ten seeded runs of 250
+calls at each. Before a call each input is written once, several times or
+not at all, in any of the four states, finite or not, with a time that is
+the call's, earlier, or ahead, and sometimes a time it has carried before.
+Calls come on time, early, late, twice, after a stall of several periods,
+and after one long enough to be a gap. Among the calls the engines are
+saved, restored, rebased and reset, and after a restore or a rebase the
+clock may start again from a low value. What is compared after every call:
+how many ticks it ran, what it says of itself, and the state and value of
+every published output.
 
   python3 conformance/compare.py
 
@@ -306,36 +309,39 @@ def graphs(d, tau):
     }
 
 
-RUNS, CALLS = 20, 250
+RUNS, CALLS = 10, 250
 INITIAL = {"inputs with initial values": {"a": 20, "p": True}}
+SECOND = 10**9
 
 
 def write_random(rng, engines, last, name, kind, now, period, quiet):
+    """Write the input no times, once, or a few times, each write with a state, a value and a time."""
     r = rng.random()
     if r < quiet:
         return  # not written before this call: what stands goes on standing
-    if r < quiet + 0.08 and name in last:  # the same sample, written again
-        state, value, sampled = last[name]
-    else:
-        sampled = now - period * rng.choice([0.0, 0.0, 0.0, 0.4, 1.0, 2.5, 4.0, -0.6, -1.5])
-        value = None
-        if r < quiet + 0.18:
-            state = "bad"
-        elif r < quiet + 0.25:
-            state = "not_ready"
+    for _ in range(rng.choice([1, 1, 1, 1, 2, 3])):
+        r = rng.random()
+        if r < 0.08 and name in last:  # the same sample, written again
+            state, value, at = last[name]
         else:
-            state = "uncertain" if rng.random() < 0.15 else "good"
-            if kind == BOOL:
-                value = rng.random() < 0.6
-            elif rng.random() < 0.03:
-                value = rng.choice([math.inf, math.nan, -math.inf])
+            # now, a little or a lot earlier, or ahead: in tenths of a period
+            at = now - period * rng.choice([0, 0, 0, 4, 10, 25, 40, -6, -15, -300]) // 10
+            value = None
+            if r < 0.18:
+                state = "bad"
+            elif r < 0.25:
+                state = "not_ready"
             else:
-                value = rng.choice([round(rng.uniform(-5, 5), 2), float(rng.randint(-3, 6)), 0.0])
-        if value is None:
-            sampled = None
-        last[name] = (state, value, sampled)
-    for engine in engines:
-        engine.write(name, state, value, sampled)
+                state = "uncertain" if rng.random() < 0.15 else "good"
+                if kind == BOOL:
+                    value = rng.random() < 0.6
+                elif rng.random() < 0.03:
+                    value = rng.choice([math.inf, math.nan, -math.inf])
+                else:
+                    value = rng.choice([round(rng.uniform(-5, 5), 2), float(rng.randint(-3, 6)), 0.0])
+            last[name] = (state, value, at)
+        for engine in engines:
+            engine.write(name, state, value, at)
 
 
 def same(a, b):
@@ -350,26 +356,24 @@ def same(a, b):
 
 def main():
     total = differences = 0
-    print(f"{'graph':42s} {'period':>6s} {'compared':>9s}  differences")
-    for base in (1000, 100):  # the period, in milliseconds
-        period = base / 1000.0
+    print(f"{'graph':42s} {'period':>6s} {'clock':>6s} {'compared':>9s}  differences")
+    for base, origin in ((1000, 100), (100, 100), (1000, 1_700_000_000), (100, 1_700_000_000)):
+        period = base * 10**6  # nanoseconds
         catalogue = graphs(lambda n, base=base: f"{n * base}ms", lambda x, base=base: f"{round(x * base)}ms")
         for index, (label, (inputs, blocks)) in enumerate(catalogue.items()):
             declared = {}
             for name, kind in inputs.items():
                 declared[name] = {"type": kind, "max_age": f"{3 * base}ms" if name != "c" else "none"}
-                if name == "b":
-                    declared[name]["max_ahead"] = f"{2 * base}ms"
                 if name in INITIAL.get(label, {}):
                     declared[name]["initial"] = INITIAL[label][name]
             graph = {"period": f"{base}ms", "max_catch_up": 20, "inputs": declared, "blocks": blocks}
             compared = found = 0
             first = None
             for run in range(RUNS):
-                rng = random.Random(1000 * index + run + base)
+                rng = random.Random(1000 * index + run + base + origin)
                 quiet = rng.choice([0.1, 0.1, 0.5])  # how often an input is left unwritten
                 engines = [reference.Engine(graph), second.Engine(graph)]
-                tick, last_now, saved, last = 0, None, None, {}
+                start, tick, last_now, saved, last = origin * SECOND, 0, None, None, {}
                 for call in range(CALLS):
                     op = rng.random()
                     if call and op < 0.01:
@@ -377,21 +381,26 @@ def main():
                     elif saved and op < 0.02:
                         for engine, state in zip(engines, saved, strict=True):
                             engine.restore(state)
-                        last_now = None
-                    elif call and op < 0.025:
+                        last_now, start = None, rng.choice([start, 5 * SECOND])  # the clock may start again
+                    elif call and op < 0.03:
+                        for engine in engines:
+                            engine.rebase()
+                        last_now, start = None, rng.choice([start, 5 * SECOND])
+                    elif call and op < 0.035:
                         for engine in engines:
                             engine.reset()
                         last_now = None
                     # On time, early or late within half a period, a second call, a stall, or a gap.
                     tick += rng.choice([1, 1, 1, 1, 1, 1, 1, 1, 0, 2, 4, 30]) if call else 0
-                    now = 100.0 + period * (tick + (rng.choice([0.0, 0.0, 0.2, -0.2, 0.3, -0.3]) if call else 0.0))
+                    jitter = rng.choice([0, 0, 2, -2, 3, -3, 5]) if call else 0  # tenths of a period
+                    now = start + period * tick + period * jitter // 10
                     now = now if last_now is None else max(now, last_now)
                     last_now = now
                     for name, kind in inputs.items():
                         write_random(rng, engines, last, name, kind, now, period, quiet)
                     (ran_a, a), (ran_b, b) = engines[0].tick(now), engines[1].tick(now)
                     compared += 1
-                    if ran_a != ran_b or (a is None) != (b is None):
+                    if ran_a != ran_b or (a is None) != (b is None) or (ran_a and engines[0].info != engines[1].info):
                         found += 1
                         first = first or f"run {run} call {call} now {now}: ran {ran_a} and {ran_b}"
                         continue
@@ -404,7 +413,7 @@ def main():
                             )
             total += compared
             differences += found
-            print(f"{label:42s} {period:5g}s {compared:9d}  {found}")
+            print(f"{label:42s} {base / 1000:5g}s {origin:6.1e} {compared:9d}  {found}")
             if first:
                 print(f"    first: {first}")
     print(f"\n{total} comparisons, {differences} differences")

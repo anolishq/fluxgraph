@@ -10,13 +10,11 @@ from . import impl
 GOOD, UNCERTAIN, NOT_READY, BAD = "good", "uncertain", "not_ready", "bad"
 Val = collections.namedtuple("Val", "state v")
 CompileError = impl.CompileError
-_DURATION = re.compile(r"^(\d+(?:\.\d+)?)(ms|s|m|h)$")
-_UNIT = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}
+_DURATION = re.compile(r"^([0-9]+(?:\.[0-9]+)?)(ns|us|ms|s|m|h)$")
+_UNIT = {"ns": 1e-9, "us": 1e-6, "ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}
 
 
 def seconds(text):
-    if isinstance(text, (int, float)):
-        return float(text)
     m = _DURATION.match(str(text))
     return float(m.group(1)) * _UNIT[m.group(2)]
 
@@ -26,8 +24,12 @@ class Engine:
         self._engine = impl.Engine(graph)
         self.inputs = self._engine.inputs
 
-    def write(self, name, state, value=None, sampled=0.0):
-        self._engine.write(name, state, value, sampled)
+    @property
+    def info(self):
+        return self._engine.info
+
+    def write(self, name, state, value=None, at=None):
+        self._engine.write(name, state, value, at)
 
     def tick(self, now):
         ran, out = self._engine.tick(now)
@@ -38,6 +40,9 @@ class Engine:
 
     def restore(self, saved):
         self._engine.restore(saved)
+
+    def rebase(self):
+        self._engine.rebase()
 
     def reset(self):
         self._engine.reset()

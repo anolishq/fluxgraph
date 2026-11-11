@@ -1,5 +1,5 @@
 # 6.7: refused: a max_catch_up of zero.
-rules: [6.7]
+rules: [6.9]
 period: 1s
 max_catch_up: 0
 inputs: {x: {max_age: none}}

@@ -11,6 +11,13 @@ from impl import CompileError, Engine  # noqa: E402
 PASSED = 0
 FAILED = 0
 
+S = 10**9  # one second, in nanoseconds
+
+
+def ns(seconds):
+    """A time in whole nanoseconds, from seconds."""
+    return int(round(seconds * S))
+
 
 def close(a, b):
     if a is None or b is None or isinstance(a, bool) or isinstance(b, bool):
@@ -70,27 +77,32 @@ def integ_graph(**top):
 def test_catch_up():
     e = Engine(integ_graph())
     check("inputs", "x" in e.inputs, True)
-    ran, o = e.tick(0.0)
+    ran, o = e.tick(ns(0.0))
     check("cu ran0", ran, 1)
     check("cu y0", o["y"], ("uncertain", 0.0))
     check("cu missed0", o["missed"], ("good", 1.0))
-    e.write("x", "good", 3.0, 2.9)
-    ran, o = e.tick(3.0)
+    e.write("x", "good", 3.0, ns(2.9))
+    ran, o = e.tick(ns(3.0))
     check("cu ran3", ran, 3)
-    # ticks 1 and 2 are catch-up ticks and see nothing; tick 3 adds 3
+    # the write is stamped 2.9 s: ticks 1 and 2 are before it and see
+    # nothing; tick 3 is the first at or after it, and adds 3
     check("cu y3", o["y"], ("uncertain", 3.0))
     check("cu missed3", o["missed"], ("good", 3.0))
-    check("cu none due", e.tick(3.4), (0, None))
-    ran, o = e.tick(3.5)
+    check("cu info3", e.info, {"gap": False, "tick": 3, "time": 3 * S})
+    check("cu none due", e.tick(ns(3.4)), (0, None))
+    check("cu none due, one ns short", e.tick(ns(3.5) - 1), (0, None))
+    ran, o = e.tick(ns(3.5))  # exactly half a period before tick 4
     check("cu ran half", ran, 1)
     check("cu y4", o["y"], ("uncertain", 6.0))
-    raises("cu backwards", lambda: e.tick(3.0))
+    check("cu info4", e.info, {"gap": False, "tick": 4, "time": 4 * S})
+    raises("cu backwards", lambda: e.tick(ns(3.0)))
     raises("cu nan", lambda: e.tick(float("nan")))
-    check("cu same now", e.tick(3.5), (0, None))
+    check("cu same now", e.tick(ns(3.5)), (0, None))
     # a write made before a call that runs no tick waits for the next
-    e.write("x", "good", 10.0, 4.0)
-    check("cu no tick", e.tick(3.6), (0, None))
-    ran, o = e.tick(5.0)
+    e.write("x", "good", 10.0, ns(4.0))
+    check("cu no tick", e.tick(ns(3.6)), (0, None))
+    check("cu no tick info", e.info, None)
+    ran, o = e.tick(ns(5.0))
     check("cu y5", o["y"], ("uncertain", 16.0))
 
 
@@ -101,56 +113,446 @@ def test_age():
         "blocks": [{"id": "f", "type": "formula", "in": {"a": "x"}, "settings": {"expr": "a * 2"}, "out": {"y": "y"}}],
     }
     e = Engine(g)
-    e.write("x", "good", 1.5, 0.0)
-    check("age t0", e.tick(0.0)[1]["y"], ("good", 3.0))
-    check("age t2", e.tick(2.0)[1]["y"], ("good", 3.0))
-    check("age t3", e.tick(3.0)[1]["y"], ("bad", None))
-    # stamped too far ahead: refused, and stays refused
-    e.write("x", "good", 1.0, 9.0)
-    check("ahead t4", e.tick(4.0)[1]["y"], ("bad", None))
-    check("ahead t9", e.tick(9.0)[1]["y"], ("bad", None))
-    e.write("x", "good", float("inf"), 10.0)
-    check("inf", e.tick(10.0)[1]["y"], ("bad", None))
+    e.write("x", "good", 1.5, ns(0.0))
+    check("age t0", e.tick(ns(0.0))[1]["y"], ("good", 3.0))
+    check("age t2", e.tick(ns(2.0))[1]["y"], ("good", 3.0))
+    check("age t3", e.tick(ns(3.0))[1]["y"], ("bad", None))
+    # stamped 9 s at a call at 4 s, more than max_ahead (one period) ahead:
+    # done with at that call, and it never stands, even when 9 s comes
+    e.write("x", "good", 1.0, ns(9.0))
+    check("ahead t4", e.tick(ns(4.0))[1]["y"], ("bad", None))
+    check("ahead t8", e.tick(ns(8.0))[1]["y"], ("bad", None))
+    check("ahead t9", e.tick(ns(9.0))[1]["y"], ("bad", None))
+    e.write("x", "good", float("inf"), 10 * S)
+    check("inf", e.tick(ns(10.0))[1]["y"], ("bad", None))
+    # one ns after tick 11 it waits for tick 12; no tolerance on an age
+    e.write("x", "good", 1.0, 11 * S + 1)
+    check("ns t11", e.tick(ns(11.0))[1]["y"], ("bad", None))  # still the inf
+    check("ns t12", e.tick(ns(12.0))[1]["y"], ("good", 2.0))
+    e.write("x", "good", 1.0, 12 * S - 1)
+    check("ns t13", e.tick(ns(13.0))[1]["y"], ("good", 2.0))
+    check("ns t14", e.tick(ns(14.0))[1]["y"], ("bad", None))  # 2 s and 1 ns old
+    e.write("x", "good", 1.0, 13 * S)
+    check("ns t15", e.tick(ns(15.0))[1]["y"], ("good", 2.0))  # exactly 2 s old
     # nothing standing: not_ready, then bad once run for more than max_age
     e2 = Engine(g)
-    check("nr t0", e2.tick(0.0)[1]["y"], ("not_ready", None))
-    check("nr t2", e2.tick(2.0)[1]["y"], ("not_ready", None))
-    check("nr t3", e2.tick(3.0)[1]["y"], ("bad", None))
+    check("nr t0", e2.tick(ns(0.0))[1]["y"], ("not_ready", None))
+    check("nr t2", e2.tick(ns(2.0))[1]["y"], ("not_ready", None))
+    check("nr t3", e2.tick(ns(3.0))[1]["y"], ("bad", None))
 
 
 def test_gap():
     e = Engine(integ_graph(max_catch_up=3))
-    e.write("x", "good", 1.0, 0.0)
-    check("gap y0", e.tick(0.0)[1]["y"], ("good", 1.0))
-    ran, o = e.tick(10.0)
+    e.write("x", "good", 1.0, ns(0.0))
+    check("gap y0", e.tick(ns(0.0))[1]["y"], ("good", 1.0))
+    # ticks 1 to 8 are due, more than 3: a stall. One tick runs, numbered 1,
+    # at 8 s. What stood goes on standing, 8 s old, under its 10 s maximum.
+    ran, o = e.tick(ns(8.0))
     check("gap ran", ran, 1)
-    check("gap y", o["y"], ("uncertain", 1.0))
-    check("gap missed", o["missed"], ("good", 1.0))
-    e.write("x", "good", 1.0, 11.0)
-    ran, o = e.tick(11.0)
-    check("gap next ran", ran, 1)
-    check("gap next y", o["y"], ("uncertain", 2.0))
-    check("gap three", e.tick(14.0)[0], 3)
+    check("gap info", e.info, {"gap": True, "tick": 1, "time": 8 * S})
+    check("gap y", o["y"], ("uncertain", 2.0))
+    check("gap missed", o["missed"], ("good", 0.0))
+    # three ticks are not more than three: ticks 2, 3, 4 at 9, 10, 11 s.
+    # The value is 9 and 10 s old, usable, then 11 s old, bad.
+    ran, o = e.tick(ns(11.0))
+    check("gap three ran", ran, 3)
+    check("gap three info", e.info, {"gap": False, "tick": 4, "time": 11 * S})
+    check("gap three y", o["y"], ("uncertain", 4.0))
+    check("gap three missed", o["missed"], ("good", 1.0))
+
+
+def test_stall_writes():
+    """A stall longer than max_catch_up, with writes stamped inside it."""
+    e = Engine(integ_graph(max_catch_up=3))
+    e.write("x", "good", 1.0, 0)
+    ran, o = e.tick(0)
+    check("stall y0", o["y"], ("good", 1.0))
+    check("stall info0", e.info, {"gap": False, "tick": 0, "time": 0})
+    e.write("x", "good", 5.0, 2 * S)
+    e.write("x", "good", 7.0, ns(6.2))
+    e.write("x", "good", 9.0, 8 * S)
+    # ticks at 1..7 s are no more than half a period after 7.4 s: seven due,
+    # more than 3. One tick runs: number 1, at 7 s, the last that was due.
+    # Of the writes not after 7 s the last made (7.0) stands; 9.0 waits.
+    ran, o = e.tick(ns(7.4))
+    check("stall ran", ran, 1)
+    check("stall info", e.info, {"gap": True, "tick": 1, "time": 7 * S})
+    check("stall y", o["y"], ("uncertain", 8.0))
+    check("stall missed", o["missed"], ("good", 0.0))
+    # later ticks follow at whole periods: tick 2 at 8 s, due at 7.5 s
+    check("stall none due", e.tick(ns(7.5) - 1), (0, None))
+    ran, o = e.tick(ns(7.5))
+    check("stall next ran", ran, 1)
+    check("stall next info", e.info, {"gap": False, "tick": 2, "time": 8 * S})
+    check("stall next y", o["y"], ("uncertain", 17.0))
+
+
+def test_catch_up_writes():
+    """Catch-up ticks of one call see writes by their times (rule 6.8)."""
+    e = Engine(integ_graph())
+    e.write("x", "good", 1.0, 0)
+    check("cw y0", e.tick(0)[1]["y"], ("good", 1.0))
+    e.write("x", "good", 2.0, ns(1.5))
+    e.write("x", "good", 3.0, 3 * S)
+    e.write("x", "good", 100.0, 9 * S)
+    # tick 1 (1 s) sees 1; tick 2 (2 s) takes up 2; ticks 3 and 4 see 3.
+    # The 100 is stamped more than one period after 4 s and is done with.
+    ran, o = e.tick(4 * S)
+    check("cw ran", ran, 4)
+    check("cw info", e.info, {"gap": False, "tick": 4, "time": 4 * S})
+    check("cw y4", o["y"], ("good", 10.0))
+    check("cw missed", o["missed"], ("good", 0.0))
+    # ticks 5 to 9 add 3 each: the 100 never stands
+    ran, o = e.tick(9 * S)
+    check("cw ran9", ran, 5)
+    check("cw y9", o["y"], ("good", 25.0))
+
+
+def test_catch_up_and_last():
+    """A catch-up tick sees writes up to its own time; the call's last tick
+    sees them up to `now` (rule 6.8)."""
+    e = Engine(integ_graph())
+    e.write("x", "good", 1.0, 0)
+    check("cl y0", e.tick(0)[1]["y"], ("good", 1.0))
+    e.write("x", "good", 10.0, ns(1.2))
+    e.write("x", "good", 20.0, ns(2.2))
+    # at 2.3 s ticks 1 (1 s) and 2 (2 s) are due. Tick 1 is a catch-up tick
+    # and may see neither write: it adds 1. Tick 2 is the last and may see
+    # both, up to 2.3 s; the later time stands: it adds 20.
+    ran, o = e.tick(ns(2.3))
+    check("cl ran", ran, 2)
+    check("cl info", e.info, {"gap": False, "tick": 2, "time": 2 * S})
+    check("cl y", o["y"], ("good", 22.0))
+    # both were done with: tick 3 adds 20 again
+    check("cl y3", e.tick(3 * S)[1]["y"], ("good", 42.0))
+
+
+def test_call_near_tick():
+    e = Engine(echo_graph())
+    e.write("x", "good", 1.0, 0)
+    check("nt 0", e.tick(0)[1]["y"], ("good", 1.0))
+    # 3 ms late: the sample just taken is stamped after tick 1's time and
+    # not after now, and tick 1 is the call's last tick
+    e.write("x", "good", 2.0, ns(1.003))
+    ran, o = e.tick(ns(1.003))
+    check("nt late ran", ran, 1)
+    check("nt late info", e.info, {"gap": False, "tick": 1, "time": 1 * S})
+    check("nt late y", o["y"], ("good", 2.0))
+    # 3 ms early: tick 2 (2 s) is no more than half a period after now. It
+    # may see up to the later of 2 s and now, so also a write stamped
+    # between now and its own time
+    e.write("x", "good", 3.0, ns(1.997))
+    ran, o = e.tick(ns(1.997))
+    check("nt early ran", ran, 1)
+    check("nt early info", e.info, {"gap": False, "tick": 2, "time": 2 * S})
+    check("nt early y", o["y"], ("good", 3.0))
+    e.write("x", "good", 4.0, ns(2.997))
+    e.write("x", "good", 4.5, ns(2.999))
+    check("nt early y 3", e.tick(ns(2.997))[1]["y"], ("good", 4.5))
+    # one ns after the tick's time and after now: it waits
+    e.write("x", "good", 5.0, 4 * S + 1)
+    check("nt early y 4", e.tick(ns(3.997))[1]["y"], ("good", 4.5))
+    check("nt y 5", e.tick(5 * S)[1]["y"], ("good", 5.0))
+
+
+def echo_graph(max_age="none", **more):
+    return {
+        "period": "1s",
+        "inputs": {"x": dict(more, max_age=max_age)},
+        "blocks": [{"id": "f", "type": "formula", "in": {"a": "x"}, "settings": {"expr": "a * 1"}, "out": {"y": "y"}}],
+    }
+
+
+def test_write_ahead():
+    e = Engine(echo_graph())
+    e.write("x", "good", 1.0, 0)
+    check("wa 0", e.tick(0)[1]["y"], ("good", 1.0))
+    # stamped 1.5 s: within one period of the call at 1 s, so it waits
+    # there, and stands from tick 2
+    e.write("x", "good", 2.0, ns(1.5))
+    check("wa 1", e.tick(1 * S)[1]["y"], ("good", 1.0))
+    check("wa 2", e.tick(2 * S)[1]["y"], ("good", 2.0))
+    # a write stamped exactly at a tick's time is seen by that tick
+    e.write("x", "good", 5.0, 3 * S)
+    check("wa 3", e.tick(3 * S)[1]["y"], ("good", 5.0))
+    # one ns after the tick's time and now, it waits a tick
+    e.write("x", "good", 6.0, 4 * S + 1)
+    check("wa 4", e.tick(4 * S)[1]["y"], ("good", 5.0))
+    check("wa 5", e.tick(5 * S)[1]["y"], ("good", 6.0))
+    # exactly max_ahead after now is not more than max_ahead: it waits
+    e.write("x", "good", 8.0, 7 * S)
+    check("wa 6", e.tick(6 * S)[1]["y"], ("good", 6.0))
+    check("wa 7", e.tick(7 * S)[1]["y"], ("good", 8.0))
+    # one ns more: done with at the call at 8 s, and never stands
+    e.write("x", "good", 9.0, 9 * S + 1)
+    check("wa 8", e.tick(8 * S)[1]["y"], ("good", 8.0))
+    check("wa 9", e.tick(9 * S)[1]["y"], ("good", 8.0))
+    check("wa 10", e.tick(10 * S)[1]["y"], ("good", 8.0))
+    check("wa 11", e.tick(11 * S)[1]["y"], ("good", 8.0))
+    # a call that runs no tick throws away what is too far ahead as well
+    e.write("x", "good", 9.5, ns(12.4))
+    check("wa no tick", e.tick(ns(11.3)), (0, None))
+    check("wa 12", e.tick(12 * S)[1]["y"], ("good", 8.0))
+    check("wa 13", e.tick(13 * S)[1]["y"], ("good", 8.0))
+    # with max_ahead given: 2.5 s ahead waits, 3 s and 1 ns ahead does not
+    e = Engine(echo_graph(max_ahead="3s"))
+    e.write("x", "good", 1.0, 0)
+    e.write("x", "good", 2.0, ns(2.5))
+    e.write("x", "good", 3.0, 3 * S + 1)
+    check("wa given 0", e.tick(0)[1]["y"], ("good", 1.0))
+    check("wa given 2", e.tick(2 * S)[1]["y"], ("good", 1.0))
+    check("wa given 3", e.tick(3 * S)[1]["y"], ("good", 2.0))
+    check("wa given 4", e.tick(4 * S)[1]["y"], ("good", 2.0))
+
+
+def test_latest_time_stands():
+    e = Engine(echo_graph("2s"))
+    e.write("x", "good", 1.0, 0)
+    check("lt 0", e.tick(0)[1]["y"], ("good", 1.0))
+    e.write("x", "good", 5.0, ns(0.9))
+    check("lt 1", e.tick(1 * S)[1]["y"], ("good", 5.0))
+    # an older sample that arrives late does not displace the newer one
+    e.write("x", "good", 4.0, ns(0.5))
+    check("lt 2", e.tick(2 * S)[1]["y"], ("good", 5.0))
+    # it was done with: the 5 grows old on its own time (2.1 s at tick 3)
+    check("lt 3", e.tick(3 * S)[1]["y"], ("bad", None))
+    # two writes with the same time: the one written later stands
+    e.write("x", "good", 7.0, ns(3.5))
+    e.write("x", "good", 8.0, ns(3.5))
+    check("lt 4", e.tick(4 * S)[1]["y"], ("good", 8.0))
+    # of two seen by one tick the later time stands, whichever was written
+    # last, and the other never stands
+    e.write("x", "good", 1.0, ns(4.8))
+    e.write("x", "good", 2.0, ns(4.5))
+    check("lt 5", e.tick(5 * S)[1]["y"], ("good", 1.0))
+    check("lt 6", e.tick(6 * S)[1]["y"], ("good", 1.0))
+    # a write with the same time as what stands was written later: it stands
+    e = Engine(echo_graph())
+    e.write("x", "good", 5.0, ns(0.9))
+    check("lt same 1", e.tick(1 * S)[1]["y"], ("good", 5.0))
+    e.write("x", "good", 6.0, ns(0.9))
+    check("lt same 2", e.tick(2 * S)[1]["y"], ("good", 6.0))
+    # a `bad` write is judged by its time like any other
+    e.write("x", "bad", None, ns(0.8))
+    check("lt bad older", e.tick(3 * S)[1]["y"], ("good", 6.0))
+    e.write("x", "bad", None, ns(3.5))
+    check("lt bad newer", e.tick(4 * S)[1]["y"], ("bad", None))
+
+
+def test_rebase():
+    g = echo_graph("3s")
+    g["blocks"].append(
+        {
+            "id": "w",
+            "type": "window",
+            "in": {"x": "x"},
+            "settings": {"window": "2s", "min_good": 0.5, "only_new": True},
+            "out": {"count": "c"},
+        }
+    )
+    e = Engine(g)
+    e.write("x", "good", 1.0, 100 * S)
+    o = e.tick(100 * S)[1]
+    check("rb y0", o["y"], ("good", 1.0))
+    check("rb c0", o["c"], ("good", 1.0))
+    check("rb c1", e.tick(101 * S)[1]["c"], ("good", 1.0))
+    e.write("x", "good", 4.0, 50 * S)  # made before the rebase: done with
+    e.rebase()
+    e.write("x", "good", 2.0, 40 * S)  # made after it: taken up as usual
+    # an earlier `now` is accepted. One tick: number 2, at 40 s. The window
+    # was emptied and has forgotten the 100 s it last took, so a sample
+    # stamped 40 s is a new one.
+    ran, o = e.tick(40 * S)
+    check("rb ran", ran, 1)
+    check("rb info", e.info, {"gap": True, "tick": 2, "time": 40 * S})
+    check("rb y", o["y"], ("good", 2.0))
+    check("rb c", o["c"], ("good", 1.0))
+    # later ticks are at whole periods from it, and the sample is not new again
+    ran, o = e.tick(41 * S)
+    check("rb next ran", ran, 1)
+    check("rb next info", e.info, {"gap": False, "tick": 3, "time": 41 * S})
+    check("rb next c", o["c"], ("good", 1.0))
+    check("rb c 42", e.tick(42 * S)[1]["c"], ("good", 0.0))
+    check("rb y 43", e.tick(43 * S)[1]["y"], ("good", 2.0))  # 3 s old
+    check("rb y 44", e.tick(44 * S)[1]["y"], ("bad", None))
+    # a rebase with nothing written after it: nothing stands, the write
+    # made before it is done with, and the graph has run since the rebase's
+    # tick (rule 7.2.1)
+    e.write("x", "good", 4.0, 5 * S)
+    e.rebase()
+    ran, o = e.tick(10 * S)
+    check("rb2 info", e.info, {"gap": True, "tick": 7, "time": 10 * S})
+    check("rb2 y", o["y"], ("not_ready", None))
+    ran, o = e.tick(13 * S)
+    check("rb2 ran", ran, 3)
+    check("rb2 y 13", o["y"], ("not_ready", None))
+    check("rb2 y 14", e.tick(14 * S)[1]["y"], ("bad", None))
+    # only the first call after a rebase may go backwards
+    raises("rb2 backwards", lambda: e.tick(13 * S))
+    # a restore is a rebase too: a write made before it is done with
+    e = Engine(echo_graph())
+    e.write("x", "good", 1.0, 0)
+    check("rs y0", e.tick(0)[1]["y"], ("good", 1.0))
+    saved = e.save()
+    e.write("x", "good", 5.0, 1 * S)
+    e.restore(saved)
+    ran, o = e.tick(1 * S)
+    check("rs info", e.info, {"gap": True, "tick": 1, "time": 1 * S})
+    check("rs y", o["y"], ("not_ready", None))
+
+
+def test_refused_calls_and_writes():
+    g = echo_graph()
+    g["inputs"]["b"] = {"type": "boolean", "max_age": "none"}
+    e = Engine(g)
+    e.write("x", "good", 1.0, 0)
+    check("rf y0", e.tick(0)[1]["y"], ("good", 1.0))
+    check("rf y1", e.tick(1 * S)[1]["y"], ("good", 1.0))
+    info = dict(e.info)
+    raises("rf earlier now", lambda: e.tick(1 * S - 1))
+    raises("rf float now", lambda: e.tick(2.0 * S))
+    raises("rf fraction now", lambda: e.tick(2 * S + 0.5))
+    raises("rf true for now", lambda: e.tick(True))
+    raises("rf no now", lambda: e.tick(None))
+    raises("rf unknown name", lambda: e.write("nope", "good", 2.0, 1 * S))
+    raises("rf output name", lambda: e.write("y", "good", 2.0, 1 * S))
+    raises("rf text for number", lambda: e.write("x", "good", "2", 1 * S))
+    raises("rf boolean for number", lambda: e.write("x", "good", True, 1 * S))
+    raises("rf number for boolean", lambda: e.write("b", "uncertain", 1.0, 1 * S))
+    raises("rf fraction time", lambda: e.write("x", "good", 2.0, 1.5))
+    raises("rf float time", lambda: e.write("x", "good", 2.0, 2.0))
+    raises("rf no time", lambda: e.write("x", "good", 2.0, None))
+    raises("rf bad with no time", lambda: e.write("x", "bad", None, None))
+    raises("rf usable with no value", lambda: e.write("x", "good", None, 1 * S))
+    raises("rf unknown state", lambda: e.write("x", "fine", 2.0, 1 * S))
+    raises("rf time over 64 bits", lambda: e.write("x", "good", 2.0, 2**63))
+    raises("rf now over 64 bits", lambda: e.tick(2**63))
+    # none of that changed anything
+    check("rf info", e.info, info)
+    # a call with the same now is accepted, runs no tick and gives nothing
+    check("rf same now", e.tick(1 * S), (0, None))
+    check("rf info none", e.info, None)
+    # a call that ran no tick is still the last call that was not refused
+    check("rf later, no tick", e.tick(1 * S + 5), (0, None))
+    raises("rf earlier than a call with no tick", lambda: e.tick(1 * S + 4))
+    check("rf y2", e.tick(2 * S)[1]["y"], ("good", 1.0))
+    # a `bad` write with a whole time is taken, value or not
+    e.write("x", "bad", None, 3 * S)
+    check("rf y3", e.tick(3 * S)[1]["y"], ("bad", None))
+
+
+def test_reset_waiting():
+    e = Engine(echo_graph())
+    e.write("x", "good", 1.0, 0)
+    check("rw y0", e.tick(0)[1]["y"], ("good", 1.0))
+    check("rw y1", e.tick(1 * S)[1]["y"], ("good", 1.0))
+    e.write("x", "good", 9.0, 5 * S)  # waiting, ahead
+    e.write("x", "good", 3.0, 2 * S)  # waiting for the next tick
+    e.reset()
+    # tick 0 again, at whatever now; nothing stands and both writes are gone
+    ran, o = e.tick(5 * S)
+    check("rw ran", ran, 1)
+    check("rw info", e.info, {"gap": False, "tick": 0, "time": 5 * S})
+    check("rw y", o["y"], ("not_ready", None))
+    check("rw y 6", e.tick(6 * S)[1]["y"], ("not_ready", None))
+    # an earlier now is accepted after a reset
+    e.reset()
+    e.write("x", "good", 4.0, 2 * S)
+    check("rw again", e.tick(2 * S), (1, {"y": ("good", 4.0)}))
+    # a reset after a rebase is a reset: tick 0, and not a gap
+    check("rw y3", e.tick(3 * S)[1]["y"], ("good", 4.0))
+    e.rebase()
+    e.reset()
+    e.write("x", "good", 6.0, 1 * S)
+    check("rw after rebase", e.tick(1 * S), (1, {"y": ("good", 6.0)}))
+    check("rw after rebase info", e.info, {"gap": False, "tick": 0, "time": 1 * S})
+
+
+def test_rebase_before_any_tick():
+    # it does away with the writes waiting, and nothing else
+    e = Engine(echo_graph())
+    e.write("x", "good", 9.0, 5 * S)
+    e.rebase()
+    ran, o = e.tick(5 * S)
+    check("rb0 ran", ran, 1)
+    check("rb0 info", e.info, {"gap": False, "tick": 0, "time": 5 * S})
+    check("rb0 y", o["y"], ("not_ready", None))
+    # what is written after it waits as usual, and the ticks go on from tick 0
+    e = Engine(echo_graph())
+    e.write("x", "good", 9.0, 5 * S)
+    e.rebase()
+    e.write("x", "good", 2.0, 4 * S)
+    check("rb0 after", e.tick(5 * S), (1, {"y": ("good", 2.0)}))
+    check("rb0 after info", e.info, {"gap": False, "tick": 0, "time": 5 * S})
+    check("rb0 next", e.tick(6 * S), (1, {"y": ("good", 2.0)}))
+    check("rb0 next info", e.info, {"gap": False, "tick": 1, "time": 6 * S})
+    raises("rb0 backwards", lambda: e.tick(5 * S))
+
+
+def test_delay_window_rebase():
+    g = {
+        "period": "1s",
+        "inputs": {"x": {"max_age": "none"}},
+        "blocks": [
+            {"id": "d", "type": "delay", "in": {"x": "x"}, "out": {"y": "dy"}},
+            {
+                "id": "w",
+                "type": "window",
+                "in": {"x": "d.y"},
+                "settings": {"window": "2s", "min_good": 0.5, "only_new": True},
+                "out": {"count": "c"},
+            },
+        ],
+    }
+    e = Engine(g)
+    e.write("x", "good", 1.0, 100 * S)
+    o = e.tick(100 * S)[1]  # tick 0: the delay has nothing to give
+    check("dw dy 0", o["dy"], ("not_ready", None))
+    check("dw c 0", o["c"], ("good", 0.0))
+    e.write("x", "good", 2.0, 101 * S)
+    o = e.tick(101 * S)[1]  # tick 1: it gives the 1, sampled at 100 s
+    check("dw dy 1", o["dy"], ("good", 1.0))
+    check("dw c 1", o["c"], ("good", 1.0))
+    # the delay now holds the 2, sampled at 101 s. At the rebase it becomes
+    # uncertain and carries no sample time, so the emptied window, which
+    # would take any sample with a time, does not take it.
+    e.rebase()
+    e.write("x", "good", 3.0, 10 * S)
+    o = e.tick(10 * S)[1]  # tick 2
+    check("dw info", e.info, {"gap": True, "tick": 2, "time": 10 * S})
+    check("dw dy 2", o["dy"], ("uncertain", 2.0))
+    check("dw c 2", o["c"], ("good", 0.0))
+    # what the delay took in after the rebase carries its time again
+    e.write("x", "good", 4.0, 11 * S)
+    o = e.tick(11 * S)[1]  # tick 3: the 3, sampled at 10 s
+    check("dw dy 3", o["dy"], ("good", 3.0))
+    check("dw c 3", o["c"], ("good", 1.0))
+    o = e.tick(12 * S)[1]  # tick 4: the 4, sampled at 11 s
+    check("dw dy 4", o["dy"], ("good", 4.0))
+    check("dw c 4", o["c"], ("good", 2.0))
+    o = e.tick(13 * S)[1]  # tick 5: the 4 again, not a new sample
+    check("dw c 5", o["c"], ("good", 1.0))
 
 
 def test_save_restore():
     g = {"period": "1s", "blocks": [{"id": "i", "type": "integrate", "in": {"x": 1}, "out": {"y": "y"}}]}
     e = Engine(g)
-    check("sr y0", e.tick(0.0)[1]["y"], ("good", 1.0))
-    check("sr y1", e.tick(1.0)[1]["y"], ("good", 2.0))
+    check("sr y0", e.tick(ns(0.0))[1]["y"], ("good", 1.0))
+    check("sr y1", e.tick(ns(1.0))[1]["y"], ("good", 2.0))
     saved = e.save()
-    check("sr y2", e.tick(2.0)[1]["y"], ("good", 3.0))
+    check("sr y2", e.tick(ns(2.0))[1]["y"], ("good", 3.0))
     e.restore(saved)
-    ran, o = e.tick(0.5)  # a gap: any now, one tick
+    ran, o = e.tick(ns(0.5))  # a gap: any now, one tick
     check("sr ran", ran, 1)
+    check("sr info", e.info, {"gap": True, "tick": 2, "time": ns(0.5)})
     check("sr y", o["y"], ("uncertain", 3.0))
     # the next tick is at 1.5, due once now is within half a period of it
-    check("sr none due", e.tick(0.9), (0, None))
-    check("sr y next", e.tick(1.0)[1]["y"], ("uncertain", 4.0))
+    check("sr none due", e.tick(ns(0.9)), (0, None))
+    check("sr y next", e.tick(ns(1.0))[1]["y"], ("uncertain", 4.0))
     other = Engine(integ_graph())
     raises("sr other graph", lambda: other.restore(saved))
     e.reset()
-    check("reset", e.tick(0.0), (1, {"y": ("good", 1.0)}))
+    check("reset", e.tick(ns(0.0)), (1, {"y": ("good", 1.0)}))
 
 
 def test_sample_times():
@@ -175,10 +577,10 @@ def test_sample_times():
         ],
     }
     e = Engine(g)
-    e.write("x", "good", 1.0, 0.0)
+    e.write("x", "good", 1.0, ns(0.0))
     want = [(1, 0, 1, 1), (1, 1, 2, 1), (0, 1, 2, 0), (0, 0, 2, 0)]
     for k, w in enumerate(want):
-        o = e.tick(float(k))[1]
+        o = e.tick(k * S)[1]
         for name, n in zip(("c1", "c2", "c3", "c4"), w):
             check("st %s tick %d" % (name, k), o[name], ("good", float(n)))
 
@@ -201,8 +603,8 @@ def test_lowpass():
     a = math.exp(-1.0)
 
     def step(k, state, value):
-        e.write("x", state, value, float(k) if value is not None else None)
-        return e.tick(float(k))[1]["y"]
+        e.write("x", state, value, k * S)
+        return e.tick(k * S)[1]["y"]
 
     check("lp 0", step(0, "good", 0.0), ("good", 0.0))
     y = 1 - a
@@ -233,8 +635,8 @@ def run_seq(block, in_type, seq, port="y"):
     e = Engine(g)
     res = []
     for k, (state, value) in enumerate(seq):
-        e.write("x", state, value, float(k) if value is not None else None)
-        res.append(e.tick(float(k))[1]["out"])
+        e.write("x", state, value, k * S)
+        res.append(e.tick(k * S)[1]["out"])
     return res
 
 
@@ -415,34 +817,34 @@ def test_formula():
 
     num = {"x": {"max_age": "none"}, "ok": {"type": "boolean", "max_age": "none"}}
     e = one("when(ok, x, 20)", {"ok": "ok", "x": "x"}, num)
-    e.write("ok", "good", False, 0.0)
-    e.write("x", "bad", None, None)
-    check("when const", e.tick(0.0)[1]["y"], ("good", 20.0))
-    e.write("ok", "uncertain", True, 1.0)
-    check("when bad branch", e.tick(1.0)[1]["y"], ("bad", None))
-    e.write("x", "good", 4.0, 2.0)
-    check("when unc cond", e.tick(2.0)[1]["y"], ("uncertain", 4.0))
+    e.write("ok", "good", False, ns(0.0))
+    e.write("x", "bad", None, ns(0.0))
+    check("when const", e.tick(ns(0.0))[1]["y"], ("good", 20.0))
+    e.write("ok", "uncertain", True, ns(1.0))
+    check("when bad branch", e.tick(ns(1.0))[1]["y"], ("bad", None))
+    e.write("x", "good", 4.0, ns(2.0))
+    check("when unc cond", e.tick(ns(2.0))[1]["y"], ("uncertain", 4.0))
 
     e = one("ok or x > 1", {"ok": "ok", "x": "x"}, num)
-    e.write("ok", "good", True, 0.0)
-    check("or decides", e.tick(0.0)[1]["y"], ("good", True))
-    e.write("ok", "uncertain", True, 1.0)
-    e.write("x", "good", 0.0, 1.0)
-    check("or unc decides", e.tick(1.0)[1]["y"], ("uncertain", True))
-    e.write("ok", "good", False, 2.0)
-    e.write("x", "bad", None, None)
-    check("or undecided", e.tick(2.0)[1]["y"], ("bad", None))
+    e.write("ok", "good", True, ns(0.0))
+    check("or decides", e.tick(ns(0.0))[1]["y"], ("good", True))
+    e.write("ok", "uncertain", True, ns(1.0))
+    e.write("x", "good", 0.0, ns(1.0))
+    check("or unc decides", e.tick(ns(1.0))[1]["y"], ("uncertain", True))
+    e.write("ok", "good", False, ns(2.0))
+    e.write("x", "bad", None, ns(2.0))
+    check("or undecided", e.tick(ns(2.0))[1]["y"], ("bad", None))
 
     e = one("1 / x + 2 * -3", {"x": "x"}, num and {"x": num["x"]})
-    e.write("x", "good", 0.0, 0.0)
-    check("div zero", e.tick(0.0)[1]["y"], ("bad", None))
-    e.write("x", "good", 4.0, 1.0)
-    check("arith", e.tick(1.0)[1]["y"], ("good", -5.75))
+    e.write("x", "good", 0.0, ns(0.0))
+    check("div zero", e.tick(ns(0.0))[1]["y"], ("bad", None))
+    e.write("x", "good", 4.0, ns(1.0))
+    check("arith", e.tick(ns(1.0))[1]["y"], ("good", -5.75))
 
     e = one("not 1 + 2 * 3 == 7 and pow(2, 3) - 1 >= 7 or sqrt(a) < ln(a)", {"a": -1}, {})
     # not (7 == 7) -> false; false and ... -> false (decided, good);
     # sqrt(-1) is bad, so the `or` is not decided and takes the worst state
-    check("precedence", e.tick(0.0)[1]["y"], ("bad", None))
+    check("precedence", e.tick(ns(0.0))[1]["y"], ("bad", None))
 
     # a fallback replaces what is not usable, as uncertain
     g = {
@@ -461,11 +863,11 @@ def test_formula():
         ],
     }
     e = Engine(g)
-    o = e.tick(0.0)[1]
+    o = e.tick(ns(0.0))[1]
     check("fallback", o["y"], ("uncertain", 0.0))
     check("all_good false", o["ok"], ("good", False))
-    e.write("x", "good", 2.0, 1.0)
-    o = e.tick(1.0)[1]
+    e.write("x", "good", 2.0, ns(1.0))
+    o = e.tick(ns(1.0))[1]
     check("no fallback", o["y"], ("good", 4.0))
     check("all_good true", o["ok"], ("good", True))
 
@@ -481,7 +883,7 @@ def test_loops():
     }
     e = Engine(g)
     for k in range(3):
-        check("counter %d" % k, e.tick(float(k))[1]["n"], ("good", float(k + 1)))
+        check("counter %d" % k, e.tick(k * S)[1]["n"], ("good", float(k + 1)))
     del g["blocks"][0]["settings"]["initial"]
     refused("delay loop with no initial", g)
     refused(
@@ -516,15 +918,15 @@ def test_loops():
         ],
     }
     e = Engine(g)
-    o = e.tick(0.0)[1]
+    o = e.tick(ns(0.0))[1]
     check("model 0", o["temp"], ("good", 20.0))
     check("model heat", o["heat"], ("good", 100.0))
     # d temp/dt = -(temp - 120)/100; RK4 on a linear equation multiplies
     # the distance from 120 by 1 + z + z^2/2 + z^3/6 + z^4/24, z = -0.01
     z = -0.01
     s = 1 + z + z**2 / 2 + z**3 / 6 + z**4 / 24
-    check("model 1", e.tick(1.0)[1]["temp"], ("good", 120 - 100 * s))
-    check("model 2", e.tick(2.0)[1]["temp"], ("good", 120 - 100 * s * s))
+    check("model 1", e.tick(ns(1.0))[1]["temp"], ("good", 120 - 100 * s))
+    check("model 2", e.tick(ns(2.0))[1]["temp"], ("good", 120 - 100 * s * s))
 
     # a missed step is a doubt, seen from the next tick, for `settle`
     g = {
@@ -541,10 +943,10 @@ def test_loops():
         ],
     }
     e = Engine(g)
-    check("doubt 0", e.tick(0.0)[1]["temp"], ("good", 20.0))
-    e.write("p", "good", 0.0, 1.0)
-    check("doubt 1", e.tick(1.0)[1]["temp"], ("uncertain", 20.0))
-    check("doubt 2", e.tick(2.0)[1]["temp"], ("good", 20.0))
+    check("doubt 0", e.tick(ns(0.0))[1]["temp"], ("good", 20.0))
+    e.write("p", "good", 0.0, ns(1.0))
+    check("doubt 1", e.tick(ns(1.0))[1]["temp"], ("uncertain", 20.0))
+    check("doubt 2", e.tick(ns(2.0))[1]["temp"], ("good", 20.0))
     refused(
         "unstable",
         {
@@ -575,10 +977,10 @@ def test_loops():
         ],
     }
     e = Engine(g)
-    e.write("u", "good", 1.0, 0.0)
-    check("ss 0", e.tick(0.0)[1]["y"], ("good", 1.0))
-    check("ss 1", e.tick(1.0)[1]["y"], ("good", 3.0))
-    check("ss 2", e.tick(2.0)[1]["y"], ("good", 4.0))
+    e.write("u", "good", 1.0, ns(0.0))
+    check("ss 0", e.tick(ns(0.0))[1]["y"], ("good", 1.0))
+    check("ss 1", e.tick(ns(1.0))[1]["y"], ("good", 3.0))
+    check("ss 2", e.tick(ns(2.0))[1]["y"], ("good", 4.0))
 
 
 def test_estimator():
@@ -609,39 +1011,59 @@ def test_estimator():
     }
     e = Engine(g)
     # tick 0: no predict. P = 4, z = 5: innovation 5, s = 5, g = 0.8
-    e.write("z", "good", 5.0, 0.0)
-    o = e.tick(0.0)[1]
+    e.write("z", "good", 5.0, ns(0.0))
+    o = e.tick(ns(0.0))[1]
     check("est x 0", o["x"], ("good", 4.0))
     check("est sigma 0", o["sigma"], ("good", math.sqrt(0.8)))
     check("est innov 0", o["innov"], ("good", 5.0))
     check("est refused 0", o["refused"], ("good", 0.0))
     check("est since 0", o["since"], ("good", 0.0))
     # tick 1: predict only; the same sample is not considered again
-    o = e.tick(1.0)[1]
+    o = e.tick(ns(1.0))[1]
     check("est x 1", o["x"], ("good", 4.0))
     check("est sigma 1", o["sigma"], ("good", math.sqrt(1.8)))
     check("est innov 1", o["innov"], ("not_ready", None))
     check("est since 1", o["since"], ("good", 1.0))
     # tick 2: P = 2.8, s = 3.8, innovation 96 > 3 sqrt(3.8): refused
-    e.write("z", "good", 100.0, 2.0)
-    o = e.tick(2.0)[1]
+    e.write("z", "good", 100.0, ns(2.0))
+    o = e.tick(ns(2.0))[1]
     check("est x 2", o["x"], ("good", 4.0))
     check("est sigma 2", o["sigma"], ("good", math.sqrt(2.8)))
     check("est innov 2", o["innov"], ("good", 96.0))
     check("est refused 2", o["refused"], ("good", 1.0))
     check("est since 2", o["since"], ("good", 2.0))
     # tick 3: P = 3.8, s = 4.8, innovation 1: used
-    e.write("z", "good", 5.0, 3.0)
-    o = e.tick(3.0)[1]
+    e.write("z", "good", 5.0, ns(3.0))
+    o = e.tick(ns(3.0))[1]
     gain = 3.8 / 4.8
     check("est x 3", o["x"], ("good", 4.0 + gain))
     check("est sigma 3", o["sigma"], ("good", math.sqrt(3.8 - gain * 3.8)))
     check("est since 3", o["since"], ("good", 0.0))
     # an uncertain measurement is not considered unless asked for
-    e.write("z", "uncertain", 9.0, 4.0)
-    o = e.tick(4.0)[1]
+    e.write("z", "uncertain", 9.0, ns(4.0))
+    o = e.tick(ns(4.0))[1]
     check("est innov 4", o["innov"], ("not_ready", None))
     check("est since 4", o["since"], ("good", 1.0))
+    # a rebase: tick 5, at 1 s on another clock. The variance grows by p0
+    # at the gap and by q at the predict; nothing stands on z. The sample
+    # time last used is forgotten with the rest, so `since` is not_ready.
+    p4 = 3.8 - gain * 3.8 + 1
+    e.rebase()
+    o = e.tick(1 * S)[1]
+    check("est rb x", o["x"], ("good", 4.0 + gain))
+    check("est rb sigma", o["sigma"], ("good", math.sqrt(p4 + 4 + 1)))
+    check("est rb innov", o["innov"], ("not_ready", None))
+    check("est rb refused", o["refused"], ("good", 1.0))
+    check("est rb since", o["since"], ("not_ready", None))
+    # a measurement stamped 2 s, before the 3 s last considered on the old
+    # clock, is considered: P = p4 + 6, s = p4 + 7, innovation 1 - gain
+    e.write("z", "good", 5.0, 2 * S)
+    o = e.tick(2 * S)[1]
+    p = p4 + 6
+    check("est rb innov 2", o["innov"], ("good", 1 - gain))
+    check("est rb x 2", o["x"], ("good", 4.0 + gain + p / (p + 1) * (1 - gain)))
+    check("est rb since 2", o["since"], ("good", 0.0))
+    check("est rb since 3", e.tick(3 * S)[1]["since"], ("good", 1.0))
 
 
 def test_refusals():
@@ -683,6 +1105,18 @@ def test_refusals():
     refused("bad fallback", variant(fallback={"mean": True}))
     refused("period not exact", variant(period="900.0000001ms", settings={"window": "2700ms"}))
     Engine(variant(period="0.1s", settings={"window": "0.3s"}))
+    Engine(variant(period="1000000us", settings={"window": "3000000000ns"}))
+    Engine(variant(input={"max_age": "1ns"}))
+    Engine(variant(input={"max_age": "5s", "max_ahead": "1500ms"}))
+    refused("max_ahead not whole ns", variant(input={"max_age": "5s", "max_ahead": "0.5ns"}))
+    refused("max_ahead no unit", variant(input={"max_age": "5s", "max_ahead": 1}))
+    refused("period not whole ns", variant(period="0.5ns", settings={"window": "1.5ns"}))
+    refused("max_age not whole ns", variant(input={"max_age": "1.5ns"}))
+    refused("window not whole ns", variant(settings={"window": "3000000000.5ns"}))
+    refused("unit", variant(input={"max_age": "5sec"}))
+    # `tau` only scales a value and "may be any length at all" (rule 6.3)
+    lp = {"period": "1s", "blocks": [{"id": "l", "type": "lowpass", "in": {"x": 1}, "settings": {"tau": "0.5ns"}}]}
+    Engine(lp)
 
     def formula(expr, ins=None):
         return {

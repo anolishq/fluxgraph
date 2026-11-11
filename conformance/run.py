@@ -26,22 +26,31 @@ A row of `calls` has these keys:
   ran: 3        how many ticks the call must say it ran. Left out, 1.
   first: {...}  writes made before the row's own, for two writes between ticks.
   refused: true the call must be refused, and nothing else is checked.
+  gap: true     the call must say it was a gap. Left out, it must say it was not.
+  tick: 7       the number of the last tick the call ran, if given.
+  time: 7.5     the time of that tick, in seconds, if given.
   <input>       a write before the call: a number, true or false (written as
                 good); `bad` or `not_ready`; or {v: 1.0, state: uncertain,
-                at: 1.5}, where `at` is the time it was sampled. Without
-                `at`, the sample time is the call's `now`. An input left out
-                is not written.
+                at: 1.5}, where `at` is the time the write carries. Without
+                `at`, that is the call's `now`. An input left out is not
+                written.
   <output>      what a published output must be after the call: a number,
                 true or false (it must be good); `bad` or `not_ready`; or
                 {u: 1.0} for uncertain with that value.
 
+Times in a vector are in seconds, written as decimals. The runner passes
+them to the engine as whole nanoseconds.
+
 A row with a single key starting with `$` is an operation on the engine:
-{$save: name}, {$restore: name}, {$reset: true}.
+{$save: name}, {$restore: name}, {$reset: true}, {$rebase: true},
+{$write: [name, state, value, time]} for a write with no call after it, and
+{$refused_write: [name, state, value, time]} for a write that must be refused.
 """
 
 from __future__ import annotations
 
 import sys
+from fractions import Fraction
 from pathlib import Path
 
 import reference
@@ -51,22 +60,31 @@ impl = reference  # the implementation under test; --second swaps it
 
 HERE = Path(__file__).resolve().parent
 TOLERANCE = 1e-9
-ROW_KEYS = {"now", "ran", "first", "refused"}
+ROW_KEYS = {"now", "ran", "first", "refused", "gap", "tick", "time"}
 
 
 def show(val):
     return f"{val.state} {val.v!r}" if val.v is not None else val.state
 
 
+def ns(value):
+    """A time a vector gives in seconds, as the whole nanoseconds the engine takes. Anything else goes through."""
+    try:
+        exact = Fraction(str(value)) * 10**9
+    except (ValueError, ZeroDivisionError):
+        return value
+    return int(exact) if exact.denominator == 1 else float(exact)
+
+
 def write(engine, name, value, now):
-    state, sampled = impl.GOOD, now
+    state, at = impl.GOOD, now
     if isinstance(value, dict):
-        state, sampled, value = value.get("state", impl.GOOD), value.get("at", now), value.get("v")
+        state, at, value = value.get("state", impl.GOOD), ns(value["at"]) if "at" in value else now, value.get("v")
     if value in (impl.BAD, impl.NOT_READY):
         state, value = value, None
     if value is not None and not isinstance(value, bool):
         value = float(value)
-    engine.write(name, state, value, float(sampled))
+    engine.write(name, state, value, at)
 
 
 def differs(have, want):
@@ -101,7 +119,7 @@ def run(path):
         return 0, 1, ["the graph was accepted; it should have been refused"]
 
     engine = impl.Engine(graph)
-    period = impl.seconds(doc["period"])
+    period = ns(impl.seconds(doc["period"]))
     saved, differences, compared, calls, now = {}, [], 0, 0, None
     for row in doc["calls"]:
         if any(str(k).startswith("$") for k in row):
@@ -111,9 +129,22 @@ def run(path):
                 engine.restore(saved[row["$restore"]])
             elif "$reset" in row:
                 engine.reset()
+            elif "$rebase" in row:
+                engine.rebase()
+            elif "$write" in row:  # {$write: [name, state, value, time]}: a write with no call after it
+                name, state, value, at = row["$write"]
+                engine.write(name, state, value, ns(at))
+            elif "$refused_write" in row:  # {$refused_write: [name, state, value, time]}: it must be refused
+                compared += 1
+                name, state, value, at = row["$refused_write"]
+                try:
+                    engine.write(name, state, value, ns(at) if at is not None else None)
+                    differences.append(f"after call {calls - 1}: the write {row['$refused_write']} was accepted")
+                except Exception:  # noqa: S110 - any refusal will do; its wording is not specified
+                    pass
             continue
-        now = float(row["now"]) if "now" in row else 0.0 if now is None else now + period
-        where = f"call {calls} (now {now:g})"
+        now = ns(row["now"]) if "now" in row else 0 if now is None else now + period
+        where = f"call {calls} (now {now / 1e9:g})" if isinstance(now, int) else f"call {calls} (now {now})"
         for name, value in row.get("first", {}).items():
             write(engine, name, value, now)
         for name, value in row.items():
@@ -133,6 +164,17 @@ def run(path):
         ran, out = engine.tick(now)
         if ran != row.get("ran", 1):
             differences.append(f"{where}: ran {ran} tick(s), the vector says {row.get('ran', 1)}")
+        if not ran and engine.info is not None:
+            differences.append(f"{where}: a call that ran no tick gave {engine.info}")
+        if ran:  # what the call says of itself (6 rule 10)
+            compared += 1
+            info = engine.info
+            if info["gap"] != row.get("gap", False):
+                differences.append(f"{where}: gap is {info['gap']}, the vector says {row.get('gap', False)}")
+            if "tick" in row and info["tick"] != row["tick"]:
+                differences.append(f"{where}: the last tick is {info['tick']}, the vector says {row['tick']}")
+            if "time" in row and info["time"] != ns(row["time"]):
+                differences.append(f"{where}: the last tick is at {info['time']} ns, the vector says {row['time']} s")
         for name, want in row.items():
             if name in engine.inputs or name in ROW_KEYS:
                 continue

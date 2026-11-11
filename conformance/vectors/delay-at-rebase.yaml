@@ -1,0 +1,15 @@
+# 8.5: at a rebase the values a delay holds carry no sample time from then
+# on. The window takes only new samples: the one the delay held from the
+# old clock is not one, and the first written on the new clock is.
+rules: [8.5, 3.7]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: d, type: delay, in: {x: x}}
+  - {id: w, type: window, in: {x: d.y}, settings: {window: 3s, min_good: 0.3, only_new: true}, out: {count: count}}
+calls:
+  - {now: 1000, x: 1, count: 0}
+  - {now: 1001, count: 1}
+  - {$rebase: true}
+  - {now: 5, gap: true, x: 2, count: 0}
+  - {now: 6, count: 1}

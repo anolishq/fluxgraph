@@ -2,7 +2,10 @@
 
 Sections 3 to 9 and every block type of Appendix A. Units are ignored.
 Standard library only. Choices the text does not settle are listed in
-ASSUMPTIONS.md.
+ASSUMPTIONS.md and, for Amendment 1 (time and the host interface), in
+ASSUMPTIONS-amendment-1.md.
+
+Every time is a whole number of nanoseconds, held as an int (rule 6.2).
 """
 
 import copy
@@ -67,17 +70,32 @@ def ceil_tol(v):
     return int(math.ceil(v))
 
 
-_DUR_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)(ms|s|m|h)")
-_UNITS = {"ms": Fraction(1, 1000), "s": Fraction(1), "m": Fraction(60), "h": Fraction(3600)}
+def _is_time(v):
+    """A time the host gives: a whole number (of nanoseconds)."""
+    return isinstance(v, int) and not isinstance(v, bool) and -(2**63) <= v < 2**63
 
 
-def parse_duration(what, v):
+_NS = 10**9
+_DUR_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)(ns|us|ms|s|m|h)")
+_UNITS = {"ns": 1, "us": 10**3, "ms": 10**6, "s": _NS, "m": 60 * _NS, "h": 3600 * _NS}
+
+
+def parse_length(what, v):
+    """A length as written, in nanoseconds, exactly (it need not be whole)."""
     if not isinstance(v, str):
         raise CompileError("%s: a length of time is a number and a unit, got %r" % (what, v))
     m = _DUR_RE.fullmatch(v)
     if not m:
         raise CompileError("%s: %r is not a length of time" % (what, v))
     return Fraction(m.group(1)) * _UNITS[m.group(2)]
+
+
+def parse_duration(what, v):
+    """A length of time the engine keeps: a whole number of nanoseconds."""
+    d = parse_length(what, v)
+    if d.denominator != 1:
+        raise CompileError("%s: %r is not a whole number of nanoseconds" % (what, v))
+    return int(d)
 
 
 # ---------------------------------------------------------------- settings
@@ -122,19 +140,18 @@ def s_counted(b, st, key, default=REQ):
             raise b.err("missing required setting %r" % key)
         return default
     d = parse_duration("block %r setting %r" % (b.id, key), st[key])
-    q = d / b.ctx.period_fr
-    if q.denominator != 1:
+    if d % b.ctx.period_ns:
         raise b.err("setting %r (%s) is not a whole number of periods" % (key, st[key]))
-    return int(q)
+    return d // b.ctx.period_ns
 
 
 def s_length(b, st, key, default=REQ):
-    """A length of time that is not counted, in seconds."""
+    """A length that only scales a value: any length at all, in seconds."""
     if key not in st:
         if default is REQ:
             raise b.err("missing required setting %r" % key)
         return default
-    return float(parse_duration("block %r setting %r" % (b.id, key), st[key]))
+    return float(parse_length("block %r setting %r" % (b.id, key), st[key]) / _NS)
 
 
 def s_choice(b, st, key, choices):
@@ -524,6 +541,9 @@ class Block:
     def gap(self, g):
         pass
 
+    def rebase(self):
+        """Forget every sample time the block remembers (rule 8.5)."""
+
     def output(self, k, t, ins):
         raise NotImplementedError
 
@@ -628,6 +648,10 @@ class Delay(Block):
     def gap(self, g):
         self.s["buf"] = [(UNC, e[1], e[2], g) if e[0] == GOOD and e is not self.first else e for e in self.s["buf"]]
 
+    def rebase(self):
+        # the values it holds carry no sample time from then on (rule 8.5)
+        self.s["buf"] = [e if e[2] is None else (e[0], e[1], None, e[3]) for e in self.s["buf"]]
+
     def output(self, k, t, ins):
         return {"y": self.s["buf"][0]}
 
@@ -661,6 +685,9 @@ class Window(Block):
 
     def gap(self, g):
         self.s["buf"] = []
+
+    def rebase(self):
+        self.s["last"] = None
 
     def output(self, k, t, ins):
         s = self.s
@@ -1369,6 +1396,11 @@ class Estimator(Block):
         for i in range(len(self.p0)):
             self.s["p"][i][i] += self.p0[i]
 
+    def rebase(self):
+        for port in self.s["considered"]:
+            self.s["considered"][port] = None
+            self.s["used"][port] = None
+
     def output(self, k, t, ins):
         s = self.s
         n = len(self.model.states)
@@ -1425,7 +1457,7 @@ class Estimator(Block):
             if s["used"][port] is None:
                 res["since_" + port] = out(NR)
             else:
-                res["since_" + port] = out(GOOD, t - s["used"][port])
+                res["since_" + port] = out(GOOD, max(0, t - s["used"][port]) / 1e9)
         for i, name in enumerate(self.model.states):
             var = p[i][i]
             sigma = math.sqrt(var) if var >= 0 else float("nan")
@@ -1461,16 +1493,16 @@ BLOCK_TYPES = {
 
 
 class _Ctx:
-    def __init__(self, period_fr):
-        self.period_fr = period_fr
-        self.period = float(period_fr)
+    def __init__(self, period_ns):
+        self.period_ns = period_ns  # the period, in nanoseconds
+        self.period = float(Fraction(period_ns, _NS))  # and in seconds
 
 
 class _Input:
     def __init__(self, type_, max_age, max_ahead, has_initial, initial):
         self.type = type_
-        self.max_age = max_age  # seconds, or None for `none`
-        self.max_ahead = max_ahead  # seconds
+        self.max_age = max_age  # nanoseconds, or None for `none`
+        self.max_ahead = max_ahead  # nanoseconds
         self.has_initial = has_initial
         self.initial = initial
 
@@ -1488,11 +1520,11 @@ class Engine:
                 raise CompileError("unknown key %r at the top of the graph" % (key,))
         if "period" not in graph:
             raise CompileError("the graph has no 'period'")
-        period_fr = parse_duration("period", graph["period"])
-        if period_fr <= 0:
+        period_ns = parse_duration("period", graph["period"])
+        if period_ns <= 0:
             raise CompileError("period: must be more than zero")
-        self._ctx = _Ctx(period_fr)
-        self._period = self._ctx.period
+        self._ctx = _Ctx(period_ns)
+        self._period_ns = period_ns
         self._max_catch_up = graph.get("max_catch_up", 100)
         if not isinstance(self._max_catch_up, int) or isinstance(self._max_catch_up, bool) or self._max_catch_up < 1:
             raise CompileError("max_catch_up: must be a whole number, at least 1")
@@ -1528,11 +1560,11 @@ class Engine:
             if d["max_age"] == "none" and isinstance(d["max_age"], str):
                 max_age = None
             else:
-                max_age = float(parse_duration(what + " max_age", d["max_age"]))
+                max_age = parse_duration(what + " max_age", d["max_age"])
             if "max_ahead" in d:
-                max_ahead = float(parse_duration(what + " max_ahead", d["max_ahead"]))
+                max_ahead = parse_duration(what + " max_ahead", d["max_ahead"])
             else:
-                max_ahead = self._period
+                max_ahead = self._period_ns
             has_initial = "initial" in d
             initial = None
             if has_initial:
@@ -1770,12 +1802,13 @@ class Engine:
     def reset(self):
         self._last_k = None  # number of the last tick run
         self._anchor_k = 0  # a tick whose time is known ...
-        self._anchor_t = 0.0  # ... and its time
-        self._origin_t = 0.0  # time of tick 0, or of the last gap's tick
+        self._anchor_t = 0  # ... and its time
+        self._origin_t = 0  # time of tick 0, or of the last rebase's tick
         self._last_now = None
-        self._restored = False
-        self._standing = {}  # name -> (state, value, sampled, refused)
-        self._pending = {}  # name -> (state, value, sampled)
+        self._rebase = False  # the next call is a rebase (rule 8.3)
+        self._standing = {}  # name -> (state, value, time)
+        self._waiting = {}  # name -> [(state, value, time)], in the order made
+        self.info = None
         for b in self._blocks.values():
             b.reset()
 
@@ -1791,116 +1824,138 @@ class Engine:
     def restore(self, saved):
         if not isinstance(saved, dict) or saved.get("graph") != self._graph_key:
             raise ValueError("this state was not saved from the same graph")
+        if saved["engine"][0] is None:
+            # saved before any tick had run: a reset, and no gap (rule 8.3)
+            self.reset()
+            return
         (self._last_k, self._anchor_k, self._anchor_t, self._origin_t, self._last_now, self._standing) = copy.deepcopy(
             saved["engine"]
         )
         for bid, b in self._blocks.items():
             b.s = copy.deepcopy(saved["blocks"][bid])
-        self._pending = {}
-        self._restored = True
+        self._waiting = {}
+        self._rebase = True
 
-    def write(self, name, state, value, sampled):
+    def rebase(self):
+        """The host says that its clock has stepped (rule 8.3)."""
+        self._waiting = {}
+        if self._last_k is not None:
+            self._rebase = True
+
+    def write(self, name, state, value, at):
         if name not in self.inputs:
             raise KeyError("no input named %r" % (name,))
         if state not in _RANK:
             raise ValueError("unknown state %r" % (state,))
+        if not _is_time(at):
+            raise ValueError("the time of a write is a whole number of nanoseconds")
         if not usable(state):
-            self._pending[name] = (state, None, None)
-            return
-        if self.inputs[name].type == BOOLEAN:
+            value = None
+        elif self.inputs[name].type == BOOLEAN:
             if not isinstance(value, bool):
                 raise ValueError("input %r takes a boolean" % name)
         else:
             if not _is_num(value):
                 raise ValueError("input %r takes a number" % name)
             value = float(value)
-        if not _is_num(sampled) or not math.isfinite(sampled):
-            raise ValueError("a usable value needs a finite sample time")
-        self._pending[name] = (state, value, float(sampled))
+        self._waiting.setdefault(name, []).append((state, value, at))
 
     def _time(self, k):
-        return self._anchor_t + (k - self._anchor_k) * self._period
+        return self._anchor_t + (k - self._anchor_k) * self._period_ns
 
     def tick(self, now):
-        if not _is_num(now) or not math.isfinite(now):
-            raise ValueError("now must be a finite number")
-        now = float(now)
+        if not _is_time(now):
+            raise ValueError("now is a whole number of nanoseconds")
+        period = self._period_ns
         gap = False
+        if self._last_k is not None and not self._rebase and now < self._last_now:
+            raise ValueError("now is earlier than the last call's")
+        # stamped ahead (rule 6.8): at every call, a waiting write whose
+        # time is more than max_ahead after now is done with
+        for name, writes in self._waiting.items():
+            limit = now + self.inputs[name].max_ahead
+            writes[:] = [w for w in writes if w[2] <= limit]
         if self._last_k is None:
             ticks = [(0, now)]
             self._anchor_k, self._anchor_t = 0, now
             self._origin_t = now
-        elif self._restored:
+        elif self._rebase:
+            # a rebase: one tick, at `now`, whatever `now` is (rule 8.5)
             gap = True
-        else:
-            if now < self._last_now:
-                raise ValueError("now is earlier than the last call's")
-            ticks = []
-            k = self._last_k + 1
-            while len(ticks) <= self._max_catch_up:
-                t = self._time(k)
-                if t <= now + 0.5 * self._period + self._period * 1e-6:
-                    ticks.append((k, t))
-                    k += 1
-                else:
-                    break
-            if not ticks:
-                self._last_now = now
-                return (0, None)
-            if len(ticks) > self._max_catch_up:
-                gap = True
-        self._restored = False
-        if gap:
             g = self._last_k + 1
             self._anchor_k, self._anchor_t = g, now
             self._origin_t = now
             self._standing = {}
             for b in self._blocks.values():
+                b.rebase()
                 b.gap(g)
             ticks = [(g, now)]
+        else:
+            last_t = self._time(self._last_k)
+            # how many ticks not yet run are no more than half a period
+            # after now: last_t + j * period <= now + period / 2
+            due = (2 * (now - last_t) + period) // (2 * period)
+            if due <= 0:
+                self._last_now = now
+                self.info = None
+                return (0, None)
+            if due > self._max_catch_up:
+                # a stall: one tick, the last that was due (rule 8.4)
+                gap = True
+                g = self._last_k + 1
+                t = last_t + due * period
+                self._anchor_k, self._anchor_t = g, t
+                for b in self._blocks.values():
+                    b.gap(g)
+                ticks = [(g, t)]
+            else:
+                ticks = [(self._last_k + j, last_t + j * period) for j in range(1, due + 1)]
+        self._rebase = False
         sig = None
         for i, (k, t) in enumerate(ticks):
-            if i == len(ticks) - 1:
-                self._take_up(t)
+            # the last tick of a call may see what the host has in hand
+            self._take_up(max(t, now) if i == len(ticks) - 1 else t)
             sig = self._run_tick(k, t)
             self._last_k = k
         self._last_now = now
+        self.info = {"gap": gap, "tick": ticks[-1][0], "time": ticks[-1][1]}
         outputs = {}
         for name, key in self._published.items():
             s = sig[key]
             outputs[name] = (s[0], s[1])
         return (len(ticks), outputs)
 
-    def _take_up(self, t):
-        slack = self._period * 1e-6
-        for name, (state, value, sampled) in self._pending.items():
-            refused = False
-            if usable(state):
-                refused = sampled - t > self.inputs[name].max_ahead + slack
-            self._standing[name] = (state, value, sampled, refused)
-        self._pending = {}
+    def _take_up(self, limit):
+        """Rule 6.8: the writes waiting whose time is not after `limit` are
+        done with. Among them and what stood, the one with the latest time
+        stands; of two with the same time, the one written later."""
+        for name, writes in self._waiting.items():
+            best = self._standing.get(name)
+            for w in writes:
+                if w[2] <= limit and (best is None or w[2] >= best[2]):
+                    best = w
+            writes[:] = [w for w in writes if w[2] > limit]
+            if best is not None:
+                self._standing[name] = best
 
     def _input_signal(self, name, k, t):
         d = self.inputs[name]
-        slack = self._period * 1e-6
         standing = self._standing.get(name)
         if standing is None:
-            too_long = d.max_age is not None and t - self._origin_t > d.max_age + slack
+            too_long = d.max_age is not None and t - self._origin_t > d.max_age
             if not too_long:
                 if d.has_initial:
                     return (UNC, d.initial, None, k)
                 return (NR, None, None, None)
             return (BAD, None, None, None)
-        state, value, sampled, refused = standing
+        state, value, at = standing
         if not usable(state):
             return (state, None, None, None)
         if d.type == NUMBER and not math.isfinite(value):
             return (BAD, None, None, None)
-        if refused:
+        if d.max_age is not None and t - at > d.max_age:
             return (BAD, None, None, None)
-        if d.max_age is not None and t - sampled > d.max_age + slack:
-            return (BAD, None, None, None)
-        return (state, value, sampled, k if state == UNC else None)
+        return (state, value, at, k if state == UNC else None)
 
     @staticmethod
     def _get(conn, sig):

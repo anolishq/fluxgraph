@@ -1,6 +1,6 @@
 # 7.2.2: an input never written is not_ready until the graph has run for
 # longer than its maximum age, and bad from then on.
-rules: [7.2.2]
+rules: [7.2.1]
 period: 1s
 inputs: {x: {max_age: 2s}}
 blocks:

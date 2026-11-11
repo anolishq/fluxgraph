@@ -1,5 +1,5 @@
-# 6.4: a call with a time earlier than the last is refused, and changes nothing.
-rules: [6.4]
+# 6.11: a call with a time earlier than the last is refused, and changes nothing.
+rules: [6.11]
 period: 1s
 blocks:
   - {id: i, type: integrate, in: {x: 1}, out: {y: n}}

@@ -1,0 +1,18 @@
+# 6.8: a write stamped ahead by no more than max_ahead waits for a tick
+# that may see it. One stamped further ahead is done with at the call, and
+# never stands, not even when its time comes.
+rules: [6.8]
+period: 1s
+inputs: {x: {max_age: none, max_ahead: 2s}, w: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+  - {id: g, type: formula, in: {w: w}, settings: {expr: "w + 0"}, out: {y: v}}
+calls:
+  - {x: {v: 5, at: 2}, w: {v: 5, at: 2}, y: not_ready, v: not_ready}   # w's max_ahead is one period: done with
+  - {y: not_ready, v: not_ready}
+  - {y: 5, v: not_ready}            # tick 2: x's time has come
+  - {x: {v: 9, at: 100}, y: 5}      # stamped far ahead: done with
+  - {x: {v: bad, at: 6}, y: 5}      # a failed read stamped 2 s ahead waits like any write
+  - {y: 5}
+  - {y: bad}                        # tick 6
+  - {now: 100, ran: 94, x: 6, y: 6}

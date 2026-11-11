@@ -1,0 +1,13 @@
+# 8.5: at a rebase a block forgets the sample times it remembers. The clock
+# starts again from a low value, and the window takes the next sample.
+rules: [8.5, 7.3.7]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 2s, min_good: 0.5, only_new: true}, out: {count: count}}
+calls:
+  - {now: 1000, x: 1, count: 1}
+  - {now: 1001, x: 2, count: 2}
+  - {$rebase: true}
+  - {now: 5, gap: true, x: 3, count: 1}
+  - {now: 6, x: 4, count: 2}

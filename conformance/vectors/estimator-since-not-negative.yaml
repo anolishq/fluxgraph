@@ -1,0 +1,19 @@
+# 7.9.6: a call 3 ms late uses a measurement stamped after its tick's time.
+# The time since it is not less than zero.
+rules: [7.9.6, 6.8]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: state_space, A: [[1]], B: [0], C: [1]}
+      q: {x0: 0}
+      p0: {x0: 1}
+      measure: {z: {of: x0, r: 1}}
+    out: {x0: x, since_z: since}
+calls:
+  - {now: 0, u: 0, x: 0, since: not_ready}
+  - {now: 1.003, z: {v: 2, at: 1.002}, x: 1, since: 0}
+  - {now: 2, x: 1, since: 0.998}

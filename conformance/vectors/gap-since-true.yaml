@@ -11,7 +11,7 @@ calls:
   - {x: false, quiet: false}
   - {$save: a}
   - {$restore: a}
-  - {now: 10, x: false, quiet: {u: false}}     # tick 3: the clock starts here
+  - {now: 10, gap: true, x: false, quiet: {u: false}}     # tick 3: the clock starts here
   - {now: 11, x: false, quiet: {u: false}}
   - {now: 12, x: false, quiet: {u: false}}
   - {now: 13, x: false, quiet: true}           # 3 ticks on, and the gap's tick is no longer rested on

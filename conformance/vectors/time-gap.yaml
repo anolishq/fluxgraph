@@ -1,20 +1,22 @@
-# 6.7, 8.3, 8.4: a call that would run more ticks than max_catch_up is a
-# gap. One tick runs, at the call's time. Nothing stands on any input, and
-# what was written before the call is taken up.
-rules: [6.7, 8.3, 8.4]
+# 6.9, 6.10, 8.3, 8.4: a call that would run more ticks than max_catch_up
+# is a stall. One tick runs: the last that was due, numbered one more than
+# the last run. What stood goes on standing, and the call says it was a gap.
+rules: [6.9, 6.10, 8.3, 8.4]
 period: 1s
 max_catch_up: 3
-inputs: {x: {max_age: none}, quiet: {max_age: none}, never: {max_age: 2s}}
+inputs: {x: {max_age: none}, quiet: {max_age: none}, never: {max_age: 2s}, slow: {max_age: 8s}}
 blocks:
   - {id: i, type: integrate, in: {x: x}, out: {y: total}}
   - {id: f, type: formula, in: {q: quiet}, settings: {expr: "q + 0"}, out: {y: q}}
   - {id: g, type: formula, in: {n: never}, settings: {expr: "n + 0"}, out: {y: v}}
+  - {id: h, type: formula, in: {n: slow}, settings: {expr: "n + 0"}, out: {y: s}}
   - {id: n, type: integrate, in: {x: 1}, out: {y: ticks}}
 calls:
   - {now: 0, x: 2, quiet: 7, total: 2, q: 7, v: not_ready, ticks: 1}
   - {now: 1, x: 2, total: 4, q: 7, v: not_ready, ticks: 2}
-  - {now: 4, ran: 3, x: 2, total: 10, q: 7, v: bad, ticks: 5}         # three ticks: not a gap
-  # six would be due: a gap. the graph has run since it, so `never` is not ready again
-  - {now: 10, ran: 1, x: 2, total: {u: 12}, q: not_ready, v: not_ready, ticks: {u: 6}}
-  - {now: 11, total: {u: 14}, q: not_ready, v: not_ready, ticks: {u: 7}}   # later ticks are at whole periods from it
+  - {now: 4, ran: 3, x: 2, total: 10, q: 7, v: bad, s: not_ready, ticks: 5}         # three ticks: not a gap
+  # six would be due: a stall. tick 5 runs, at the place of the last due tick. the write waiting is
+  # taken up. `slow` has gone unwritten for 10 s, counted from tick 0, which the stall does not move.
+  - {now: 10.2, ran: 1, gap: true, tick: 5, time: 10, x: {v: 5, at: 10}, total: {u: 15}, q: 7, v: bad, s: bad, ticks: {u: 6}}
+  - {now: 11, tick: 6, time: 11, total: {u: 20}, q: 7, v: bad, s: bad, ticks: {u: 7}}   # later ticks follow at whole periods
   - {now: 11.4, ran: 0}

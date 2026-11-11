@@ -1,6 +1,6 @@
 # 8.4: what each block does at a gap. Ticks 0 to 2, a save and a restore,
 # then ticks 3 to 5.
-rules: [8.4]
+rules: [8.6]
 period: 1s
 inputs: {x: {max_age: none}, b: {type: boolean, max_age: none}}
 blocks:
@@ -22,6 +22,6 @@ calls:
   - {$restore: a}
   # tick 3. delay: what it held is in doubt. deadband and low-pass: a first input. hysteresis: unsure.
   # held_for: started again. since_true: the gap's tick is in doubt. latch: unsure if unset. model: a doubt.
-  - {now: 50, x: 9, b: true, delayed: {u: 12}, held: 9, smooth: 9, hot: {u: true}, long: false, quiet: {u: false}, unset: {u: false}, lit: true, ramp: {u: 3}}
+  - {now: 50, gap: true, x: 9, b: true, delayed: {u: 12}, held: 9, smooth: 9, hot: {u: true}, long: false, quiet: {u: false}, unset: {u: false}, lit: true, ramp: {u: 3}}
   - {now: 51, x: 9, b: true, delayed: 9, held: 9, smooth: 9, hot: {u: true}, long: false, quiet: false, unset: {u: false}, lit: true, ramp: {u: 4}}
   - {now: 52, x: 9, b: true, delayed: 9, held: 9, smooth: 9, hot: {u: true}, long: true, quiet: false, unset: {u: false}, lit: true, ramp: 5}
