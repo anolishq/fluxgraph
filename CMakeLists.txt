@@ -33,7 +33,7 @@ if(FLUXGRAPH_YAML_ENABLED)
     list(APPEND VCPKG_MANIFEST_FEATURES "yaml")
 endif()
 
-project(fluxgraph VERSION 1.0.6 LANGUAGES CXX)
+project(fluxgraph VERSION 1.1.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
