@@ -185,24 +185,40 @@ What this leaves out, on purpose, and what it keeps open for later:
    branch it chose. The other branch is not looked at.
 4. A division by zero, and any result that is not finite, is `bad`.
 
-### 7.2 Blocks that keep samples
+### 7.2 Windows and holders
 
-A median, a window statistic, a deadband: blocks whose output comes from
-samples they have stored.
+A window gives statistics of recent samples. A holder keeps one value.
 
-1. Each has a required setting, `on_bad`, with no default:
-   - `skip`: an unusable sample is not stored, and what is stored is kept.
-   - `reset`: an unusable sample empties the store.
-2. Each has a setting, `ride_through`, a length of time, which is zero unless
-   given. While the input is unusable:
-   - if the last usable sample was no longer ago than `ride_through`, and the
-     block has a value to give from what it holds, the output is that value
-     and `good`;
+1. **A window is the usable samples of the last stretch of time**, its
+   `window` setting. Its statistics are of those samples and no others: an
+   unusable sample is left out, and a sample older than the window is gone.
+2. A window has a setting, `min_good`: the fraction of its ticks that must
+   hold a usable sample for its outputs to be `good`. It is 1 unless given.
+3. When a window holds fewer usable samples than that, its outputs take the
+   worst state among its ticks that were not usable. A tick from before the
+   graph started counts as `not_ready`.
+4. A slope needs two samples at different times. With fewer it is `bad`.
+5. **A holder** keeps its output until its input has moved by its step or
+   more. Its first usable input is taken as it is.
+6. A holder has a setting, `ride_through`, a length of time, zero unless
+   given. While its input is unusable:
+   - if the last usable input was no longer ago than `ride_through`, and the
+     holder is holding a value, the output is that value and `good`;
    - otherwise the output takes the input's state.
-3. So with `ride_through` left at zero, the output stops being `good` on the
-   same tick as the input. A block reports through a bad stretch only as
-   far as its author said it may.
-4. A block that has not yet stored enough samples is `not_ready`.
+
+   Either way it keeps what it held.
+
+So a window that requires every sample stops being `good` on the tick an
+unusable sample arrives and stays so until that sample has left it. A holder
+with `ride_through` left at zero stops being `good` on the same tick as its
+input. Each reports through a gap only as far as its author said it may.
+
+A window does not need a policy for unusable samples. An earlier draft gave
+it one, with the choices "skip" and "reset". Worked by hand, the two came to
+the same thing once the window was defined by time and not by a count of
+samples, and `min_good` says what the policy was reaching for. OPC UA's
+historical aggregates take the same approach, with a required percentage of
+good data per interval.
 
 ### 7.3 Timers
 
@@ -243,9 +259,15 @@ good. The substituted value is `good`. It applies to the named output only.
 
 ### 7.7 Inputs from outside
 
-An external input is unusable at a tick when the host wrote it as `bad` or
-`not_ready`, when nothing has been written to it yet, when its value is not
-finite, or when it was sampled longer ago than its maximum age.
+At a tick, an external input is:
+
+- `not_ready` if nothing has been written to it, or if the host wrote it as
+  `not_ready`;
+- `bad` if the host wrote it as `bad`, if its value is not finite, or if it
+  was sampled longer ago than its maximum age;
+- otherwise `good`, with the value last written.
+
+A value written and not written again stands, and grows older.
 
 **Open.**
 
@@ -285,10 +307,10 @@ inputs:
 
 blocks:
   - id: pad
-    type: median
+    type: window
     in: { x: heater/pad_c }
-    settings: { samples: 3, on_bad: skip }
-    out: { y: heater/pad_filtered_c }
+    settings: { window: 7.5s }
+    out: { median: heater/pad_filtered_c }
 ```
 
 1. `inputs` lists every signal written from outside, with its unit and its
@@ -327,10 +349,11 @@ its own units, and what a declared unit has to say.
 4. A second implementation passes the same vectors. The vectors are the
    contract between them.
 
-The format already exists as a prototype: tab-separated inputs and expected
-outputs per tick, written by a Python reference and replayed by a C++
-runner. On the experiment described in section 1 it caught sixteen of
-sixteen deliberate breakages once two missing vectors were added.
+A first set exists beside this proposal, in `conformance/`: vectors with
+expected values worked out by hand from the rules above, a small Python
+reference that has to agree with them, and a list of deliberate breakages of
+that reference, each of which a vector has to notice. Writing the expected
+values by hand found a fault in the reference, and changed section 7.2.
 
 ## 12. What happens to 1.x
 
@@ -357,3 +380,61 @@ sixteen deliberate breakages once two missing vectors were added.
 4. The existing models and transforms move across as block types, each
    keeping its analytical validation.
 5. The loaders, the server and the simulator provider follow.
+
+## Appendix A. A first catalogue
+
+**Proposed.** Enough block types to test the rules above. Names, ports and
+settings are placeholders for argument; the behaviour is what the vectors
+pin down. Times are in seconds unless a setting says otherwise.
+
+| Type | Inputs | Settings | Outputs |
+| --- | --- | --- | --- |
+| `formula` | any, named in the formula | `expr` | `y` |
+| `all_good` | any | none | `y` |
+| `delay` | `x`, read from the previous tick | `ticks` (1), `initial` (none) | `y` |
+| `window` | `x` | `window`, `min_good` (1) | `mean`, `median`, `min`, `max`, `spread`, `slope` |
+| `deadband` | `x` | `step`, `ride_through` (0) | `y` |
+| `held_for` | `x` | `time`, `on_bad` | `y` |
+| `since_true` | `x` | `time` | `y` |
+| `latch` | `set` | none | `y` |
+| `total` | `x` | `per` (1 s) | `y`, `missed` |
+| `kalman1` | `z`, `model` | `tau`, `q`, `r` | `x`, `sigma` |
+
+A setting with a value in brackets may be left out and takes that value.
+
+- **`formula`.** Numbers, the block's input names, `+ - * /`, unary minus,
+  the six comparisons, `and`, `or`, `not`, `abs(a)`, `min(a, b)`,
+  `max(a, b)` and `when(condition, a, b)`. A comparison or a logical
+  operator gives 1 or 0. Section 7.1 governs states.
+- **`all_good`.** 1 when every input is usable, else 0. Always `good`.
+- **`delay`.** At tick `k` its output is its input at tick `k - ticks`, state
+  included. Before that tick exists, its output is `initial` and `good`, or
+  `not_ready` if no initial value is given.
+- **`window`.** `window` is a whole number of periods, `n`. At a tick the
+  window is that tick and the `n - 1` before it. `median` of an even number
+  of samples is the mean of the middle two. `spread` is `max - min`. `slope`
+  is the least-squares slope of value against tick time, per second.
+  Section 7.2 rules 1 to 4 govern states.
+- **`deadband`.** Section 7.2 rules 5 and 6.
+- **`held_for`.** Section 7.3 rule 1. The timer starts on the tick its input
+  becomes true, and the output is true on a tick whose time is more than
+  `time` after that.
+- **`since_true`.** Section 7.3 rule 2. Its clock is set to the tick's time on
+  the first tick and on every tick where the input is true.
+- **`latch`.** Section 7.3 rule 3.
+- **`total`.** Section 7.4. On a usable tick it adds `x × period / per`.
+  `missed` is in seconds.
+- **`kalman1`.** One state, relaxing toward `model` with time constant `tau`
+  and corrected by `z`. With `a = 1 - period / tau`, process noise `q` per
+  second and measurement variance `r`:
+  - first usable `z`: `x = z`, `var = r`; nothing else happens on that tick;
+  - on each later tick, first predict: with `model` usable,
+    `x = a·x + (1 - a)·model` and `var = a²·var + q·period`; otherwise `x`
+    is unchanged and `var = var + q·period`;
+  - then, with `z` usable, correct: `k = var / (var + r)`,
+    `x = x + k·(z - x)`, `var = var·(1 - k)`.
+
+  `sigma` is the square root of `var`. Section 7.5 governs states.
+
+A block may carry `fallback`, a map from an output port to a number
+(section 7.6).
