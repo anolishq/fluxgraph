@@ -33,7 +33,6 @@ set(FLUXGRAPH_BUILD_TESTS OFF)     # v1.0.6 builds tests by default, and tests n
 set(FLUXGRAPH_BUILD_EXAMPLES OFF)
 FetchContent_MakeAvailable(fluxgraph)
 target_link_libraries(your_target PRIVATE fluxgraph)
-target_compile_features(your_target PRIVATE cxx_std_20)
 ```
 
 Replace `v1.0.6` with the
