@@ -12,10 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 1.1.0 is a minor release: it adds `CompiledProgram::model_output_signal_ids()`
 and changes build defaults for embedding projects. The fixes below refuse some
 inputs that used to load or run. Each of those was a bug, a silent misload or
-undefined behaviour, never a graph that worked, so they are fixes rather than
-breaking changes. Two fixes also change the output of a valid graph: a delay's
-tick count where `delay_sec / dt` is meant to be a half, and a server write to a
-model output, both below.
+undefined behaviour, never a graph its documented format allowed, so they are
+fixes rather than breaking changes. Two fixes also change the output of a valid
+graph: a delay's tick count where `delay_sec / dt` is meant to be a half, and a
+server write to a model output, both below.
 
 Upgrade notes:
 
@@ -23,7 +23,9 @@ Upgrade notes:
   `edges` or `rules` key that is neither an array nor null, a root that is not
   an object or map, and a rule without `actions` used to load as an empty graph
   or with action-less rules. They now fail with a path-qualified error. Fix the
-  file. A null section, such as a bare `rules:`, still loads as empty.
+  file. A rule's `actions` with no value (`actions:`, `"actions": null`) fails
+  too: `actions` is required, and an empty list is `actions: []`. A null
+  top-level section, such as a bare `rules:`, still loads as empty.
 - **A `saturation` or `linear` transform with inverted or NaN bounds** now fails
   to compile, and its constructor throws `std::invalid_argument`.
 - **`DelayTransform::apply` throws on a `dt` that is not positive and finite.**
@@ -33,7 +35,8 @@ Upgrade notes:
   be a half but its floating-point quotient lands just below it, and after a
   `dt` change the delay now follows `delay_sec`.
 - **Through `fluxgraph-server`, a write to any model output** is refused with
-  `PERMISSION_DENIED`, not only to `thermal_mass` outputs.
+  `PERMISSION_DENIED`, not only to `thermal_mass` outputs, and `ReadSignals`
+  reports every model output as `physics_driven`.
 - **An embedding project that relied on fluxgraph's tests or examples being
   built** as a subproject must now set `FLUXGRAPH_BUILD_TESTS` or
   `FLUXGRAPH_BUILD_EXAMPLES` to ON.
@@ -55,7 +58,7 @@ Upgrade notes:
   standard its headers need, so a project that links it, including through the
   installed `fluxgraph::fluxgraph`, is compiled as at least C++17. A project at
   C++17 or above keeps its own standard; fluxgraph itself still builds as
-  C++20. (#121)
+  C++20. (#121, #180)
 
 ### Fixed
 
@@ -74,11 +77,12 @@ Upgrade notes:
   These inputs loaded before and now fail with a path-qualified error:
   - a top-level `signals`, `models`, `edges` or `rules` key that is present but
     neither an array (JSON) / sequence (YAML) nor null; a null section, such as
-    a bare `rules:`, loads as empty, as before
+    a bare `rules:`, loads as empty, as before (#181)
   - a JSON root that is not an object (an array, a scalar, `null`)
-  - a YAML root that is not a map, including a null document: `~`, `null`, a
-    bare `---`, or a lone `...` (yaml-cpp reads each as one document with null
-    content)
+  - a YAML root that is a sequence, or a null document: `~`, `null`, a bare
+    `---`, or a lone `...` (yaml-cpp reads each as one document with null
+    content). A scalar root failed before too, with a yaml-cpp error; it now
+    gets the same path-qualified one
   - a rule whose `actions` is missing or not an array / sequence (`actions` is
     required, and may be empty)
 
@@ -129,7 +133,7 @@ Upgrade notes:
   binary cache but no longer saves it. It builds only gtest under the
   x64-linux key the server-enabled lane saves with grpc; finishing first after
   a cache key change, it would leave that lane unable to save and later jobs,
-  clang-tidy among them, building grpc from source.
+  clang-tidy among them, building grpc from source. (#167)
 
 ## [1.0.6] - 2026-07-04
 
