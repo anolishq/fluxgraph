@@ -1,6 +1,6 @@
 # FluxGraph semantics, version 2 (proposal)
 
-**Status:** proposal, third revision. Not in force.
+**Status:** proposal, third revision, as amended. Not in force.
 [semantics_spec.md](semantics_spec.md) stays the normative contract for
 FluxGraph 1.x until this is accepted, at which point this document replaces
 it and the library becomes 2.0.
@@ -35,6 +35,24 @@ found, and what this revision does about it:
   specified (section 7.9), hosting a model as its predictor.
 - **Restore gave `good` values from memory a day old.** A restore is now a
   gap (section 8), and every block says what a gap does to it.
+
+The third revision was reviewed in its turn, and was found sound in its
+structure and wrong in particular rules. It is being amended a section at a
+time. **Amendments so far:**
+
+1. *Time and the host interface* (sections 6, 7.2 and 8). Times are whole
+   nanoseconds, so that no comparison of times needs a tolerance. Every
+   write carries a time. What stands on an input is the write with the
+   latest time among those a tick may see, and a tick the host did not call
+   for may see only what had been sampled by its own time. A call says
+   whether it was a gap. A restore, or a clock that has stepped, forgets
+   every remembered time.
+
+Still to be amended, and known to be wrong as they stand: how `uncertain`
+passes through memory (sections 3.8 and 7); how a gap acts on each block
+(section 8), which is not told how long the gap was, so that a total or a
+timer counts one period for a stall of any length; how models are stepped
+(section 7.8); and when an estimator's outputs are `good` (section 7.9).
 
 ## 1. Why a second version
 
@@ -98,7 +116,7 @@ evaluation, implicit solvers, vector values.
    whatever the block. The block's state is not put right for it.
 7. A signal may carry a **sample time**: the time, on the host's clock,
    that its value was taken.
-   - An input from outside carries the sample time it was written with.
+   - An input from outside carries the time it was written with.
    - A `formula` output carries the sample time of the input its
      `sample_of` setting names. A formula with exactly one signal input
      and no `sample_of` carries that input's.
@@ -201,68 +219,119 @@ evaluation, implicit solvers, vector values.
    A running total, a filter and a model each have a block with a rule for
    it.
 
-## 6. Time
+## 6. Time and the host
 
 **Proposed.** A fixed timestep. The host says what time it is; the engine
-runs as many ticks of one fixed length as fit; every tick reads its inputs
-as they stand.
+runs as many ticks of one fixed length as fit. A tick the host did not call
+for reads its inputs as they stood at its own time, and the tick it did
+call for reads what the host has in hand.
 
 1. A graph has one **period**, fixed when it is compiled. Every block runs
    once per tick.
-2. Every length of time a block counts (a window, a timer, a limit) is a
-   whole number of periods, and a graph where one is not is refused. The
-   test is exact, on the numbers as written: `0.3s` is three periods of
-   `0.1s`, and `900.0000001ms` is not three periods of `300ms`. Inside a
-   block, time is counted in ticks. Where a rule rounds a number of ticks
+2. **A time is a whole number of nanoseconds.** That is so for the clock
+   the host passes, for the time a write carries, and for every length of
+   time the engine keeps: the period, a counted length, a maximum age and
+   `max_ahead`. One of those that is not a whole number of nanoseconds is
+   refused. No comparison of times has a tolerance, because none needs one.
+3. Every length of time a block counts (a window, a timer, a limit) is a
+   whole number of periods, and a graph where one is not is refused. Inside
+   a block, time is counted in ticks. Where a rule rounds a number of ticks
    or of samples up to a whole number, a value within 10⁻⁹ of a whole
-   number is that number. Two kinds of length are not counted and
-   may be any length: an input's maximum age and how far ahead it may be
-   stamped, and a setting that only scales a value (`tau`, `per`).
-3. The host passes the time to every call: `tick(now)`. The clock is the
-   host's. It is in seconds, it is a finite number, and it does not go
-   backwards. It is the clock sample times are given on.
-4. The first call runs tick 0, and the time of tick 0 is that `now`. Tick
-   `k` is at the time of tick 0 plus `k` periods.
-5. A call runs, in order, every tick not yet run whose time is no more than
-   half a period after `now`, with the slack of rule 10. If none is due the
-   call does nothing, and says it ran no tick.
-6. The host writes an input at any moment: a state, a value, and the time
-   it was sampled. Everything written since the last tick that ran is taken
-   up together, at the **last** tick of the next call that runs one. The
-   ticks of that call before the last are **catch-up** ticks. They see what
-   stood before those writes.
-7. A graph has a setting, `max_catch_up`, 100 unless given. When a call
-   would run more ticks than that, it is a **gap** (section 8): one tick is
-   run, numbered one more than the last, and its time is `now`. Later ticks
-   are at whole periods from it.
-8. A call gives the number of ticks it ran and the outputs of the last. The
-   outputs of catch-up ticks are not given.
-9. A call with a `now` that is not finite, or is earlier than the last
-   call's, is refused and changes nothing. One with the same `now` is
-   accepted.
-10. Four comparisons of times allow a **slack** of one millionth of a
-    period, so that a period that is not exact in binary does not put a
-    value on the wrong side: a tick's time against half a period after
-    `now` (rule 5), an age against a maximum age, a sample time against how
-    far ahead it may be, and how long the graph has run against a maximum
-    age (section 7.2). In each, "more than" means more than by over the
-    slack.
+   number is that number. An input's maximum age is not counted, and may
+   be any whole number of nanoseconds. A setting that only scales a value
+   (`tau`, `per`) is not a time the engine keeps: it is written as a length
+   and may be any length at all.
+4. The host passes the time to every call: `tick(now)`. The clock is the
+   host's, and it does not go backwards. It should be one that does not
+   step: the engine cannot tell a step from a stall.
+5. The first call runs tick 0, and the time of tick 0 is that `now`. Each
+   tick after it is one period later than the one before, except across a
+   gap (section 8), which moves them.
+6. A call runs, in order, every tick not yet run whose time is no more than
+   half a period after `now`. A tick exactly half a period after is run. If
+   none is due the call does nothing, says it ran no tick, and gives
+   nothing else.
+7. **Writes.** The host writes an input at any moment: a state, a value if
+   the state is usable, and a **time**. For a usable value the time is when
+   it was sampled. For `bad` or `not_ready` it is when that became so: when
+   the read failed. Every write carries one. A time may be any whole
+   number that fits in 64 bits, signed.
+8. **Which writes a tick may see.** A write waits until a tick may see it.
+   - The **last** tick a call runs may see every write whose time is not
+     after the later of that tick's time and the call's `now`. A sample
+     the host has in hand when it calls is seen by that call.
+   - A tick before the last, a **catch-up** tick, may see a write whose
+     time is not after the tick's own.
+
+   **What stands.** At a tick, for each input, the engine takes the writes
+   waiting that the tick may see. They are done with. Among them, and what
+   stood before, the one with the latest time stands from this tick on. Of
+   two with the same time, the one written later stands. A write with an
+   earlier time than what stands never stands.
+
+   **Stamped ahead.** An input has a setting, `max_ahead`, one period
+   unless given. At every call that is not refused, before any tick runs, a
+   waiting write whose time is more than `max_ahead` after `now` is done
+   with, and never stands.
+
+   So:
+   - a host a little early or a little late sees, at each call, the sample
+     it has just taken;
+   - an old sample that arrives late does not displace a newer one;
+   - a sample stamped a little ahead waits for its time, and one stamped
+     far ahead, by a clock that is wrong, is thrown away at the next call.
+
+   How many writes may wait on an input is not bounded here.
+9. A graph has a setting, `max_catch_up`, 100 unless given. When a call
+   would run more ticks than that, it is a **gap** (section 8).
+10. A call that ran a tick gives: the number of ticks it ran; whether it
+    was a gap; the number and the time of the last tick it ran; and that
+    tick's outputs. The outputs of the ticks before the last are not given.
+11. These are refused, and change nothing:
+    - a call with a `now` earlier than that of the last call that was not
+      refused, whether or not that call ran a tick. One with the same `now`
+      is accepted;
+    - a write to a name that is not an input of the graph;
+    - a usable write with no value, or one whose value is not of the
+      input's type; and a write whose state is not one of the four;
+    - a write or a call whose time is not a whole number, or does not fit
+      in 64 bits, signed.
+12. Calls and writes are made one at a time. A host with several threads
+    sees to that itself.
 
 So a host whose loop is a little slow or a little fast runs, now and then,
-two ticks in a call or none. Nothing is lost: the extra tick sees the same
-inputs, a period older. Counted times and totals stay true to the host's
-clock. A host that stalls for a minute runs the ticks it missed on its next
-call, on inputs that grow old and turn `bad` through their maximum age,
-which is the true reason.
+two ticks in a call or none. The extra tick reads what had been sampled by
+its own time. Short of a stall, counted times and totals stay true to the
+host's clock.
+
+**What the host has to do** for that to hold:
+
+- **Write every sample, with its time, as it is taken.** A tick thread that
+  stalls for eight seconds while samples go on being written runs its
+  catch-up ticks on those samples. A host that keeps only its latest sample
+  and hands that over before the call runs them on what stood before the
+  stall: the engine cannot see what it was never given.
+- **Write inputs that were sampled together before the same call.** They
+  are then taken up at the same tick.
+- **After a gap** (section 8), look to whatever it counts on: a gap is
+  reported, and a total or a timer that ran across one is in doubt.
 
 What this still leaves out:
 
-- **The host's clock.** If it steps, the engine sees the step. A host
-  should pass a clock that does not.
-- **Sampling.** An input is read once per tick. A signal that changes
-  faster than that is aliased: a relay cycling every 10 s and read every
-  2.5 s reports a duty cycle that depends on phase. An input has to be
-  slower than the period, or be a count the device keeps.
+- **More than one write per tick.** An input is read once per tick. Of
+  several writes between two ticks, one is seen. A host that writes faster
+  than the period loses the rest, and a signal that changes faster than the
+  period is aliased: a relay cycling every 10 s and read every 2.5 s reports
+  a duty cycle that depends on phase. An input has to be slower than the
+  period, or be a count the device keeps.
+- **Phase.** Ticks stay where the first call put them. A host that calls
+  half a period off them runs no tick on some calls and two on others, for
+  good. Nothing here moves the ticks to where the host now is, short of a
+  rebase, which clears the inputs as well.
+- **The limit on catching up is in ticks**, so it is a second of invented
+  history at a period of 10 ms and four minutes at 2.5 s.
+- **A period that is not a whole number of nanoseconds**, such as a
+  sixtieth of a second, cannot be written.
 - **Different rates.** Everything runs at one period.
 
 **Open.**
@@ -308,13 +377,12 @@ A formula has no memory.
 
 ### 7.2 Inputs from outside
 
-An input declares its type, a **maximum age**, and optionally a unit, an
-initial value and how far **ahead** it may be stamped. The maximum age is
-required: a length of time, or `none`. `max_ahead` is one period unless
-given.
+An input declares its type and a **maximum age**, and optionally a unit, an
+initial value and `max_ahead` (rule 6.8). The maximum age is required: a
+length of time, or `none`.
 
 At a tick whose time is `t`, an input is the first of these that applies.
-"What stands" is the latest write the engine has taken up (rule 6.6).
+"What stands" is as rule 6.8 says.
 
 1. If nothing stands:
    - `uncertain`, with its declared initial value and no sample time, if
@@ -323,20 +391,20 @@ At a tick whose time is `t`, an input is the first of these that applies.
    - otherwise `not_ready`, until the graph has run for more than the
      maximum age, and `bad` from then on.
 
-   The graph has run for `t` less the time of tick 0.
+   The graph has run for `t` less the time of tick 0 as the first call
+   gave it, or less the time of the last rebase's tick (section 8). A stall
+   does not change it.
 2. `not_ready` or `bad`, if that is the state that stands.
 3. `bad`, if the value that stands is not finite.
-4. `bad`, if what stands was **refused**. It is refused at the tick that
-   takes it up if its sample time is more than `max_ahead` after that
-   tick's time, and it stays refused until something else is written.
-5. `bad`, if its age, `t` less its sample time, is more than the maximum
-   age.
-6. `uncertain` or `good`, as it stands, with that value and sample time.
+4. `bad`, if its age, `t` less its time, is more than the maximum age. The
+   age of a sample stamped after the tick is below zero, which is not more
+   than any maximum.
+5. `uncertain` or `good`, as it stands, with that value and that time as
+   its sample time.
 
 A value written and not written again stands, and grows older. A write of
-`not_ready` or of `bad` does not grow old. A sample stamped ahead by no
-more than `max_ahead` has an age below zero, which is not more than any
-maximum.
+`not_ready` or of `bad` does not grow old. An age exactly equal to the
+maximum is usable.
 
 ### 7.3 Windows
 
@@ -348,7 +416,7 @@ and its doubt with it.
    no others.
 2. A window has a setting, `min_good`: the fraction of its `n` ticks that
    must hold a usable sample. It is 1 unless given. The number of samples
-   needed is `min_good × n` rounded up to a whole number (rule 6.2), and
+   needed is `min_good × n` rounded up to a whole number (rule 6.3), and
    at least 1.
 3. When a window holds fewer usable samples than that, every output but
    `count` takes the worst state among its ticks that hold none. A tick
@@ -584,7 +652,8 @@ measurement reads one state.
      its innovation, `good`; on any other tick `not_ready`;
    - `refused_<port>`: how many have been refused, `good`;
    - `since_<port>`: the time from the sample time of the measurement last
-     used to the tick, `good`; `not_ready` until one has been used.
+     used to the tick, and not less than zero, `good`; `not_ready` until one
+     has been used.
 
 An estimator with a stable model and little process noise stays confident
 through a long stretch without measurements, and is right to if the model
@@ -616,23 +685,42 @@ it. An output made `bad` by rule 3.6 is replaced like any other.
 **Proposed.**
 
 1. A graph can be reset to its initial state. After a reset the next call
-   runs tick 0 again, at whatever `now` it is given, and nothing stands on
-   any input.
+   runs tick 0 again, at whatever `now` it is given. Nothing stands on any
+   input, and every write not yet taken up is done with.
 2. A graph can write its state out and take it back, so that a host can
    save a running graph and restore it. A state saved from one graph is
    refused by a graph that is not the same.
-3. A **gap** is time the graph did not see: a restore, or a call that would
-   run more than `max_catch_up` ticks. After a restore the next call is a
-   gap whatever its `now`, and may carry any `now`. Restoring a state saved
-   before any tick had run is a reset, and not a gap.
-4. At a gap one tick runs. Its number is one more than the last tick's, its
-   time is the call's `now`, and later ticks are at whole periods from it.
-   Before it runs:
-   - nothing stands on any input any longer. After a restore, what had
-     been written before it and not yet taken up is dropped too. What the
-     host wrote since the last tick, or since the restore, is taken up as
-     usual. For rule 7.2.1 the graph has run since the gap's tick;
-   - every block is told, and does what this table says.
+3. A **gap** is time the graph did not see. There are two kinds.
+   - A **stall**: a call that would run more than `max_catch_up` ticks. The
+     clock is the same clock, and the ticks stay where they were.
+   - A **rebase**: the first call after a restore, or after the host has
+     said that its clock has stepped (`rebase`). The clock may be another
+     clock altogether, and the call may carry any `now`.
+
+   Restoring a state saved before any tick had run is a reset, and neither.
+4. At a stall, one tick runs: the last one that was due. Its number is one
+   more than that of the last tick run, its time is that due tick's, and
+   later ticks follow it at whole periods. Writes are taken up as at any
+   tick, and what stood goes on standing, as old as it is.
+5. At a rebase, one tick runs. Its number is one more than that of the last
+   tick run, its time is the call's `now`, and later ticks are at whole
+   periods from it. Before it runs:
+   - nothing stands on any input. Every write still waiting was done with
+     when the state was restored or the host said its clock had stepped;
+     what it writes after that waits as usual. For rule 7.2.1 the graph has
+     run since this tick. **A host has to write every input again after a
+     rebase**, the ones it writes only on change among them;
+   - every sample time a block remembers or holds is forgotten. A window
+     with `only_new` takes the next usable sample, and an estimator
+     considers the next measurement, as if they had seen none; an estimator
+     has used none, so its `since_<port>` is `not_ready`; and the values a
+     delay holds at that moment lose their sample times.
+
+   `rebase` before any tick has run does away with the writes waiting, and
+   nothing else: the next call runs tick 0 and is not a gap. A reset after
+   a `rebase` is a reset, and the next call is not a gap.
+6. At either kind, before the tick runs, every block is told, and does what
+   this table says. The call says it was a gap (rule 6.10).
 
 | Block | At a gap |
 | --- | --- |
@@ -648,10 +736,9 @@ it. An output made `bad` by rule 3.6 is replaced like any other.
 | Model block | The gap's tick is a doubt (rule 7.8.6) |
 | `estimator` | Each state's variance grows by its `p0` |
 
-Nothing else changes at a gap. A window with `only_new` keeps the sample
-time it last took, an estimator keeps its state, its counts and the sample
-times it last considered and used, and a model keeps the last usable value
-of each input.
+Nothing else changes at a gap. An estimator keeps its state and its counts,
+and a model keeps the last usable value of each input. At a stall, which is
+on one clock, a block keeps the sample times it remembers.
 
 **Open.** What "the same graph" means: the same text, or the same blocks,
 settings and period, and in either case the same layout of state in the
@@ -679,8 +766,8 @@ blocks:
 ```
 
 1. `inputs` lists every signal written from outside, with its type, its
-   maximum age and, where it has them, its unit, `max_ahead` and initial
-   value. A type left out is `number`. A graph that reads a signal which is
+   maximum age and, where it has them, its unit, initial value and
+   `max_ahead`. A type left out is `number`. A graph that reads a signal which is
    neither an input nor a block's output is refused.
 2. A block's `in` maps each input port to a signal, named as text, or to a
    constant. Its `out` maps output ports to signal names, which are text; a
@@ -689,8 +776,10 @@ blocks:
    input and no published signal may have a name of the form
    `<block id>.<port>` for a block and port of the graph.
 3. A length of time is written as a number and a unit with nothing between
-   them: `ms`, `s`, `m` or `h`. The number is digits, with an optional
-   point and more digits. A number without a unit is refused.
+   them: `ns`, `us`, `ms`, `s`, `m` or `h`. The number is digits, with an
+   optional point and more digits. A number without a unit is refused. So
+   is a length the engine keeps as a time (rule 6.2) that is not a whole
+   number of nanoseconds.
 4. A setting that is a whole number is written without a point: `2`, not
    `2.0`.
 5. These are compile errors: an unknown key, at the top of the graph or in
@@ -737,8 +826,8 @@ and what a declared unit has to say.
 5. Values are compared to within one part in 10⁹. Where a rule turns on
    exact equality, a vector uses values that are exact in binary.
 6. The two implementations are also run side by side on random inputs and
-   call times, at a period that is exact in binary and at one that is not,
-   with saves, restores and resets among the calls.
+   call times, at clock values small and large, with stalls, saves,
+   restores, rebases and resets among the calls.
 
 `conformance/` holds the vectors, two readings of this proposal, and the
 checks that run them.
@@ -750,7 +839,7 @@ checks that run them.
 | `IModel` | A model, hosted by a block or by an estimator |
 | `ITransform` | A block |
 | Edges | Gone; a signal is named as an input |
-| `tick(dt)` | `tick(now)`; the period is fixed at compile |
+| `tick(dt)` | `tick(now)`, in whole nanoseconds; the period is fixed at compile |
 | Models run first, then edges | One sorted order, two phases |
 | A model's output is its state after the step | Its state at the tick (rule 7.8.1) |
 | Signal: a number and a unit | A typed value, a state, a sample time |
