@@ -1,6 +1,6 @@
 # FluxGraph semantics, version 2 (proposal)
 
-**Status:** proposal, third revision, as amended. Not in force.
+**Status:** proposal, third revision, with two amendments. Not in force.
 [semantics_spec.md](semantics_spec.md) stays the normative contract for
 FluxGraph 1.x until this is accepted, at which point this document replaces
 it and the library becomes 2.0.
@@ -21,9 +21,9 @@ found, and what this revision does about it:
   stands, judged by its age.
 - **`uncertain` was not one idea.** It washed out through a latch, a
   hysteresis and a low-pass, and stuck for ever on a total. It is now a
-  taint on memory with a stated end (section 7), and an uncertain value
-  carries the tick of what caused it, so that taint going round a loop
-  runs out.
+  taint on memory with a stated end (section 7). This revision first gave
+  an uncertain value the tick of what caused it; the second amendment
+  takes that out, and gives a loop a doubt of its own (rule 7.8.8).
 - **A sample was new when it was written, not when it was taken.** A host
   that republishes what it holds made an estimator correct on one sample
   many times. A signal now carries its sample time, and a block that needs
@@ -48,18 +48,24 @@ time. **Amendments so far:**
    whether it was a gap. A restore, or a clock that has stepped, forgets
    every remembered time.
 
+2. *Doubt through memory* (sections 3 and 7, and the table of section 8).
+   An `uncertain` value no longer carries the tick of its cause. A block is
+   never `good` on a tick where a value it used is `uncertain`; a block
+   with declared, finite memory is `uncertain` for that long after it took
+   in something doubtful; a window's tolerance covers an uncertain sample
+   as it covers a missing one; a block whose memory has no end reports
+   `good` or `bad` and gives counters a graph can test; and a feedback loop
+   that holds a model is treated as one block. What that gives up is listed
+   at the end of section 7.
+
 Still to be amended, and known to be wrong as they stand:
 
-- how `uncertain` passes through memory (sections 3.8 and 7). With it, a
-  window with `only_new` (rule 7.3.7): a tick the host did not call for
-  holds no new sample, and at the default `min_good` that one hole spoils
-  the window for its whole length;
 - how a gap acts on each block (section 8). A block is not told how long
   the gap was, so that a total or a timer counts one period for a stall of
   any length; and short of `max_catch_up` a pause of any length is run as
   ordinary ticks on what stood, with nothing to say so but inputs growing
   old;
-- how models are stepped (section 7.8);
+- how models are stepped (section 7.8, rules 1 to 4 and 7);
 - when an estimator's outputs are `good` (section 7.9).
 
 ## 1. Why a second version
@@ -136,18 +142,6 @@ evaluation, implicit solvers, vector values.
    A block that must not use one sample twice remembers the sample time it
    last used, and uses a value only when its sample time is later. There is
    no other notion of a sample being new.
-8. An `uncertain` value carries its **cause**: the number of the tick at
-   which the thing that made it uncertain happened.
-   - Where a rule in this document makes a value uncertain and names no
-     cause, the cause is the tick it happens at. An input that stands
-     `uncertain`, or is on its initial value, is uncertain anew at every
-     tick it is read: its cause is each tick's own.
-   - Otherwise the cause of an uncertain block output is the latest cause
-     among the block's direct inputs that are uncertain at that tick, or
-     the tick itself if none is.
-
-   The cause is what lets a block whose memory fades say when a doubt has
-   faded with it (sections 7.4, 7.8). It is not given to the host.
 
 **Open.**
 
@@ -221,11 +215,11 @@ evaluation, implicit solvers, vector values.
    refused.
 5. Nothing reads a value a tick late by accident. That lag exists only
    where a block declares an input deferred.
-6. A loop made of a formula and a delay has no memory that fades. One
-   unusable value in it stays in it, and so does one uncertain value. This
-   is true of what such a loop computes and is not put right by any rule.
-   A running total, a filter and a model each have a block with a rule for
-   it.
+6. A loop that holds no model, a formula and a delay say, has no memory
+   that fades. One unusable value in it stays in it, and so does one
+   uncertain value. This is true of what such a loop computes and is not
+   put right by any rule. A running total and a filter each have a block
+   with a rule for it, and a loop that holds a model has rule 7.8.8.
 
 ## 6. Time and the host
 
@@ -358,7 +352,10 @@ host's clock.
   thrown away; one that is only out of order with a write still waiting
   may stand for a tick before the later one does.
 - **After a gap** (section 8), look to whatever it counts on: a gap is
-  reported, and a total or a timer that ran across one is in doubt.
+  reported to the host, and each block that counts gives `gaps`. A total
+  or a detector that ran across one is `good`. A timer the gap stopped
+  shows nothing of it once it starts again: the call's report is the only
+  word of that.
 
 What this still leaves out:
 
@@ -387,13 +384,55 @@ What this still leaves out:
 
 ## 7. States through a graph
 
-**Proposed.** The default is that a problem is never hidden, and that a
-value resting on a doubtful memory says so for as long as it does.
+**Proposed.** A problem at this tick is never hidden. A problem in the
+past is remembered for as long as a block says it remembers, and no longer.
 
-**The rule for memory.** A block's output is `uncertain` while any memory
-it rests on took in something that was not `good`, until that memory is
-flushed. Each block below says what its memory is and when it is flushed.
-A block is free to give something worse than `uncertain`.
+**Rule D.** A block's output is never better than `uncertain` on a tick
+where a value the block used to give that output at that tick is
+`uncertain`. Each block's rule says what it uses. A formula does not use an
+operand that did not decide, an `uncertain` operand beside a `good` one
+that decides by itself, or a branch it did not take (rules 7.1.2 and
+7.1.3); a latch that is set does not use `set`; `all_good`, a window's
+`count` and the counters read states and not values, and are always `good`.
+A value a block took in at an earlier tick is not one it uses at this
+tick: what the block remembers of it is the block's own rule. There are
+two exceptions to rule D, each named where it is made: a delay, window or
+low-pass on a loop that holds a model block, once the loop has settled
+(rule 7.8.8), and the estimator, whose rule 7.9.5 is still to be amended.
+
+**Memory.** A block that keeps something from one tick to the next says
+how long that memory is.
+
+- **Finite memory**: a window's `n` ticks, a low-pass's or a model's
+  `settle`. The block is `uncertain` for that long after it took in
+  something doubtful, and no longer.
+- **Memory with no end**: which way a hysteresis last switched, whether a
+  latch is set, a running total, how long a timer has run. The block
+  reports `good` or `bad` by what it has in front of it now, and gives
+  **counters** that a graph can test: how long it has been going
+  (`elapsed`), how much of that time its input was not `good`
+  (`doubtful`), and how many gaps there were in it (`gaps`). `good` does
+  not vouch for history older than a block's declared memory.
+- **A tolerance** the graph's author declared (a window's `min_good`, a
+  total's `max_missed`) is the author's statement of what is acceptable.
+  Within it an output is `good`. A `ride_through` is not one: a block
+  riding through says `uncertain` while it does.
+
+**Settle.** Where a block is `uncertain` "for `settle` after a doubt" at
+tick `d`, it is so on the `settle` ticks after `d`: ticks `d + 1` to
+`d + settle`. What it is at tick `d` itself is given by rule D and the
+block's own rule.
+
+**Counters.** `elapsed` and `doubtful` are numbers, in seconds, and always
+`good`. `elapsed` counts whole ticks, the present one among them, since
+the event the block names, and `doubtful` counts those of them on which
+the input the block names was not `good`. So `doubtful` is never more than
+`elapsed`, and the first tick counted gives an `elapsed` of one period.
+`gaps` is a number, a count, and always `good`: the gaps (section 8) whose
+tick is the one `elapsed` counts from, or a later one. Every block that
+gives `elapsed` gives `gaps`, and where `elapsed` is zero because nothing
+is being counted, as for a `held_for` whose timer is not running, `gaps`
+is zero too.
 
 ### 7.1 Formulas
 
@@ -454,32 +493,38 @@ maximum is usable.
 
 ### 7.3 Windows
 
-A window's memory is the samples it holds. A sample leaves after `n` ticks,
-and its doubt with it.
+A window's memory is its `n` ticks. A sample leaves after `n` ticks, and
+its doubt with it.
 
-1. **A window is the usable samples of its last `n` ticks**, where `n` is
-   its `window` setting in periods. Its statistics are of those samples and
-   no others.
+1. **A window looks at the samples of its last `n` ticks**, where `n` is
+   its `window` setting in periods.
 2. A window has a setting, `min_good`: the fraction of its `n` ticks that
-   must hold a usable sample. It is 1 unless given. The number of samples
-   needed is `min_good × n` rounded up to a whole number (rule 6.3), and
-   at least 1.
-3. When a window holds fewer usable samples than that, every output but
-   `count` takes the worst state among its ticks that hold none. A tick
-   from before the graph started, or from before a gap, holds none and
-   counts as `not_ready`.
-4. Otherwise its outputs are `good` if every one of its `n` ticks holds a
-   `good` sample, and `uncertain` if not.
-5. A slope needs two usable samples. With one it is `bad`, while the other
-   statistics are as rule 4 says.
-6. `count`, the number of usable samples the window holds, is always `good`.
-7. With `only_new: true` a tick holds a sample only if the input is usable
+   must hold a `good` sample for it to be `good`. It is 1 unless given.
+   The number **needed** is `min_good × n` rounded up to a whole number
+   (rule 6.3), and at least 1.
+3. With fewer usable samples than are needed, every output but `count`
+   takes the worst state among its ticks that hold none. A tick from before
+   the graph started, or from before a gap, holds none and counts as
+   `not_ready`.
+4. With as many usable samples as are needed, but fewer `good` ones, its
+   outputs are `uncertain`, and its statistics are of its usable samples.
+5. With as many `good` samples as are needed, its outputs are `good`, and
+   its statistics are of its `good` samples alone. An `uncertain` sample
+   within the tolerance is left out, as a missing one is.
+6. A slope needs two samples. Where the window holds fewer than two `good`
+   samples and at least two usable ones, its slope is of its usable
+   samples and is `uncertain`, whatever rule 5 says of the rest. With one
+   usable sample the slope is `bad`. The other statistics are as rules 4
+   and 5 say. Rule 3 comes first: with fewer usable samples than are
+   needed the slope takes the state the other statistics take.
+7. `count`, the number of usable samples the window holds, is always `good`.
+8. With `only_new: true` a tick holds a sample only if the input is usable
    and its sample time is later than that of the last sample the window
    took. A value still standing from an earlier tick is not another sample,
    and neither is one with no sample time. A tick that holds none for that
-   reason counts as `not_ready` in rule 3. Rule 4 then reads: `good` if
-   every sample it holds is `good` and `n` ticks have run since the graph
-   started or since a gap, and `uncertain` if not.
+   reason counts as `not_ready` in rule 3. `min_good` has to be given: a
+   tick the host did not call for holds no new sample, and at 1 that one
+   hole would spoil the window for its whole length.
 
 A window fed a value that has stopped being written reports no spread and
 no slope, and reports them as `good`, until the input's maximum age ends
@@ -487,22 +532,24 @@ it. `only_new` is for the window that must not.
 
 ### 7.4 Blocks that hold a value
 
-**Deadband.** Its memory is the one sample it holds.
+**Deadband.** It holds one sample for as long as the input stays within
+`step` of it, which has no end.
 
 1. The first usable input is taken as it is. After that the block keeps the
-   sample it holds until the input has moved by `step` or more from it, and
+   value it holds until the input has moved by `step` or more from it, and
    then takes the input.
-2. With a usable input, its output is the value it holds. It is `good` if
-   the sample it holds and the input are both `good`. Otherwise it is
-   `uncertain`, with the later of their causes: the choice to keep or to
-   take rested on that input.
+2. With a usable input, its output is the value it holds, with **the state
+   of the input at this tick**. The value is within `step` of that input,
+   which is what a deadband promises. Whether the sample it holds was once
+   `uncertain` is not kept.
 3. With an unusable input, its output is the held value, `uncertain`, if
    the last usable input was no more than `ride_through` ago. On the `m`-th
    unusable tick in a row the last usable input was `m` periods ago.
 4. Past `ride_through` it forgets what it held. Its output takes the input's
    state, and the next usable input is a first input.
 
-**Low-pass.** Its memory fades, with time constant `tau`.
+**Low-pass.** Its memory fades, with time constant `tau`, and is counted as
+`settle`: three time constants, rounded up to whole ticks, unless given.
 
 <!-- markdownlint-disable MD029 -- the rules of 7.4 keep one numbering -->
 5. The first usable input sets `y = x`. After that, on a usable input,
@@ -510,100 +557,107 @@ it. `only_new` is for the window that must not.
    number of ticks since its last usable input. `m` is 1 unless it has
    ridden through unusable ticks; the ticks it missed decay too.
 6. With an unusable input, rules 3 and 4 apply to it as to a deadband.
-7. It keeps the tick of its latest **doubt**: the latest of the cause of
-   any uncertain input it has taken, and the tick of any usable input it
-   took with `m` above 1. A first input clears any earlier doubt before its
-   own is counted.
-8. With a usable input its output is `uncertain`, with the doubt as its
-   cause, for `settle` ticks from the doubt: while the tick's number less
-   the doubt is less than `settle`. Otherwise it is `good`. `settle` is
-   three time constants, rounded up to whole ticks, unless given.
+7. Its **doubt** is the latest tick at which it took an `uncertain` input,
+   a first input among them. Forgetting (rule 4) clears it. Riding through
+   is not a doubt: the missed ticks are decayed on the input that comes
+   back, and nothing held is left in the value.
+8. With a usable input its output is `uncertain` if the input is, and for
+   `settle` after its doubt. Otherwise it is `good`.
 <!-- markdownlint-enable MD029 -->
 
 ### 7.5 Hysteresis
 
-Its memory is which way it last switched.
+Its memory is which side it is on, and has no end.
 
 1. It goes true when its input is at or above `rise`, and false when its
    input is at or below `fall`. Between the two it stays as it was. It
    starts as its `initial` setting says, or undecided if there is none.
-2. With an unusable input it stays as it was, its output takes the input's
-   state, and it is no longer **sure**: a crossing may have gone by.
-3. With a usable input at or beyond a threshold, it switches, and it is
-   sure if that input is `good` and not sure if it is `uncertain`.
-4. With a usable input its output is `not_ready` while it is undecided.
-   Otherwise it is `good` if it is sure and the input is `good`, and
-   `uncertain` if not.
+2. With an unusable input it stays as it was, and its output takes the
+   input's state.
+3. With a usable input its output is `not_ready` while it is undecided, and
+   otherwise takes the input's state.
+4. `elapsed` and `doubtful` count from the tick its value last changed, a
+   change from undecided among them, or from the first tick if it has not;
+   `doubtful` is of its input.
 
-It starts sure. So after a stretch without its input, its output is
-`uncertain` until a `good` input next reaches a threshold.
+A hysteresis that sat through an hour without its input is `good` when the
+input comes back between the thresholds, and `doubtful` says an hour. A
+graph that must not act on that tests it.
 
 ### 7.6 Timers and latches
 
-Each takes a boolean.
+Each takes a boolean. None of them remembers a doubt.
 
 1. **Held for.** True when its input has been true for longer than `time`.
-   The tick on which the input becomes true counts as no time at all. Its
-   memory is the run of true inputs, and ends with the run. A usable input
-   that is false stops the timer, and the output is false, with the input's
-   state. While the timer runs on usable inputs, the output is `good` if
-   every input since it started was `good`, and `uncertain` if not.
-   Required `on_bad`:
+   The tick on which the input becomes true counts as no time at all. A
+   usable input that is false stops the timer. With a usable input the
+   output takes the input's state. Required `on_bad`:
    - `reset`: an unusable input stops the timer, and the output takes the
      input's state.
    - `hold`: an unusable input leaves the timer running, for at most
-     `hold_limit`, a required setting. While it runs the output is
-     `uncertain`, and true once the time has run out. When the unusable
-     stretch grows longer than the limit, or if the timer was not running,
-     the timer stops and the output takes the input's state. The stretch
-     at its `m`-th unusable tick in a row is `m` periods long.
-2. **Since true.** True when its input has not been true for longer than
-   `time`. Its clock starts at the first tick and restarts on every tick
-   where the input is usable and true. Its memory is the ticks since its
-   clock was set, or the last `time` of them if that is fewer.
-   - Its output is true when the tick's number less the clock's is more
-     than `time`, counted in ticks.
-   - It keeps the latest tick at which its input was not `good`. Its output
-     is `good` if there is no such tick at or after the later of the clock
-     and the tick `time` ticks back, and `uncertain` otherwise.
-   - Required `on_bad`. With `assume_false` an unusable input counts as not
-     true, and the two rules above give the output. With `unknown` the
-     output takes the input's state on a tick where the input is unusable.
-3. **Latch.** False until its input `set` is first usable and true, then
-   true. It has an input `reset` that need not be connected. Its memory is
-   whether it is set, and whether it is **sure** of that. It starts not
-   set, and sure. At each tick, the first of these that applies:
-   - `reset` is usable and true: it is cleared, and it is sure if `reset`
-     is `good` and not sure if it is `uncertain`. This wins over `set`.
-   - `set` is usable and true: it is set. If it was not set, or if `set`
-     is `good`, it is sure if `set` is `good` and not sure if it is
-     `uncertain`.
-   - it is not set and `set` is not `good`: it is no longer sure. A true
-     may have gone by.
+     `hold_limit`, a required setting. While it runs on an unusable input
+     the output is `uncertain`, and true once the time has run out. When
+     the unusable stretch grows longer than the limit, or if the timer was
+     not running, the timer stops and the output takes the input's state.
+     The stretch at its `m`-th unusable tick in a row is `m` periods long.
 
-   Set, its output is true: `good` if sure, `uncertain` if not. Not set,
-   its output takes the state of `set` if that is unusable; otherwise it is
-   false, `good` if sure and `uncertain` if not.
+   `elapsed` and `doubtful` count from the tick the timer started, and are
+   zero while it is not running; `doubtful` is of its input.
+2. **Since true.** True when its input has not been true for longer than
+   `time`. Its clock starts at the first tick and is set again on every
+   tick where the input is usable and true. Its output is true when the
+   tick's number less the clock's is more than `time`, counted in ticks.
+   With a usable input the output takes the input's state. Required
+   `on_bad`: with `assume_false` an unusable input counts as not true, and
+   the output is `uncertain`; with `unknown` the output takes the input's
+   state.
+
+   `elapsed` and `doubtful` count from the tick the clock was last set;
+   `doubtful` is of its input.
+3. **Latch.** False until its input `set` is first usable and true, then
+   true. It has an input `reset` that need not be connected. At a tick, the
+   first of these that applies:
+   - `reset` is usable and true: it is cleared. The output is false, with
+     the state of `reset`.
+   - it is set: the output is true and `good`. `set` is not used.
+   - `set` is usable and true: it is set. The output is true, with the
+     state of `set`.
+   - `set` is usable and false: the output is false, with the state of
+     `set`.
+   - `set` is unusable: the output takes the state of `set`.
+
+   A `reset` that is unusable, or usable and false, is not used.
+
+   `elapsed` counts from the tick it was last cleared, or from the first
+   tick. `doubtful` counts those of them on which it was not set when the
+   tick began and `set` was not `good`.
 
 ### 7.7 Integrators
 
-Its memory does not fade. A doubt is weighed against how long it has run.
+A running total has no end. It reports what it has, and counts what it
+lacks.
 
 1. An integrator adds its input, times the period, on every tick where the
    input is usable. The value at a tick includes that tick's addition, so a
    constant 1 from tick 0 gives `k + 1` periods at tick `k`.
-2. `missed` is the time it has not integrated: the period, added up over
-   every tick where the input was unusable. It is always `good`.
-3. It counts, since its last reset: the ticks it has run, the ticks it
-   missed, and the ticks on which it added an `uncertain` input. The total
-   is `uncertain` when the missed and the uncertain ticks together are more
-   than `tolerance` times the ticks it has run, and `good` otherwise.
-   `tolerance` is 0 unless given.
-4. With `max_missed` set, the total is `bad` once `missed` is more than
-   that, until a reset.
-5. It has an input `reset` that need not be connected. A usable, true
-   `reset` returns the total, `missed` and every count to zero before that
-   tick's addition. An unusable `reset` does nothing.
+2. The total is the first of these that applies: `bad`, once `missed` is
+   more than `max_missed`, if that is given, until a reset; `uncertain`, on
+   a tick where its input is `uncertain`, or where `reset` is `uncertain`
+   and true; `good`. On a tick where its input is unusable the total is
+   `good`: it has a value, and `missed` says what it lacks.
+3. It gives four counts, each a number and always `good`:
+   - `missed`: the time it has not integrated, the period added up over
+     every tick where the input was unusable;
+   - `doubtful`: the time over which it added an `uncertain` input;
+   - `elapsed`: the time it has run, the present tick counted;
+   - `gaps`: how many gaps (section 8) there have been.
+
+   All four count from its last reset, or from the first tick. A gap whose
+   tick is the tick of the reset is counted.
+4. It has an input `reset` that need not be connected. A usable, true
+   `reset` returns the total and all four counts to zero before that tick's
+   addition. An unusable `reset`, or one that is usable and false, is not
+   used.
 
 ### 7.8 Models
 
@@ -623,29 +677,84 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    value if that was no more than `ride_through` ago, counted as in rule
    7.4.3. Otherwise it does not step.
 5. **A model never gives up its state.** Its outputs are always usable,
-   unless rule 3.6 makes one `bad`.
-   Where its outputs read a direct input that is unusable, they are worked
-   out on that input's last usable value, or on zero if it has had none,
-   and are `uncertain`. Where they read a direct input that is `uncertain`,
-   they are `uncertain` with its cause. Otherwise rule 6 gives their state.
-6. It keeps the tick of its latest **doubt**: the latest of the cause of
-   any uncertain input it has stepped on, and any tick at which it stepped
-   on a held value or did not step. Its outputs are `uncertain`, with the
-   doubt as their cause, for `settle` ticks from the doubt, as in rule
-   7.4.8, and `good` otherwise. A doubt from the second phase of tick `k`
-   is tick `k`, and first shows in the outputs of tick `k + 1`. `settle` is three of the model's slowest
-   time constant, rounded up to whole ticks, unless given. A model whose
-   memory does not fade has no such constant: with no `settle` given, a
-   doubt lasts for the rest of the run.
+   unless rule 3.6 makes one `bad`. Where its outputs read a direct input
+   that is unusable, they are worked out on that input's last usable value,
+   or on zero if it has had none, and are `uncertain`. Where they read a
+   direct input that is `uncertain`, rule D makes them so.
+6. Its **doubt** is the latest tick at which it stepped on an `uncertain`
+   value, stepped on a held value (rule 4), or did not step. For a model,
+   unlike a low-pass, riding through is a doubt: the held value has gone
+   into its state. A doubt from the second phase of tick `k` is tick `k`.
+   - With `settle`, its outputs are `uncertain` for `settle` after its
+     doubt, and otherwise `good`. `settle` is three of the model's slowest
+     time constant, rounded up to whole ticks, unless given.
+   - A model whose memory does not fade has no such constant. With no
+     `settle` given, its outputs are `good`, and its counters say what it
+     has been through.
+
+   It gives `elapsed`, which counts from the first tick; `doubtful`,
+   which counts the ticks on which it stepped on an `uncertain` or a held
+   value or did not step; and `gaps`. The step of tick `k` is taken in the
+   second phase, so at tick `k` `doubtful` counts the steps of the ticks
+   before `k`, one tick behind `elapsed`. A gap adds nothing to it.
 7. A model says the longest step it is stable at. A graph whose period,
    divided by the block's `substeps` setting, is longer than that is
    refused. With `substeps` of `n` the state is stepped `n` times per tick,
    each of one `n`-th of a period, on the same inputs.
+8. **A loop.** The blocks of a graph that can each reach every other
+   through inputs, direct or deferred, are a **loop**. A block that reads
+   its own output is one by itself. A loop that holds a model block is
+   treated as one block with fading memory, and `settle` is its author's
+   statement of how long that memory is, along every path in it:
+   - every model block in it has `settle` written in the graph, and they
+     are all the same number of ticks. A model's own time constant is not
+     the loop's. The graph is refused otherwise;
+   - what else remembers in it is held against that `settle`: the graph is
+     refused if the `ticks` of its delays, the lengths of its windows and
+     the `settle`s of its low-passes, written or not, all in ticks, add up
+     to more than it. An estimator hosts a model but is not a model block, and a loop
+     that holds a model block and an estimator is refused until section
+     7.9 is amended;
+   - the loop's **doubt** is the latest tick at which a block in it used a
+     value that was not `good`, read from outside the loop, or gave an
+     output that was not usable on a port that a block of the loop is
+     connected to, whether or not a fallback then stood in for it, and
+     whether or not that block used it. An output no block of the loop is
+     connected to starts nothing, and nor does an `uncertain` value that
+     passes from one block of the loop to another. For this, a formula
+     uses what rule D says, and every other block counts as using every
+     input it has, in either phase, whatever its own rule says of them. A
+     model in the loop that steps on a held value or does not step has
+     been given such a value, so its tick is the loop's doubt already;
+   - a doubt at tick `k` is seen from tick `k + 1`. At tick `k` itself the
+     loop is judged by its latest doubt before `k`, so an earlier doubt
+     that has not run out is not forgotten for a tick;
+   - each model in it is `uncertain` for `settle` after the loop's doubt,
+     in place of its own in rule 6, and otherwise as rule 5 says. Its
+     counters are its own;
+   - at a tick where the loop is not within `settle` of its doubt, what a
+     delay, a window or a low-pass in it took in as `uncertain` at an
+     earlier tick becomes `good`, and stays so: a later doubt of the loop
+     does not turn it back. That is every such value the block holds, a
+     value a gap made `uncertain` in a delay among them, and not only the
+     one it gives at that tick. A delay gives such a value as `good`; a window
+     holds such a sample as a `good` one from then on; a low-pass's doubt
+     is cleared. What each takes in at the tick itself is as its own rule
+     says. This is so for a reader outside the loop too;
+   - a window on the loop that needs more than one sample gives
+     `not_ready` while it fills, which is an output that is not usable. If
+     a block of the loop is connected to it, the loop is in doubt from the
+     start, and after a gap for one tick more than `settle` for each tick
+     the window takes to fill;
+   - the other blocks in it follow their own rules.
 
 So two thermal masses that each take the other's temperature are two
-blocks with deferred inputs, and compile. One bad sample to one of them
-makes it miss a step and both `uncertain` for a while. Neither goes `bad`,
-and neither waits for the other.
+blocks with deferred inputs, and compile, as one loop. One bad sample to
+one of them makes it miss a step and both `uncertain` for `settle`.
+Neither goes `bad`, and neither waits for the other. A plant driven
+through a controller by a setpoint that is `uncertain` on every tick is
+`uncertain` on every tick after the first: what it gives at a tick is its
+state from the tick before.
 
 **Open.**
 
@@ -715,10 +824,70 @@ stretch itself.
 ### 7.10 Fallbacks
 
 A block may name, for any of its outputs, a value to give when that output
-is not usable. The substituted value is `uncertain`, and its cause is the
-tick. Each applies to the output it names and to no other. Every reader of
-that output sees the substituted value, inside the graph as well as outside
-it. An output made `bad` by rule 3.6 is replaced like any other.
+is not usable. The substituted value is `uncertain`. Each applies to the
+output it names and to no other. Every reader of that output sees the
+substituted value, inside the graph as well as outside it. An output made
+`bad` by rule 3.6 is replaced like any other.
+
+### 7.11 What this gives up
+
+Each of these is a value called `good` that rests on something the block
+no longer remembers. Each is deliberate, and each has a counter, or a way
+to write the stricter thing.
+
+- **A latch set by an `uncertain` true is `good` and true from the next
+  tick.** To set only on a `good` true, give the latch `b and ok`, where
+  `ok` is an `all_good` of `b`. That latch says `good` and false while `b`
+  is unusable, since a `good` false decides an `and`: a graph that has to
+  see `b` drop out reads `ok` as well.
+- **An `uncertain` true on `reset` clears a latch**, which is `good` and
+  false from the next tick, with nothing to say so. For a latch that holds
+  a trip, give it `r and ok` likewise.
+- **A hysteresis that sat through an hour without its input** is `good`
+  when the input comes back between the thresholds. `doubtful` says an
+  hour.
+- **A total is `good` on a tick where its input is `bad`**, a little low.
+  `missed` says by how much time.
+- **A deadband holding a sample that was `uncertain` when taken** is `good`
+  once its input is.
+- **`held_for` with `on_bad: reset`** never fires on an input that drops
+  out now and then, and says `good` and false.
+- **`held_for` with `on_bad: hold`** is `good` and true on the first tick
+  its input is back, though the time ran out while it held. `doubtful`
+  says how much of the run it did not see.
+- **A model with no `settle`, or a `settle` of zero**, is `good` on a
+  state it stepped to on an `uncertain` value one tick before. `doubtful`
+  counts those steps.
+- **A good window's statistics are of its `good` samples alone**, so they
+  can move when the count of `good` samples crosses what `min_good` asks.
+- **A block with no fading memory is `good` on the tick after it took in
+  an `uncertain` value**, with that value in it: a total with an
+  `uncertain` thousand added, a timer started or a clock set by an
+  `uncertain` true, a hysteresis switched by an `uncertain` input, a
+  low-pass with a `settle` of zero. `doubtful` counts the tick.
+- **A gap makes only two things `uncertain`**: what a delay holds, and a
+  model with `settle`. It empties a window, and starts a low-pass, a
+  deadband and the timers again. Every other block is `good` across it. A
+  hysteresis, a latch, a total and a model with no `settle` are `good`
+  across an hour's stall, and `since_true` says `good` and false after
+  one, as if its input had just been true. `gaps` says there was one.
+- **A loop's `settle` is its author's word for every path in it.** A total
+  kept by a formula and a delay on a loop with a model block is `good`
+  once the loop has settled, with an `uncertain` addition still in it. A
+  delay, window or low-pass on such a loop gives `good` to readers outside
+  the loop on the same terms.
+- **A loop of formulas and delays with no model block has no `settle`**
+  (rule 5.6). One `uncertain` value taken in, or one gap, leaves it
+  `uncertain` for as long as that value goes round, which for a running
+  total or a peak hold is for good; one unusable value goes round for good
+  unless a block of the loop has a fallback or rides through. A model
+  block on the cycle ends both, since its outputs are always usable.
+- **The estimator** is `good` on an `uncertain` measurement it was told to
+  use (rule 7.9.5). Section 7.9 is still to be amended.
+- **Only a window has a tolerance for doubtful samples.** One `uncertain`
+  sample in every `settle` ticks keeps a low-pass, and any low-pass or
+  model after it, `uncertain` for good. That includes the value another
+  low-pass gives while it rides through.
 
 **Open.**
 
@@ -779,16 +948,25 @@ it. An output made `bad` by rule 3.6 is replaced like any other.
 | Block | At a gap |
 | --- | --- |
 | `formula`, `all_good` | Nothing: no memory |
-| `delay` | Every `good` value it has taken in and not yet given becomes `uncertain`, with the gap's tick as its cause. An initial value it has yet to give is not changed |
+| `delay` | Every `good` value it has taken in and not yet given becomes `uncertain`. An initial value it has yet to give is not changed |
 | `window` | Emptied; the ticks before the gap hold no sample |
-| `deadband`, `lowpass` | Forgets what it held; the next usable input is a first input |
-| `hysteresis` | Stays as it was, and is no longer sure |
+| `deadband`, `lowpass` | Forgets what it held, and a low-pass its doubt; the next usable input is a first input |
+| `hysteresis` | Stays as it was. Its counters go on, and `gaps` goes up by one |
 | `held_for` | The timer stops |
-| `since_true` | The clock is set to the gap's tick, and the gap's tick counts as one where the input was not `good`, whatever the input then is |
-| `latch` | If not set, no longer sure. If set, unchanged |
-| `integrate` | The total is `uncertain` until its next reset |
-| Model block | The gap's tick is a doubt (rule 7.8.6) |
+| `since_true` | The clock is set to the gap's tick |
+| `latch` | Unchanged. Its counters go on, and `gaps` goes up by one |
+| `integrate` | The total is unchanged, and `gaps` goes up by one |
+| Model block | The tick before the gap's is a doubt (rule 7.8.6), its loop's if it is on one: with `settle` it is `uncertain` from the gap's tick |
 | `estimator` | Each state's variance grows by its `p0` |
+
+Every block that gives `gaps` adds one to it at a gap. Where a block's
+count starts again at the gap's tick, as `since_true`'s does and as that
+of a hysteresis that changes or a latch that is cleared on that tick
+does, or at a later tick, as `held_for`'s does, `gaps` starts again with
+it, at one if the gap's tick is the tick it counts from. Counters, and the doubt of a loop, are
+part of what a save holds, and a rebase does not set them to zero beyond
+what the table says. A reset does. A gap adds nothing to a model's
+`doubtful`.
 
 Nothing else changes at a gap. An estimator keeps its state and its counts,
 and a model keeps the last usable value of each input. At a stall, which is
@@ -932,13 +1110,13 @@ what the vectors pin down.
 | `window` | `x`: number | `window`, `min_good` (1), `only_new` (false) | `mean`, `median`, `min`, `max`, `spread`, `slope`, `count` |
 | `deadband` | `x`: number | `step`, `ride_through` (0) | `y` |
 | `lowpass` | `x`: number | `tau`, `ride_through` (0), `settle` (three `tau`) | `y` |
-| `hysteresis` | `x`: number | `rise`, `fall`, `initial` (none) | `y`: boolean |
-| `held_for` | `x`: boolean | `time`, `on_bad`, `hold_limit` | `y`: boolean |
-| `since_true` | `x`: boolean | `time`, `on_bad` | `y`: boolean |
-| `latch` | `set`: boolean; `reset`: boolean, optional | none | `y`: boolean |
-| `integrate` | `x`: number; `reset`: boolean, optional | `per` (1 s), `max_missed` (none), `tolerance` (0) | `y`, `missed` |
-| `thermal_mass` | `power`, `ambient`: number, deferred | `thermal_mass`, `heat_transfer`, `initial`, and the model settings | `temp` |
-| `state_space` | `u`: number | `A`, `B`, `C`, `D` (0), `initial` (zeros), and the model settings | `y` |
+| `hysteresis` | `x`: number | `rise`, `fall`, `initial` (none) | `y`: boolean; `elapsed`, `doubtful`, `gaps` |
+| `held_for` | `x`: boolean | `time`, `on_bad`, `hold_limit` | `y`: boolean; `elapsed`, `doubtful`, `gaps` |
+| `since_true` | `x`: boolean | `time`, `on_bad` | `y`: boolean; `elapsed`, `doubtful`, `gaps` |
+| `latch` | `set`: boolean; `reset`: boolean, optional | none | `y`: boolean; `elapsed`, `doubtful`, `gaps` |
+| `integrate` | `x`: number; `reset`: boolean, optional | `per` (1 s), `max_missed` (none) | `y`, `missed`, `doubtful`, `elapsed`, `gaps` |
+| `thermal_mass` | `power`, `ambient`: number, deferred | `thermal_mass`, `heat_transfer`, `initial`, and the model settings | `temp`; `elapsed`, `doubtful`, `gaps` |
+| `state_space` | `u`: number | `A`, `B`, `C`, `D` (0), `initial` (zeros), and the model settings | `y`; `elapsed`, `doubtful`, `gaps` |
 | `estimator` | the model's inputs, and one per measurement | `model`, `q`, `p0`, `measure`, `gate` (none), `sigma_max` (none), `use_uncertain` (false), `substeps` (1) | see 7.9.6 |
 
 A setting with a value in brackets may be left out and takes that value.
@@ -951,11 +1129,11 @@ settings** are `ride_through` (0), `settle` (rule 7.8.6) and `substeps` (1).
 Ranges, outside which a graph is refused: `ticks` and `substeps` a whole
 number, at least 1; `window` at least one period; `min_good` more than 0 and
 at most 1; `step`, `ride_through`, `settle`, `time`, `hold_limit`,
-`max_missed`, `tolerance`, `q` and `gate` not negative; `per`, `tau`,
+`max_missed`, `q` and `gate` not negative; `per`, `tau`,
 `thermal_mass`, `heat_transfer`, `p0` and `r` more than zero; `rise` more
 than `fall`; every number, `initial` and fallback finite; `on_bad` one of
 the choices its block gives. `hold_limit` is required with `on_bad: hold`
-and refused without it.
+and refused without it. `min_good` is required with `only_new: true`.
 
 - **`formula`.** Section 7.1 governs states.
   - **Numbers:** digits, an optional point and more digits, an optional
@@ -1001,19 +1179,21 @@ and refused without it.
 - **`all_good`.** True when every input is `good`, else false. Always
   `good`.
 - **`delay`.** At tick `k` its output is its input at tick `k - ticks`:
-  value, state, sample time and cause, as a reader of that input saw them
-  then. Before that tick exists, its output is `initial` and `good`, with
+  value, state and sample time, as a reader of that input saw them then
+  (but see rule 7.8.8 for a delay in a loop that holds a model). Before that tick exists, its output is `initial` and `good`, with
   no sample time, or `not_ready` if no initial value is given. Its type is
   its input's, and an initial value of the other type is refused. An
   initial value is `good` because it is the author's statement of where a
   loop starts, where an input's initial value stands in for a measurement.
-- **`window`.** `window` is `n` periods. At a tick the window is that tick
+- **`window`.** Rule 7.8.8 has more for one in a loop that holds a model
+  block. `window` is `n` periods. At a tick the window is that tick
   and the `n - 1` before it. `median` of an even number of samples is the
   mean of the middle two. `spread` is `max - min`. `slope` is the
   least-squares slope of value against time, per second, taking the oldest
   tick of the window as time zero. Section 7.3 governs states.
 - **`deadband`.** The comparison with `step` is exact. Section 7.4.
-- **`lowpass`.** Section 7.4.
+- **`lowpass`.** Section 7.4, and rule 7.8.8 for one in a loop that holds
+  a model block.
 - **`hysteresis`.** Section 7.5.
 - **`held_for`.** Section 7.6 rule 1. With `time` of `n` periods, the output
   is true on a tick when the timer started more than `n` ticks before it:
