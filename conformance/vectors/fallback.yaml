@@ -1,11 +1,16 @@
-# 7.6: a named value in place of an output that is not good. It is good.
-rules: [7.6]
+# 7.10: a fallback replaces an output that is not usable, and is uncertain.
+# It applies to the output it names and to no other, and readers inside the
+# graph see it.
+rules: [7.10]
 period: 1s
 inputs: {x: {}}
 blocks:
-  - {id: d, type: deadband, in: {x: x}, settings: {step: 0.5}, fallback: {y: 25}, out: {y: y}}
-ticks:
-  - {x: not_ready, y: 25}
-  - {x: 10, y: 10}
-  - {x: bad, y: 25}
-  - {x: 10.2, y: 10}
+  - {id: w, type: window, in: {x: x}, settings: {window: 3s}, fallback: {mean: -1}, out: {mean: mean, median: median}}
+  - {id: f, type: formula, in: {m: w.mean}, settings: {expr: "m * 2"}, out: {y: twice}}
+  - {id: h, type: hysteresis, in: {x: x}, settings: {rise: 10, fall: 5}, fallback: {y: false}, out: {y: high}}
+calls:
+  - {x: 7, mean: {u: -1}, median: not_ready, twice: {u: -2}, high: {u: false}}
+  - {x: 7, mean: {u: -1}, median: not_ready, twice: {u: -2}, high: {u: false}}
+  - {x: 7, mean: 7, median: 7, twice: 14, high: {u: false}}
+  - {x: bad, mean: {u: -1}, median: bad, twice: {u: -2}, high: {u: false}}
+  - {x: 12, mean: {u: -1}, median: bad, high: true}

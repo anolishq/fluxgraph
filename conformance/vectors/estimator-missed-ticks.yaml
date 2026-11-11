@@ -1,0 +1,15 @@
+# 7.2, 6.5: in a missed tick nothing is new. A write before the call is new
+# at the call's last tick. Ticks 1 and 2: var 2, then 3. Tick 3: predict to
+# x = 5, var = 1.75; correct with k = 1.75 / 2.75.
+rules: [7.2, 6.5, 7.9.2]
+period: 1s
+inputs: {z: {}, m: {}}
+blocks:
+  - id: k
+    type: kalman1
+    in: {z: z, model: m}
+    settings: {tau: 1.4426950408889634s, q: 1, r: 1, max_coast: 5s}
+    out: {x: x, sigma: sigma}
+calls:
+  - {now: 0, z: 10, m: 0, x: 10, sigma: 1}
+  - {now: 3, ran: 3, z: 10, x: 8.181818181818182, sigma: 0.7977240352174656}

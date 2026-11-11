@@ -1,0 +1,16 @@
+# 7.2: a delay's output is new when the input it gives was new. The fixture
+# corrects on tick 1, from the write before tick 0, and not again on tick 2.
+rules: [7.2, 7.9.2]
+period: 1s
+inputs: {z: {}}
+blocks:
+  - {id: d, type: delay, in: {x: z}}
+  - id: k
+    type: kalman1
+    in: {z: d.y, model: 0}
+    settings: {tau: 1.4426950408889634s, q: 0, r: 1, max_coast: 5s}
+    out: {x: x, sigma: sigma}
+calls:
+  - {z: 10, x: not_ready, sigma: not_ready}
+  - {x: 10, sigma: 1}
+  - {x: 5, sigma: 0.5}       # predict only: a = 0.5, var = 0.25

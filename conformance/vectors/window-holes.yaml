@@ -1,0 +1,23 @@
+# 7.3.1 to 7.3.4: with min_good below 1 a window with holes reports, and
+# reports uncertain. Its statistics are of the usable samples, each at its
+# own tick.
+rules: [7.3.1, 7.3.2, 7.3.3, 7.3.4, 7.3.6]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 4s, min_good: 0.5}, out: {mean: mean, slope: slope, count: count}}
+calls:
+  - {x: 2, mean: not_ready, slope: not_ready, count: 1}
+  - {x: 4, mean: {u: 3}, slope: {u: 2}, count: 2}
+  - {x: bad, mean: {u: 3}, slope: {u: 2}, count: 2}
+  # 2 4 - 6 at 0, 1 and 3 s: slope = 6 / (14 / 3)
+  - {x: 6, mean: {u: 4}, slope: {u: 1.2857142857142858}, count: 3}
+  # 4 - 6 - at 0 and 2 s
+  - {x: bad, mean: {u: 5}, slope: {u: 1}, count: 2}
+  # - 6 - -: one sample of the two needed; a bad tick is the worst without one
+  - {x: not_ready, mean: bad, slope: bad, count: 1}
+  # 6 - - 8 at 0 and 3 s
+  - {x: 8, mean: {u: 7}, slope: {u: 0.6666666666666666}, count: 2}
+  - {x: 8, mean: {u: 8}, slope: {u: 0}, count: 2}
+  - {x: 8, mean: {u: 8}, slope: {u: 0}, count: 3}
+  - {x: 8, mean: 8, slope: 0, count: 4}

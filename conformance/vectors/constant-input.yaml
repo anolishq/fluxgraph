@@ -1,10 +1,12 @@
-# 4.6: a number in place of a signal is good, with that value, on every tick.
-rules: [4.6]
+# 4.7: an input port may be given a constant, a number or true or false. It
+# is good on every tick.
+rules: [4.7]
 period: 1s
 inputs: {x: {}}
 blocks:
-  - {id: f, type: formula, in: {x: x, k: 2.5}, settings: {expr: x + k}, out: {y: y}}
-  - {id: d, type: deadband, in: {x: 3}, settings: {step: 1}, out: {y: c}}
-ticks:
-  - {x: 1, y: 3.5, c: 3}
-  - {x: bad, y: bad, c: 3}
+  - {id: f, type: formula, in: {x: x, k: 2.5}, settings: {expr: "x + k"}, out: {y: y}}
+  - {id: g, type: formula, in: {x: x, flag: true}, settings: {expr: "when(flag, x, 0 - x)"}, out: {y: z}}
+  - {id: l, type: latch, in: {set: true}, out: {y: lit}}
+calls:
+  - {x: 1, y: 3.5, z: 1, lit: true}
+  - {x: bad, y: bad, z: bad, lit: true}

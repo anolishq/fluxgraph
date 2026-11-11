@@ -1,0 +1,8 @@
+# 4.7: refused: a constant that is not finite.
+rules: [4.7]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: f, type: formula, in: {x: x, k: .inf}, settings: {expr: "x + k"}}
+expect: compile_error
+error_mentions: [k]

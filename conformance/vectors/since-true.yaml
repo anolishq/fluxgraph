@@ -1,18 +1,21 @@
-# 7.3.2: true when the input has not been true for longer than 2 s. An unusable
-# input counts as not true, the output is always good, and the clock starts at
-# the first tick.
-rules: [7.3.2]
+# 7.6.2: true when the input has not been true for longer than the time. The
+# clock starts at the first tick. An unusable input counts as not true, and
+# the output is uncertain, or the output takes the input's state.
+rules: [7.6.2, A.since_true]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {type: boolean}}
 blocks:
-  - {id: s, type: since_true, in: {x: x}, settings: {time: 2s}, out: {y: y}}
-ticks:
-  - {x: 0, y: false}
-  - {x: 0, y: false}
-  - {x: 0, y: false}                # 2 s: not longer than 2 s
-  - {x: 0, y: true}
-  - {x: 1, y: false}
-  - {x: bad, y: false}
-  - {x: bad, y: false}
-  - {x: bad, y: true}
-  - {x: 1, y: false}
+  - {id: a, type: since_true, in: {x: x}, settings: {time: 2s, on_bad: assume_false}, out: {y: a}}
+  - {id: u, type: since_true, in: {x: x}, settings: {time: 2s, on_bad: unknown}, out: {y: u}}
+calls:
+  - {x: false, a: false, u: false}
+  - {x: false, a: false, u: false}
+  - {x: false, a: false, u: false}               # 2 s: not longer than 2 s
+  - {x: false, a: true, u: true}
+  - {x: true, a: false, u: false}                # clock set at tick 4
+  - {x: bad, a: {u: false}, u: bad}
+  - {x: bad, a: {u: false}, u: bad}
+  - {x: bad, a: {u: true}, u: bad}
+  - {x: false, a: true, u: true}
+  - {x: {v: true, state: uncertain}, a: {u: false}, u: {u: false}}
+  - {x: not_ready, a: {u: false}, u: not_ready}

@@ -1,0 +1,7 @@
+# 6.1: refused: a graph with no period.
+rules: [6.1]
+inputs: {x: {}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}}
+expect: compile_error
+error_mentions: [period]

@@ -1,8 +1,8 @@
-# Appendix A: min_good is more than 0.
-rules: [9.3]
+# A: refused: min_good of zero.
+rules: [A]
 period: 1s
 inputs: {x: {}}
 blocks:
-  - {id: w, type: window, in: {x: x}, settings: {window: 2s, min_good: 0}, out: {mean: m}}
+  - {id: w, type: window, in: {x: x}, settings: {window: 2s, min_good: 0}}
 expect: compile_error
 error_mentions: [min_good]

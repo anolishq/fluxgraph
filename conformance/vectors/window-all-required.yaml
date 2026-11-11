@@ -1,22 +1,18 @@
-# 7.2: a window is the usable samples of the last four ticks. With min_good
-# left at 1, one unusable sample makes it not good until it has left the window.
-rules: [7.2.1, 7.2.2, 7.2.3]
+# 7.3.2, 7.3.3: with min_good left at 1 every tick of the window must hold a
+# usable sample. Short of that the outputs take the worst state among the
+# ticks that hold none; a tick before the start counts as not_ready.
+rules: [7.3.2, 7.3.3, 7.3.6]
 period: 1s
 inputs: {x: {}}
 blocks:
-  - id: w
-    type: window
-    in: {x: x}
-    settings: {window: 4s}
-    out: {mean: mean, median: median, spread: spread, slope: slope}
-ticks:
-  - {x: 1, mean: not_ready, median: not_ready, spread: not_ready, slope: not_ready}
-  - {x: 2, mean: not_ready}
-  - {x: 3, mean: not_ready}
-  - {x: 4, mean: 2.5, median: 2.5, spread: 3, slope: 1}
-  - {x: 5, mean: 3.5, median: 3.5, spread: 3, slope: 1}
-  - {x: bad, mean: bad, median: bad, spread: bad, slope: bad}
-  - {x: 7, mean: bad}
-  - {x: 8, mean: bad}
-  - {x: 9, mean: bad}
-  - {x: 10, mean: 8.5, median: 8.5, spread: 3, slope: 1}
+  - {id: w, type: window, in: {x: x}, settings: {window: 3s}, out: {mean: mean, count: count}}
+calls:
+  - {x: 1, mean: not_ready, count: 1}
+  - {x: 2, mean: not_ready, count: 2}
+  - {x: 3, mean: 2, count: 3}
+  - {x: bad, mean: bad, count: 2}
+  - {x: 4, mean: bad, count: 2}
+  - {x: 5, mean: bad, count: 2}
+  - {x: 6, mean: 5, count: 3}
+  - {x: not_ready, mean: not_ready, count: 2}
+  - {x: bad, mean: bad, count: 1}

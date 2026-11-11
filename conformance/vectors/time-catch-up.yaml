@@ -1,0 +1,13 @@
+# 6.4, 6.5, 7.2.1: a call runs every tick that is due. All but the last are
+# missed, and in a missed tick every external input is bad.
+rules: [6.4, 6.5, 7.2.1]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: i, type: integrate, in: {x: x}, out: {y: total, missed: missed}}
+calls:
+  - {now: 0, x: 2, total: 2, missed: 0}
+  - {now: 1, x: 2, total: 4, missed: 0}
+  - {now: 5, ran: 4, x: 2, total: {u: 6}, missed: 3}     # ticks 2, 3, 4 missed
+  - {now: 5.2, ran: 0}
+  - {now: 6, total: {u: 8}, missed: 3}

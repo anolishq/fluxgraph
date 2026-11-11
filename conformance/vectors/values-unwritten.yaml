@@ -1,13 +1,11 @@
-# 3.3: a signal nobody has written is not_ready. 7.1.1: worst state wins.
-rules: [3.3, 7.1.1, 7.7]
+# 3.4, 7.2.2: a signal nobody has written is not_ready, not zero. With no
+# maximum age it stays so.
+rules: [3.4, 7.2.2]
 period: 1s
-inputs: {a: {}, b: {}}
+inputs: {x: {}}
 blocks:
-  - {id: f, type: formula, in: {a: a, b: b}, settings: {expr: a + b}, out: {y: y}}
-ticks:
-  - {a: 1, y: not_ready}          # b has never been written
-  - {a: 1, b: 2, y: 3}
-  - {b: bad, y: bad}              # a is not rewritten: its last value stands
-  - {a: not_ready, y: bad}        # bad over not_ready
-  - {b: 5, y: not_ready}          # a is still not_ready
-  - {a: 4, y: 9}
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}, out: {y: y}}
+calls:
+  - {y: not_ready}
+  - {y: not_ready}
+  - {x: 2, y: 3}

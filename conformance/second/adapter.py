@@ -7,7 +7,7 @@ import re
 
 from . import impl
 
-GOOD, NOT_READY, BAD = "good", "not_ready", "bad"
+GOOD, UNCERTAIN, NOT_READY, BAD = "good", "uncertain", "not_ready", "bad"
 Val = collections.namedtuple("Val", "state v")
 CompileError = impl.CompileError
 _DURATION = re.compile(r"^(\d+(?:\.\d+)?)(ms|s|m|h)$")
@@ -24,13 +24,14 @@ def seconds(text):
 class Engine:
     def __init__(self, graph):
         self._engine = impl.Engine(graph)
-        self.max_age = self._engine.max_age
+        self.inputs = self._engine.inputs
 
-    def write(self, name, state, value=None, age=0.0):
-        self._engine.write(name, state, value, age)
+    def write(self, name, state, value=None, sampled=0.0):
+        self._engine.write(name, state, value, sampled)
 
-    def tick(self):
-        return {name: Val(state, value) for name, (state, value) in self._engine.tick().items()}
+    def tick(self, now):
+        ran, out = self._engine.tick(now)
+        return ran, None if out is None else {name: Val(state, value) for name, (state, value) in out.items()}
 
     def save(self):
         return self._engine.save()

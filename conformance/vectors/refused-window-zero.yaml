@@ -1,0 +1,8 @@
+# A: refused: a window shorter than one period.
+rules: [A]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 0s}}
+expect: compile_error
+error_mentions: [window]

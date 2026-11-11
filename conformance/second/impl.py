@@ -1,183 +1,187 @@
-"""Second implementation of FluxGraph semantics v2 (proposal), from the text alone.
+"""An independent reading of "FluxGraph semantics, version 2 (proposal)".
 
-Standard library only. See ASSUMPTIONS.md for every guess made here.
+Sections 3 to 9, Appendix A and Appendix B. Standard library only.
+Choices the text does not settle are listed in ASSUMPTIONS.md.
 """
 
 import copy
-import heapq
 import json
 import math
 import re
 from fractions import Fraction
 
-GOOD, NOT_READY, BAD = "good", "not_ready", "bad"
-_RANK = {GOOD: 0, NOT_READY: 1, BAD: 2}
-_STATES = (GOOD, NOT_READY, BAD)
+GOOD = "good"
+UNCERTAIN = "uncertain"
+NOT_READY = "not_ready"
+BAD = "bad"
+
+_RANK = {BAD: 0, NOT_READY: 1, UNCERTAIN: 2, GOOD: 3}
+
+NUMBER = "number"
+BOOLEAN = "boolean"
 
 
 class CompileError(Exception):
     pass
 
 
-class RestoreError(ValueError):
-    pass
+def usable(state):
+    return state == GOOD or state == UNCERTAIN
 
 
-def _worst(states):
-    w = GOOD
-    for s in states:
-        if _RANK[s] > _RANK[w]:
-            w = s
-    return w
+def worst(states):
+    return min(states, key=_RANK.__getitem__)
 
 
 def _is_num(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
-def _norm(sv):
-    """A good value must be finite; anything else carries no number."""
-    s, v = sv
-    if s != GOOD:
-        return (s, None)
-    v = float(v)
-    if not math.isfinite(v):
-        return (BAD, None)
-    return (GOOD, v)
+def _const_type(v):
+    if isinstance(v, bool):
+        return BOOLEAN
+    if _is_num(v):
+        return NUMBER
+    return None
 
 
-# ---------------------------------------------------------------- durations
+# ---------------------------------------------------------------- time
 
-_DUR = re.compile(r"^\s*((?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)\s*(ms|s|m|h)\s*$")
+_TIME_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)(ms|s|m|h)")
 _UNIT = {"ms": Fraction(1, 1000), "s": Fraction(1), "m": Fraction(60), "h": Fraction(3600)}
 
 
-def _frac(v, what):
-    if not _is_num(v):
-        raise CompileError("%s: expected a number, got %r" % (what, v))
-    if isinstance(v, float):
-        if not math.isfinite(v):
-            raise CompileError("%s: %r is not finite" % (what, v))
-        return Fraction(repr(v))
-    return Fraction(v)
+def parse_time(text):
+    """A length of time as an exact Fraction of seconds, or None."""
+    if not isinstance(text, str):
+        return None
+    m = _TIME_RE.fullmatch(text)
+    if not m:
+        return None
+    return Fraction(m.group(1)) * _UNIT[m.group(2)]
 
 
-def _duration(v, what):
-    """A length of time as an exact Fraction of seconds."""
-    if isinstance(v, str):
-        m = _DUR.match(v)
-        if not m:
-            raise CompileError("%s: %r is not a length of time" % (what, v))
-        return Fraction(m.group(1)) * _UNIT[m.group(2)]
-    if _is_num(v):
-        return _frac(v, what)
-    raise CompileError("%s: %r is not a length of time" % (what, v))
+# ------------------------------------------------------------- formula
+
+_FUNCS = {"abs": 1, "min": 2, "max": 2, "exp": 1, "ln": 1, "sqrt": 1, "pow": 2, "when": 3}
+_RESERVED = {"and", "or", "not", "true", "false"} | set(_FUNCS)
+_NUM_RE = re.compile(r"[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
+_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_NAME_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"
 
 
-# ------------------------------------------------------------------ formula
+class _FormulaError(Exception):
+    pass
 
-_TOK = re.compile(
-    r"\s*(?:(?P<num>(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)"
-    r"|(?P<id>[A-Za-z_][A-Za-z0-9_]*)"
-    r"|(?P<op><=|>=|==|!=|<|>|\+|-|\*|/|\(|\)|,))"
-)
-_RESERVED = {"and", "or", "not", "abs", "min", "max", "when"}
-_FUNCS = {"abs": 1, "min": 2, "max": 2, "when": 3}
-_CMP = {"<", "<=", ">", ">=", "==", "!="}
+
+def _tokenize(text):
+    toks = []
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if c == " " or c == "\t":
+            i += 1
+        elif c in "0123456789":
+            m = _NUM_RE.match(text, i)
+            i = m.end()
+            if i < len(text) and (text[i] in _NAME_CHARS or text[i] == "."):
+                raise _FormulaError("malformed number at column %d" % (m.start() + 1))
+            v = float(m.group(0))
+            if not math.isfinite(v):
+                raise _FormulaError("number %s is not finite" % m.group(0))
+            toks.append(("num", v))
+        elif c in _NAME_CHARS:
+            m = _NAME_RE.match(text, i)
+            i = m.end()
+            toks.append(("name", m.group(0)))
+        elif text[i : i + 2] in ("<=", ">=", "==", "!="):
+            toks.append(("op", text[i : i + 2]))
+            i += 2
+        elif c in "<>+-*/(),":
+            toks.append(("op", c))
+            i += 1
+        else:
+            raise _FormulaError("unexpected character %r at column %d" % (c, i + 1))
+    toks.append(("end", None))
+    return toks
 
 
 class _Parser:
-    def __init__(self, text, where):
-        self.where = where
-        self.toks = []
-        self.names = set()
-        pos = 0
-        text = text.rstrip()
-        while pos < len(text):
-            m = _TOK.match(text, pos)
-            if not m:
-                self.fail("cannot read %r" % text[pos:].strip()[:20])
-            if m.group("num") is not None:
-                self.toks.append(("num", float(m.group("num"))))
-            elif m.group("id") is not None:
-                self.toks.append(("id", m.group("id")))
-            else:
-                self.toks.append(("op", m.group("op")))
-            pos = m.end()
+    def __init__(self, text):
+        self.toks = _tokenize(text)
         self.i = 0
 
-    def fail(self, msg):
-        raise CompileError("%s: formula: %s" % (self.where, msg))
-
     def peek(self):
-        return self.toks[self.i] if self.i < len(self.toks) else ("end", None)
+        return self.toks[self.i]
 
     def take(self):
-        t = self.peek()
+        t = self.toks[self.i]
         self.i += 1
         return t
 
-    def accept(self, kind, val):
-        if self.peek() == (kind, val):
-            self.i += 1
-            return True
-        return False
+    def at(self, kind, val):
+        return self.toks[self.i] == (kind, val)
 
-    def expect(self, val):
-        if not self.accept("op", val):
-            self.fail("expected %r, found %r" % (val, self.peek()[1]))
+    def expect_op(self, val):
+        if not self.at("op", val):
+            raise _FormulaError("expected %r, found %r" % (val, self.peek()[1]))
+        self.i += 1
 
     def parse(self):
-        if not self.toks:
-            self.fail("empty expression")
         node = self.p_or()
         if self.peek()[0] != "end":
-            self.fail("unexpected %r" % (self.peek()[1],))
+            raise _FormulaError("unexpected %r" % (self.peek()[1],))
         return node
 
     def p_or(self):
-        n = self.p_and()
-        while self.accept("id", "or"):
-            n = ("or", n, self.p_and())
-        return n
+        node = self.p_and()
+        while self.at("name", "or"):
+            self.take()
+            node = ("bin", "or", node, self.p_and())
+        return node
 
     def p_and(self):
-        n = self.p_not()
-        while self.accept("id", "and"):
-            n = ("and", n, self.p_not())
-        return n
+        node = self.p_not()
+        while self.at("name", "and"):
+            self.take()
+            node = ("bin", "and", node, self.p_not())
+        return node
 
     def p_not(self):
-        if self.accept("id", "not"):
-            return ("not", self.p_not())
+        if self.at("name", "not"):
+            self.take()
+            return ("un", "not", self.p_not())
         return self.p_cmp()
 
     def p_cmp(self):
-        n = self.p_add()
-        if self.peek()[0] == "op" and self.peek()[1] in _CMP:
-            op = self.take()[1]
-            n = ("cmp", op, n, self.p_add())
-            if self.peek()[0] == "op" and self.peek()[1] in _CMP:
-                raise CompileError("comparisons do not chain: write (a < b) and (b < c)")
-        return n
+        node = self.p_add()
+        t = self.peek()
+        if t[0] == "op" and t[1] in ("<", "<=", ">", ">=", "==", "!="):
+            self.take()
+            node = ("bin", t[1], node, self.p_add())
+            t = self.peek()
+            if t[0] == "op" and t[1] in ("<", "<=", ">", ">=", "==", "!="):
+                raise _FormulaError("comparisons do not chain")
+        return node
 
     def p_add(self):
-        n = self.p_mul()
-        while self.peek() in (("op", "+"), ("op", "-")):
+        node = self.p_mul()
+        while self.at("op", "+") or self.at("op", "-"):
             op = self.take()[1]
-            n = ("arith", op, n, self.p_mul())
-        return n
+            node = ("bin", op, node, self.p_mul())
+        return node
 
     def p_mul(self):
-        n = self.p_unary()
-        while self.peek() in (("op", "*"), ("op", "/")):
+        node = self.p_unary()
+        while self.at("op", "*") or self.at("op", "/"):
             op = self.take()[1]
-            n = ("arith", op, n, self.p_unary())
-        return n
+            node = ("bin", op, node, self.p_unary())
+        return node
 
     def p_unary(self):
-        if self.accept("op", "-"):
-            return ("neg", self.p_unary())
+        if self.at("op", "-"):
+            self.take()
+            return ("un", "neg", self.p_unary())
         return self.p_primary()
 
     def p_primary(self):
@@ -185,718 +189,1055 @@ class _Parser:
         if kind == "num":
             return ("num", val)
         if kind == "op" and val == "(":
-            n = self.p_or()
-            self.expect(")")
-            return n
-        if kind == "id":
+            node = self.p_or()
+            self.expect_op(")")
+            return node
+        if kind == "name":
+            if val == "true":
+                return ("bool", True)
+            if val == "false":
+                return ("bool", False)
             if val in _FUNCS:
-                self.expect("(")
+                self.expect_op("(")
                 args = [self.p_or()]
-                while self.accept("op", ","):
+                while self.at("op", ","):
+                    self.take()
                     args.append(self.p_or())
-                self.expect(")")
+                self.expect_op(")")
                 if len(args) != _FUNCS[val]:
-                    self.fail("%s takes %d argument(s), got %d" % (val, _FUNCS[val], len(args)))
+                    raise _FormulaError("%s takes %d argument(s)" % (val, _FUNCS[val]))
                 return ("call", val, args)
             if val in _RESERVED:
-                self.fail("unexpected %r" % val)
-            self.names.add(val)
-            return ("var", val)
-        self.fail("unexpected %r" % (val if kind != "end" else "end of expression"))
+                raise _FormulaError("unexpected %r" % val)
+            if self.at("op", "("):
+                raise _FormulaError("unknown function %r" % val)
+            return ("name", val)
+        if kind == "end":
+            raise _FormulaError("unexpected end of formula")
+        raise _FormulaError("unexpected %r" % (val,))
+
+
+def _names_used(node, acc):
+    k = node[0]
+    if k == "name":
+        acc.add(node[1])
+    elif k == "un":
+        _names_used(node[2], acc)
+    elif k == "bin":
+        _names_used(node[2], acc)
+        _names_used(node[3], acc)
+    elif k == "call":
+        for a in node[2]:
+            _names_used(a, acc)
+    return acc
+
+
+def _type_of(node, types):
+    k = node[0]
+    if k == "num":
+        return NUMBER
+    if k == "bool":
+        return BOOLEAN
+    if k == "name":
+        return types[node[1]]
+    if k == "un":
+        t = _type_of(node[2], types)
+        if node[1] == "neg":
+            if t != NUMBER:
+                raise _FormulaError("unary minus takes a number")
+            return NUMBER
+        if t != BOOLEAN:
+            raise _FormulaError("'not' takes a boolean")
+        return BOOLEAN
+    if k == "bin":
+        op = node[1]
+        ta = _type_of(node[2], types)
+        tb = _type_of(node[3], types)
+        if op in ("+", "-", "*", "/"):
+            if ta != NUMBER or tb != NUMBER:
+                raise _FormulaError("%r takes numbers" % op)
+            return NUMBER
+        if op in ("<", "<=", ">", ">="):
+            if ta != NUMBER or tb != NUMBER:
+                raise _FormulaError("%r takes numbers" % op)
+            return BOOLEAN
+        if op in ("==", "!="):
+            if ta != tb:
+                raise _FormulaError("%r takes two of one type" % op)
+            return BOOLEAN
+        if ta != BOOLEAN or tb != BOOLEAN:
+            raise _FormulaError("%r takes booleans" % op)
+        return BOOLEAN
+    fn, args = node[1], node[2]
+    ts = [_type_of(a, types) for a in args]
+    if fn == "when":
+        if ts[0] != BOOLEAN:
+            raise _FormulaError("the condition of 'when' is a boolean")
+        if ts[1] != ts[2]:
+            raise _FormulaError("the branches of 'when' are of one type")
+        return ts[1]
+    if any(t != NUMBER for t in ts):
+        raise _FormulaError("%s takes numbers" % fn)
+    return NUMBER
+
+
+def _num_result(r):
+    if r is None or not math.isfinite(r):
+        return (BAD, None)
+    return r
 
 
 def _eval(node, env):
-    kind = node[0]
-    if kind == "num":
+    """Returns (state, value); value is None when the state is not usable."""
+    k = node[0]
+    if k == "num" or k == "bool":
         return (GOOD, node[1])
-    if kind == "var":
+    if k == "name":
         return env[node[1]]
-    if kind == "neg":
-        s, v = _eval(node[1], env)
-        return (GOOD, -v) if s == GOOD else (s, None)
-    if kind == "not":
-        s, v = _eval(node[1], env)
-        return (GOOD, 0.0 if v != 0 else 1.0) if s == GOOD else (s, None)
-    if kind in ("and", "or"):
-        a = _eval(node[1], env)
-        b = _eval(node[2], env)
-        decides = (lambda v: v == 0) if kind == "and" else (lambda v: v != 0)
-        decided = 0.0 if kind == "and" else 1.0
-        for s, v in (a, b):
-            if s == GOOD and decides(v):
-                return (GOOD, decided)
-        w = _worst((a[0], b[0]))
-        if w != GOOD:
-            return (w, None)
-        return (GOOD, 1.0 - decided)
-    if kind in ("arith", "cmp"):
+    if k == "un":
+        s, v = _eval(node[2], env)
+        if not usable(s):
+            return (s, None)
+        return (s, (not v) if node[1] == "not" else -v)
+    if k == "bin":
         op = node[1]
-        a = _eval(node[2], env)
-        b = _eval(node[3], env)
-        w = _worst((a[0], b[0]))
-        if w != GOOD:
-            return (w, None)
-        x, y = a[1], b[1]
-        if kind == "cmp":
-            r = {"<": x < y, "<=": x <= y, ">": x > y, ">=": x >= y, "==": x == y, "!=": x != y}[op]
-            return (GOOD, 1.0 if r else 0.0)
-        if op == "/":
-            if y == 0:
-                return (BAD, None)
-            r = x / y
-        elif op == "+":
-            r = x + y
+        sa, va = _eval(node[2], env)
+        sb, vb = _eval(node[3], env)
+        if op in ("and", "or"):
+            decides = op == "or"
+            deciders = [s for s, v in ((sa, va), (sb, vb)) if usable(s) and v is decides]
+            if deciders:
+                return (GOOD if GOOD in deciders else UNCERTAIN, decides)
+            s = worst([sa, sb])
+            if not usable(s):
+                return (s, None)
+            return (s, (va or vb) if op == "or" else (va and vb))
+        s = worst([sa, sb])
+        if not usable(s):
+            return (s, None)
+        if op == "<":
+            return (s, va < vb)
+        if op == "<=":
+            return (s, va <= vb)
+        if op == ">":
+            return (s, va > vb)
+        if op == ">=":
+            return (s, va >= vb)
+        if op == "==":
+            return (s, va == vb)
+        if op == "!=":
+            return (s, va != vb)
+        if op == "+":
+            r = va + vb
         elif op == "-":
-            r = x - y
+            r = va - vb
+        elif op == "*":
+            r = va * vb
         else:
-            r = x * y
-        return _norm((GOOD, r))
-    if kind == "call":
-        name, args = node[1], node[2]
-        if name == "when":
-            c = _eval(args[0], env)
-            if c[0] != GOOD:
-                return (c[0], None)
-            return _eval(args[1] if c[1] != 0 else args[2], env)
-        vals = [_eval(a, env) for a in args]
-        w = _worst(s for s, _ in vals)
-        if w != GOOD:
-            return (w, None)
-        if name == "abs":
-            return (GOOD, abs(vals[0][1]))
-        if name == "min":
-            return (GOOD, min(vals[0][1], vals[1][1]))
-        return (GOOD, max(vals[0][1], vals[1][1]))
-    raise AssertionError(kind)
+            if vb == 0:
+                return (BAD, None)
+            r = va / vb
+        if not math.isfinite(r):
+            return (BAD, None)
+        return (s, r)
+    fn, args = node[1], node[2]
+    if fn == "when":
+        sc, vc = _eval(args[0], env)
+        if not usable(sc):
+            return (sc, None)
+        sx, vx = _eval(args[1] if vc else args[2], env)
+        s = worst([sc, sx])
+        return (s, vx if usable(s) else None)
+    vals = [_eval(a, env) for a in args]
+    s = worst([x[0] for x in vals])
+    if not usable(s):
+        return (s, None)
+    a = vals[0][1]
+    b = vals[1][1] if len(vals) > 1 else None
+    try:
+        if fn == "abs":
+            r = abs(a)
+        elif fn == "min":
+            r = min(a, b)
+        elif fn == "max":
+            r = max(a, b)
+        elif fn == "exp":
+            r = math.exp(a)
+        elif fn == "ln":
+            r = math.log(a) if a > 0 else None
+        elif fn == "sqrt":
+            r = math.sqrt(a) if a >= 0 else None
+        else:
+            r = math.pow(a, b)
+    except (ValueError, OverflowError, ZeroDivisionError):
+        r = None
+    if r is None or not math.isfinite(r):
+        return (BAD, None)
+    return (s, r)
 
 
-# -------------------------------------------------------------- block types
-# settings: name -> (kind, required, default)
-# inputs:   None for "any", else {port: required}
+# ------------------------------------------------------ block catalogue
 
-_TYPES = {
-    "formula": {"inputs": None, "outputs": ["y"], "settings": {"expr": ("str", True, None)}},
-    "all_good": {"inputs": None, "outputs": ["y"], "settings": {}},
-    "delay": {
-        "inputs": {"x": True},
-        "outputs": ["y"],
-        "prev": {"x"},
-        "settings": {"ticks": ("int", False, 1), "initial": ("num", False, None)},
-    },
-    "window": {
-        "inputs": {"x": True},
-        "outputs": ["mean", "median", "min", "max", "spread", "slope"],
-        "settings": {"window": ("dur", True, None), "min_good": ("num", False, 1)},
-    },
-    "deadband": {
-        "inputs": {"x": True},
-        "outputs": ["y"],
-        "settings": {"step": ("num", True, None), "ride_through": ("dur", False, 0)},
-    },
-    "held_for": {
-        "inputs": {"x": True},
-        "outputs": ["y"],
-        "settings": {"time": ("dur", True, None), "on_bad": ("str", True, None)},
-    },
-    "since_true": {"inputs": {"x": True}, "outputs": ["y"], "settings": {"time": ("dur", True, None)}},
-    "latch": {"inputs": {"set": True}, "outputs": ["y"], "settings": {}},
-    "total": {"inputs": {"x": True}, "outputs": ["y", "missed"], "settings": {"per": ("dur", False, 1)}},
-    "kalman1": {
-        "inputs": {"z": True, "model": True},
-        "outputs": ["x", "sigma"],
-        "settings": {"tau": ("dur", True, None), "q": ("num", True, None), "r": ("num", True, None)},
-    },
+_REQ = object()
+
+# port -> (type or None for any, required, direct)
+_INPUTS = {
+    "delay": {"x": (None, True, False)},
+    "window": {"x": (NUMBER, True, True)},
+    "deadband": {"x": (NUMBER, True, True)},
+    "lowpass": {"x": (NUMBER, True, True)},
+    "hysteresis": {"x": (NUMBER, True, True)},
+    "held_for": {"x": (BOOLEAN, True, True)},
+    "since_true": {"x": (BOOLEAN, True, True)},
+    "latch": {"set": (BOOLEAN, True, True), "reset": (BOOLEAN, False, True)},
+    "integrate": {"x": (NUMBER, True, True), "reset": (BOOLEAN, False, True)},
+    "kalman1": {"z": (NUMBER, True, True), "model": (NUMBER, True, True)},
 }
 
-_BLOCK_KEYS = {"id", "type", "in", "settings", "out", "fallback"}
-_TOP_KEYS = {"period", "inputs", "blocks"}
-_INPUT_KEYS = {"max_age", "unit", "signal"}
+# port -> type (None: decided per block)
+_OUTPUTS = {
+    "formula": {"y": None},
+    "all_good": {"y": BOOLEAN},
+    "delay": {"y": None},
+    "window": {p: NUMBER for p in ("mean", "median", "min", "max", "spread", "slope", "count")},
+    "deadband": {"y": NUMBER},
+    "lowpass": {"y": NUMBER},
+    "hysteresis": {"y": BOOLEAN},
+    "held_for": {"y": BOOLEAN},
+    "since_true": {"y": BOOLEAN},
+    "latch": {"y": BOOLEAN},
+    "integrate": {"y": NUMBER, "missed": NUMBER},
+    "kalman1": {"x": NUMBER, "sigma": NUMBER},
+}
+
+# setting -> (kind, default or _REQ[, choices])
+# kinds: str, num, whole, const, counted (a time that is whole periods, kept
+# as ticks), anytime (a time of any length, kept as seconds), choice
+_SETTINGS = {
+    "formula": {"expr": ("str", _REQ)},
+    "all_good": {},
+    "delay": {"ticks": ("whole", 1), "initial": ("const", None)},
+    "window": {"window": ("counted", _REQ), "min_good": ("num", 1.0)},
+    "deadband": {"step": ("num", _REQ), "ride_through": ("counted", 0)},
+    "lowpass": {"tau": ("anytime", _REQ), "ride_through": ("counted", 0)},
+    "hysteresis": {"rise": ("num", _REQ), "fall": ("num", _REQ)},
+    "held_for": {
+        "time": ("counted", _REQ),
+        "on_bad": ("choice", _REQ, ("reset", "hold")),
+        "hold_limit": ("counted", None),
+    },
+    "since_true": {"time": ("counted", _REQ), "on_bad": ("choice", _REQ, ("assume_false", "unknown"))},
+    "latch": {},
+    "integrate": {"per": ("anytime", 1.0), "max_missed": ("counted", None)},
+    "kalman1": {"tau": ("anytime", _REQ), "q": ("num", _REQ), "r": ("num", _REQ), "max_coast": ("counted", _REQ)},
+}
 
 
 class _Block:
-    pass
+    def __init__(self, bid, btype):
+        self.id = bid
+        self.type = btype
+        self.ins = {}  # port -> ("const", value) | ("in", name) | ("blk", id, port)
+        self.direct = {}  # port -> bool
+        self.set = {}  # parsed settings
+        self.out_types = {}
+        self.fallback = {}  # port -> value
+        self.ast = None
+        self.has_signal_inputs = False
 
 
-def _initial_state(b):
-    t = b.type
-    if t == "delay":
-        return {"buf": []}
-    if t == "window":
-        return {"buf": []}
-    if t == "deadband":
-        return {"held": None, "last": None}
-    if t == "held_for":
-        return {"start": None}
-    if t == "since_true":
-        return {"clock": None}
-    if t == "latch":
-        return {"on": False}
-    if t == "total":
-        return {"y": 0.0, "missed": 0}
-    if t == "kalman1":
-        return {"x": None, "var": None}
+# Each block type: init(b) -> state; out(b, st, k, ins) -> {port: (state, value)}
+# where ins maps port -> (state, value, new). For blocks whose inputs are all
+# direct, out() also updates the state: the update uses only this tick's own
+# inputs, so doing it in the first phase gives the same result as the second.
+
+
+def _init_none(b):
     return {}
 
 
-def _step(b, k, ins, period):
-    """Evaluate block b at tick k. ins: port -> (state, value). Returns port -> (state, value)."""
-    t, st, cfg = b.type, b.state, b.cfg
-    if t == "formula":
-        return {"y": _eval(b.ast, ins)}
+def _out_formula(b, st, k, ins):
+    env = {p: (s, v) for p, (s, v, _) in ins.items()}
+    return {"y": _eval(b.ast, env)}
 
-    if t == "all_good":
-        return {"y": (GOOD, 1.0 if all(s == GOOD for s, _ in ins.values()) else 0.0)}
 
-    if t == "delay":
-        n = cfg["ticks"]
-        if len(st["buf"]) >= n:
-            return {"y": st["buf"][0]}
-        if cfg["initial"] is None:
-            return {"y": (NOT_READY, None)}
-        return {"y": (GOOD, cfg["initial"])}
+def _out_all_good(b, st, k, ins):
+    return {"y": (GOOD, all(s == GOOD for s, _, _ in ins.values()))}
 
-    if t == "window":
-        n = cfg["n"]
-        s, v = ins["x"]
-        st["buf"].append((s, v, k))
-        del st["buf"][:-n]
-        usable = [(kk, vv) for ss, vv, kk in st["buf"] if ss == GOOD]
-        if len(usable) < cfg["min_good"] * n:
-            states = [ss for ss, _, _ in st["buf"] if ss != GOOD]
-            if len(st["buf"]) < n:
-                states.append(NOT_READY)
-            w = _worst(states)
-            return {p: (w, None) for p in b.ports}
-        vals = sorted(vv for _, vv in usable)
-        m = len(vals)
-        mean = math.fsum(vals) / m
-        median = vals[m // 2] if m % 2 else (vals[m // 2 - 1] + vals[m // 2]) / 2.0
-        out = {
-            "mean": (GOOD, mean),
-            "median": (GOOD, median),
-            "min": (GOOD, vals[0]),
-            "max": (GOOD, vals[-1]),
-            "spread": (GOOD, vals[-1] - vals[0]),
-        }
-        if m < 2:
-            out["slope"] = (BAD, None)
-        else:
-            k0 = usable[0][0]
-            ts = [float((kk - k0) * period) for kk, _ in usable]
-            tm = math.fsum(ts) / m
-            num = math.fsum((tt - tm) * (vv - mean) for tt, (_, vv) in zip(ts, usable))
-            den = math.fsum((tt - tm) ** 2 for tt in ts)
-            out["slope"] = (GOOD, num / den) if den > 0 else (BAD, None)
+
+def _init_delay(b):
+    return {"buf": []}
+
+
+def _init_window(b):
+    return {"buf": []}
+
+
+def _out_window(b, st, k, ins):
+    n = b.set["window"]
+    s, v, _ = ins["x"]
+    buf = st["buf"]
+    buf.append((s, v))
+    del buf[:-n]
+    slots = [(NOT_READY, None)] * (n - len(buf)) + buf
+    us = [(i, sv[1]) for i, sv in enumerate(slots) if usable(sv[0])]
+    vals = [x for _, x in us]
+    out = {"count": (GOOD, float(len(us)))}
+    names = ("mean", "median", "min", "max", "spread", "slope")
+    if len(us) < math.ceil(b.set["min_good"] * n - 1e-9):
+        hole = worst([sv[0] for sv in slots if not usable(sv[0])])
+        for p in names:
+            out[p] = (hole, None)
         return out
+    state = GOOD if all(sv[0] == GOOD for sv in slots) else UNCERTAIN
+    m = len(vals)
+    srt = sorted(vals)
+    out["mean"] = (state, sum(vals) / m)
+    if m % 2:
+        out["median"] = (state, srt[m // 2])
+    else:
+        out["median"] = (state, (srt[m // 2 - 1] + srt[m // 2]) / 2)
+    out["min"] = (state, srt[0])
+    out["max"] = (state, srt[-1])
+    out["spread"] = (state, srt[-1] - srt[0])
+    if m < 2:
+        out["slope"] = (BAD, None)
+    else:
+        ts = [i * b.period for i, _ in us]
+        tm = sum(ts) / m
+        vm = sum(vals) / m
+        num = sum((t - tm) * (x - vm) for t, x in zip(ts, vals))
+        den = sum((t - tm) * (t - tm) for t in ts)
+        out["slope"] = (state, num / den)
+    return out
 
-    if t == "deadband":
-        s, v = ins["x"]
-        if s == GOOD:
-            if st["held"] is None or abs(v - st["held"]) >= cfg["step"]:
-                st["held"] = v
+
+def _init_hold(b):
+    return {"held": None, "last": None}
+
+
+def _out_hold(b, st, k, ins):
+    s, x, _ = ins["x"]
+    if usable(s):
+        h = st["held"]
+        if h is None:
+            h = x
+        elif b.type == "deadband":
+            if abs(x - h) >= b.set["step"]:
+                h = x
+        else:
+            a = b.a
+            h = a * h + (1 - a) * x
+        st["held"] = h
+        st["last"] = k
+        return {"y": (s, h)}
+    if st["held"] is not None and k - st["last"] <= b.set["ride_through"]:
+        return {"y": (UNCERTAIN, st["held"])}
+    return {"y": (s, None)}
+
+
+def _init_hyst(b):
+    return {"q": None}
+
+
+def _out_hyst(b, st, k, ins):
+    s, x, _ = ins["x"]
+    if usable(s):
+        if x >= b.set["rise"]:
+            st["q"] = True
+        elif x <= b.set["fall"]:
+            st["q"] = False
+    if not usable(s):
+        return {"y": (s, None)}
+    if st["q"] is None:
+        return {"y": (NOT_READY, None)}
+    return {"y": (s, st["q"])}
+
+
+def _init_held_for(b):
+    return {"start": None, "allgood": True, "gap": 0}
+
+
+def _out_held_for(b, st, k, ins):
+    s, x, _ = ins["x"]
+    n = b.set["time"]
+    if usable(s):
+        st["gap"] = 0
+        if not x:
+            st["start"] = None
+            return {"y": (s, False)}
+        if st["start"] is None:
+            st["start"] = k
+            st["allgood"] = True
+        if s != GOOD:
+            st["allgood"] = False
+        return {"y": (GOOD if st["allgood"] else UNCERTAIN, k - st["start"] > n)}
+    if b.set["on_bad"] == "hold" and st["start"] is not None:
+        st["gap"] += 1
+        if st["gap"] <= b.set["hold_limit"]:
+            st["allgood"] = False
+            return {"y": (UNCERTAIN, k - st["start"] > n)}
+    st["start"] = None
+    st["gap"] = 0
+    return {"y": (s, None)}
+
+
+def _init_since_true(b):
+    return {"last": 0}
+
+
+def _out_since_true(b, st, k, ins):
+    s, x, _ = ins["x"]
+    if usable(s):
+        if x:
             st["last"] = k
-            return {"y": (GOOD, st["held"])}
-        if st["held"] is not None and (k - st["last"]) * period <= cfg["ride_through"]:
-            return {"y": (GOOD, st["held"])}
-        return {"y": (s, None)}
+        return {"y": (s, k - st["last"] > b.set["time"])}
+    if b.set["on_bad"] == "assume_false":
+        return {"y": (UNCERTAIN, k - st["last"] > b.set["time"])}
+    return {"y": (s, None)}
 
-    if t == "held_for":
-        s, v = ins["x"]
-        if s == GOOD:
-            if v != 0:
-                if st["start"] is None:
-                    st["start"] = k
-                return {"y": (GOOD, 1.0 if (k - st["start"]) * period > cfg["time"] else 0.0)}
-            st["start"] = None
-            return {"y": (GOOD, 0.0)}
-        if cfg["on_bad"] == "reset":
-            st["start"] = None
-            return {"y": (s, None)}
-        if st["start"] is not None:
-            return {"y": (GOOD, 1.0 if (k - st["start"]) * period > cfg["time"] else 0.0)}
-        return {"y": (s, None)}
 
-    if t == "since_true":
-        s, v = ins["x"]
-        if st["clock"] is None or (s == GOOD and v != 0):
-            st["clock"] = k
-        return {"y": (GOOD, 1.0 if (k - st["clock"]) * period > cfg["time"] else 0.0)}
+def _init_latch(b):
+    return {"q": False}
 
-    if t == "latch":
-        s, v = ins["set"]
-        if s == GOOD and v != 0:
-            st["on"] = True
-        return {"y": (GOOD, 1.0 if st["on"] else 0.0)}
 
-    if t == "total":
-        s, v = ins["x"]
-        if s == GOOD:
-            st["y"] += v * cfg["period_f"] / cfg["per_f"]
+def _out_latch(b, st, k, ins):
+    s, x, _ = ins["set"]
+    r = ins.get("reset")
+    if r is not None and usable(r[0]) and r[1]:
+        st["q"] = False
+    elif usable(s) and x:
+        st["q"] = True
+    if st["q"]:
+        return {"y": (GOOD, True)}
+    if usable(s):
+        return {"y": (s, False)}
+    return {"y": (s, None)}
+
+
+def _init_integrate(b):
+    return {"total": 0.0, "missed": 0, "allgood": True}
+
+
+def _out_integrate(b, st, k, ins):
+    s, x, _ = ins["x"]
+    r = ins.get("reset")
+    if r is not None and usable(r[0]) and r[1]:
+        st["total"] = 0.0
+        st["missed"] = 0
+        st["allgood"] = True
+    if usable(s):
+        st["total"] += x * b.period / b.set["per"]
+        if s != GOOD:
+            st["allgood"] = False
+    else:
+        st["missed"] += 1
+    out = {"missed": (GOOD, st["missed"] * b.period)}
+    mm = b.set["max_missed"]
+    if mm is not None and st["missed"] > mm:
+        out["y"] = (BAD, None)
+    elif st["missed"] == 0 and st["allgood"]:
+        out["y"] = (GOOD, st["total"])
+    else:
+        out["y"] = (UNCERTAIN, st["total"])
+    return out
+
+
+def _init_kalman1(b):
+    return {"started": False, "x": None, "var": None, "last": None, "last_unc": False}
+
+
+def _out_kalman1(b, st, k, ins):
+    zs, z, znew = ins["z"]
+    ms, model, _ = ins["model"]
+    fresh = usable(zs) and znew
+    if not st["started"]:
+        if not fresh:
+            return {"x": (NOT_READY, None), "sigma": (NOT_READY, None)}
+        st["started"] = True
+        st["x"] = z
+        st["var"] = b.set["r"]
+        st["last"] = k
+        st["last_unc"] = zs == UNCERTAIN
+    else:
+        a = b.a
+        if usable(ms):
+            st["x"] = a * st["x"] + (1 - a) * model
+            st["var"] = a * a * st["var"] + b.set["q"] * b.period
         else:
-            st["missed"] += 1
-        return {"y": (GOOD, st["y"]), "missed": (GOOD, float(st["missed"] * period))}
-
-    if t == "kalman1":
-        zs, z = ins["z"]
-        ms, mv = ins.get("model", (NOT_READY, None))
-        a, qp, r = cfg["a"], cfg["q"] * cfg["period_f"], cfg["r"]
-        if st["x"] is None:
-            if zs != GOOD:
-                return {"x": (NOT_READY, None), "sigma": (NOT_READY, None)}
-            st["x"], st["var"] = z, r
-        else:
-            if ms == GOOD:
-                st["x"] = a * st["x"] + (1 - a) * mv
-                st["var"] = a * a * st["var"] + qp
-            else:
-                st["var"] = st["var"] + qp
-            if zs == GOOD:
-                g = st["var"] / (st["var"] + r)
-                st["x"] = st["x"] + g * (z - st["x"])
-                st["var"] = st["var"] * (1 - g)
-        return {"x": (GOOD, st["x"]), "sigma": (GOOD, math.sqrt(st["var"]))}
-
-    raise AssertionError(t)
+            st["var"] = st["var"] + b.set["q"] * b.period
+        if fresh:
+            g = st["var"] / (st["var"] + b.set["r"])
+            st["x"] = st["x"] + g * (z - st["x"])
+            st["var"] = st["var"] * (1 - g)
+            st["last"] = k
+            st["last_unc"] = zs == UNCERTAIN
+    if k - st["last"] > b.set["max_coast"] or st["last_unc"]:
+        state = UNCERTAIN
+    else:
+        state = GOOD
+    return {"x": (state, st["x"]), "sigma": (state, math.sqrt(st["var"]))}
 
 
-# ------------------------------------------------------------------ compile
+_BEHAVIOUR = {
+    "formula": (_init_none, _out_formula),
+    "all_good": (_init_none, _out_all_good),
+    "delay": (_init_delay, None),
+    "window": (_init_window, _out_window),
+    "deadband": (_init_hold, _out_hold),
+    "lowpass": (_init_hold, _out_hold),
+    "hysteresis": (_init_hyst, _out_hyst),
+    "held_for": (_init_held_for, _out_held_for),
+    "since_true": (_init_since_true, _out_since_true),
+    "latch": (_init_latch, _out_latch),
+    "integrate": (_init_integrate, _out_integrate),
+    "kalman1": (_init_kalman1, _out_kalman1),
+}
 
 
-def _setting(bid, name, kind, raw):
-    what = "block %r: setting %r" % (bid, name)
-    if kind == "dur":
-        return _duration(raw, what)
-    if kind == "num":
-        _frac(raw, what)
-        return raw
-    if kind == "int":
-        if not isinstance(raw, int) or isinstance(raw, bool):
-            raise CompileError("%s: expected a whole number, got %r" % (what, raw))
-        return raw
-    if kind == "str":
-        if not isinstance(raw, str):
-            raise CompileError("%s: expected text, got %r" % (what, raw))
-        return raw
-    raise AssertionError(kind)
+# -------------------------------------------------------------- compile
 
 
-def _compile_block(raw, period, seen_ids):
-    if not isinstance(raw, dict):
-        raise CompileError("a block must be a mapping, got %r" % (raw,))
-    if "id" not in raw:
-        raise CompileError("a block has no id: %r" % (raw,))
-    bid = raw["id"]
-    if not isinstance(bid, str) or not bid:
-        raise CompileError("block id %r is not a non-empty string" % (bid,))
-    if bid in seen_ids:
-        raise CompileError("duplicate block id %r" % bid)
-    for key in raw:
-        if key not in _BLOCK_KEYS:
-            raise CompileError("block %r: unknown key %r" % (bid, key))
-    if "type" not in raw:
-        raise CompileError("block %r: no type" % bid)
-    btype = raw["type"]
-    if not isinstance(btype, str) or btype not in _TYPES:
-        raise CompileError("block %r: unknown type %r" % (bid, btype))
-    spec = _TYPES[btype]
-
-    b = _Block()
-    b.id, b.type, b.ports = bid, btype, list(spec["outputs"])
-    b.prev = spec.get("prev", set())
-    b.ast = None
-
-    # settings
-    given = raw.get("settings", {})
-    if given is None:
-        given = {}
-    if not isinstance(given, dict):
-        raise CompileError("block %r: settings must be a mapping" % bid)
-    for name in given:
-        if name not in spec["settings"]:
-            raise CompileError("block %r: unknown setting %r" % (bid, name))
-    s = {}
-    for name, (kind, required, default) in spec["settings"].items():
-        if name in given:
-            s[name] = _setting(bid, name, kind, given[name])
-        elif required:
-            raise CompileError("block %r: missing required setting %r" % (bid, name))
-        else:
-            s[name] = None if default is None else _setting(bid, name, kind, default)
-
-    def rng(name, ok, must):
-        if not ok:
-            raise CompileError("block %r: setting %r out of range: %r (%s)" % (bid, name, given.get(name), must))
-
-    cfg = {"period_f": float(period)}
-    if btype == "formula":
-        p = _Parser(s["expr"], "block %r" % bid)
-        b.ast = p.parse()
-        b.names = p.names
-    elif btype == "delay":
-        rng("ticks", s["ticks"] >= 1, "must be 1 or more")
-        cfg["ticks"] = s["ticks"]
-        cfg["initial"] = None if s["initial"] is None else float(s["initial"])
-    elif btype == "window":
-        rng("window", s["window"] > 0, "must be longer than zero")
-        n = s["window"] / period
-        if n.denominator != 1:
-            raise CompileError(
-                "block %r: setting 'window' (%r) is not a whole number of periods" % (bid, given["window"])
-            )
-        mg = _frac(s["min_good"], "min_good")
-        rng("min_good", 0 < mg <= 1, "must be more than 0 and at most 1")
-        cfg["n"], cfg["min_good"] = int(n), mg
-    elif btype == "deadband":
-        rng("step", s["step"] >= 0, "must not be negative")
-        rng("ride_through", s["ride_through"] >= 0, "must not be negative")
-        cfg["step"], cfg["ride_through"] = float(s["step"]), s["ride_through"]
-    elif btype == "held_for":
-        rng("time", s["time"] >= 0, "must not be negative")
-        rng("on_bad", s["on_bad"] in ("reset", "hold"), "must be 'reset' or 'hold'")
-        cfg["time"], cfg["on_bad"] = s["time"], s["on_bad"]
-    elif btype == "since_true":
-        rng("time", s["time"] >= 0, "must not be negative")
-        cfg["time"] = s["time"]
-    elif btype == "total":
-        rng("per", s["per"] > 0, "must be longer than zero")
-        cfg["per_f"] = float(s["per"])
-    elif btype == "kalman1":
-        rng("tau", s["tau"] > 0, "must be longer than zero")
-        rng("q", s["q"] >= 0, "must not be negative")
-        rng("r", s["r"] > 0, "must be more than zero")
-        if period > s["tau"]:
-            raise CompileError("block %r: setting 'tau' (%r) is shorter than the period" % (bid, given["tau"]))
-        cfg["a"] = float(1 - period / s["tau"])
-        cfg["q"], cfg["r"] = float(s["q"]), float(s["r"])
-    b.cfg = cfg
-    b.norm_settings = {k: (str(v) if isinstance(v, Fraction) else v) for k, v in s.items()}
+def _compile(graph):
+    if not isinstance(graph, dict):
+        raise CompileError("graph: not a mapping")
+    for key in graph:
+        if key not in ("period", "inputs", "blocks"):
+            raise CompileError("graph: unknown key %r" % (key,))
+    if "period" not in graph:
+        raise CompileError("graph: period is missing")
+    period = parse_time(graph["period"])
+    if period is None or period <= 0:
+        raise CompileError("graph: period %r is not a length of time more than zero" % (graph["period"],))
 
     # inputs
-    ins = raw.get("in", {})
-    if ins is None:
-        ins = {}
-    if not isinstance(ins, dict):
-        raise CompileError("block %r: 'in' must be a mapping" % bid)
-    b.raw_in = {}
-    for port, src in ins.items():
-        if not isinstance(port, str):
-            raise CompileError("block %r: input port %r is not a name" % (bid, port))
-        if btype == "formula":
-            if port in _RESERVED:
-                raise CompileError("block %r: input port %r is a reserved word" % (bid, port))
-            if port not in b.names:
-                raise CompileError("block %r: input port %r is not named in the formula" % (bid, port))
-        elif spec["inputs"] is not None and port not in spec["inputs"]:
-            raise CompileError("block %r: unknown input port %r" % (bid, port))
-        if _is_num(src):
-            if not math.isfinite(src):
-                raise CompileError("block %r: input %r: constant %r is not finite" % (bid, port, src))
-            b.raw_in[port] = ("const", float(src))
-        elif isinstance(src, str):
-            b.raw_in[port] = ("sig", src)
+    inputs = {}
+    raw_inputs = graph.get("inputs")
+    if raw_inputs is None:
+        raw_inputs = {}
+    if not isinstance(raw_inputs, dict):
+        raise CompileError("graph: inputs is not a mapping")
+    for name, spec in raw_inputs.items():
+        if not isinstance(name, str) or name == "":
+            raise CompileError("input %r: its name is not a non-empty string" % (name,))
+        if spec is None:
+            spec = {}
+        if not isinstance(spec, dict):
+            raise CompileError("input %r: not a mapping" % name)
+        for key in spec:
+            if key not in ("type", "unit", "max_age", "initial"):
+                raise CompileError("input %r: unknown key %r" % (name, key))
+        typ = spec.get("type", NUMBER)
+        if typ not in (NUMBER, BOOLEAN):
+            raise CompileError("input %r: type %r is not number or boolean" % (name, typ))
+        max_age = None
+        max_age_exact = None
+        if "max_age" in spec:
+            max_age_exact = parse_time(spec["max_age"])
+            if max_age_exact is None:
+                raise CompileError("input %r: max_age %r is not a length of time" % (name, spec["max_age"]))
+            max_age = float(max_age_exact)
+        initial = None
+        if "initial" in spec:
+            initial = spec["initial"]
+            if _const_type(initial) != typ:
+                raise CompileError("input %r: initial %r is not a %s" % (name, initial, typ))
+            if typ == NUMBER:
+                initial = float(initial)
+                if not math.isfinite(initial):
+                    raise CompileError("input %r: initial is not finite" % name)
+        inputs[name] = {"type": typ, "max_age": max_age, "max_age_exact": max_age_exact, "initial": initial}
+
+    # blocks: shape
+    raw_blocks = graph.get("blocks")
+    if raw_blocks is None:
+        raw_blocks = []
+    if not isinstance(raw_blocks, list):
+        raise CompileError("graph: blocks is not a list")
+    blocks = {}
+    raw_by_id = {}
+    for pos, rb in enumerate(raw_blocks):
+        if not isinstance(rb, dict):
+            raise CompileError("block at position %d: not a mapping" % pos)
+        if "id" not in rb:
+            raise CompileError("block at position %d: has no id" % pos)
+        bid = rb["id"]
+        if not isinstance(bid, str) or bid == "":
+            raise CompileError("block at position %d: id %r is not a non-empty string" % (pos, bid))
+        if bid in blocks:
+            raise CompileError("block %r: another block has this id" % bid)
+        for key in rb:
+            if key not in ("id", "type", "in", "settings", "out", "fallback"):
+                raise CompileError("block %r: unknown key %r" % (bid, key))
+        btype = rb.get("type")
+        if not isinstance(btype, str) or btype not in _BEHAVIOUR:
+            raise CompileError("block %r: unknown block type %r" % (bid, btype))
+        for key in ("in", "settings", "out", "fallback"):
+            if rb.get(key) is not None and not isinstance(rb[key], dict):
+                raise CompileError("block %r: %r is not a mapping" % (bid, key))
+        blocks[bid] = _Block(bid, btype)
+        raw_by_id[bid] = rb
+
+    # signal names and their writers
+    names = {}
+
+    def add_name(name, src, who):
+        if name in names and names[name] != src:
+            raise CompileError("%s: signal %r has two writers" % (who, name))
+        names[name] = src
+
+    for name in inputs:
+        add_name(name, ("in", name), "input %r" % name)
+    for bid, b in blocks.items():
+        for port in _OUTPUTS[b.type]:
+            add_name("%s.%s" % (bid, port), ("blk", bid, port), "block %r" % bid)
+    published = {}
+    for bid, b in blocks.items():
+        out = raw_by_id[bid].get("out") or {}
+        for port, name in out.items():
+            if port not in _OUTPUTS[b.type]:
+                raise CompileError("block %r: unknown port %r in out" % (bid, port))
+            if not isinstance(name, str) or name == "":
+                raise CompileError("block %r: out port %r is not given a signal name" % (bid, port))
+            if name in published:
+                raise CompileError("block %r: signal %r has two writers" % (bid, name))
+            add_name(name, ("blk", bid, port), "block %r" % bid)
+            published[name] = (bid, port)
+
+    # connections
+    for bid, b in blocks.items():
+        raw_in = raw_by_id[bid].get("in") or {}
+        if b.type in ("formula", "all_good"):
+            if not raw_in:
+                raise CompileError("block %r: a %s takes one or more inputs" % (bid, b.type))
+            ports = {p: (None, True, True) for p in raw_in}
         else:
-            raise CompileError("block %r: input %r must be a signal name or a number, got %r" % (bid, port, src))
-    if btype == "formula":
-        for name in sorted(b.names):
-            if name not in b.raw_in:
-                raise CompileError("block %r: formula names %r, which is not one of its inputs" % (bid, name))
-    elif spec["inputs"] is not None:
-        for port, required in spec["inputs"].items():
-            if required and port not in b.raw_in:
-                raise CompileError("block %r: missing required input %r" % (bid, port))
+            ports = _INPUTS[b.type]
+        for port, ref in raw_in.items():
+            if port not in ports:
+                raise CompileError("block %r: unknown port %r in in" % (bid, port))
+            if isinstance(ref, str):
+                if ref not in names:
+                    raise CompileError(
+                        "block %r: port %r reads signal %r, which is neither an input "
+                        "nor a block's output" % (bid, port, ref)
+                    )
+                b.ins[port] = names[ref]
+                b.has_signal_inputs = True
+            elif _const_type(ref) is not None:
+                if _const_type(ref) == NUMBER:
+                    ref = float(ref)
+                    if not math.isfinite(ref):
+                        raise CompileError("block %r: the constant on port %r is not finite" % (bid, port))
+                b.ins[port] = ("const", ref)
+            else:
+                raise CompileError(
+                    "block %r: port %r is given %r, which is neither a signal nor a constant" % (bid, port, ref)
+                )
+            b.direct[port] = ports[port][2]
+        for port, (_, required, _) in ports.items():
+            if required and port not in b.ins:
+                raise CompileError("block %r: required input %r is left unconnected" % (bid, port))
 
-    # outputs and fallbacks
-    out = raw.get("out", {})
-    if out is None:
-        out = {}
-    if not isinstance(out, dict):
-        raise CompileError("block %r: 'out' must be a mapping" % bid)
-    for port, name in out.items():
-        if port not in b.ports:
-            raise CompileError("block %r: unknown output port %r" % (bid, port))
-        if not isinstance(name, str) or not name:
-            raise CompileError("block %r: output %r must be published under a signal name, got %r" % (bid, port, name))
-    b.out = dict(out)
-    fb = raw.get("fallback", {})
-    if fb is None:
-        fb = {}
-    if not isinstance(fb, dict):
-        raise CompileError("block %r: 'fallback' must be a mapping" % bid)
-    b.fallback = {}
-    for port, v in fb.items():
-        if port not in b.ports:
-            raise CompileError("block %r: fallback names unknown output port %r" % (bid, port))
-        if not _is_num(v) or not math.isfinite(v):
-            raise CompileError("block %r: fallback for %r must be a finite number, got %r" % (bid, port, v))
-        b.fallback[port] = float(v)
-    return b
+    # settings
+    for bid, b in blocks.items():
+        _compile_settings(b, raw_by_id[bid].get("settings") or {}, period)
+
+    # order: direct inputs only, ties by block id
+    deps = {bid: set() for bid in blocks}  # direct
+    all_deps = {bid: set() for bid in blocks}  # direct and deferred
+    for bid, b in blocks.items():
+        for port, src in b.ins.items():
+            if src[0] == "blk":
+                all_deps[bid].add(src[1])
+                if b.direct[port]:
+                    deps[bid].add(src[1])
+    order = []
+    done = set()
+    remaining = set(blocks)
+    while remaining:
+        ready = sorted(bid for bid in remaining if deps[bid] <= done)
+        if not ready:
+            raise CompileError("a loop of direct inputs through blocks: %s" % ", ".join(_find_cycle(deps, remaining)))
+        order.append(ready[0])
+        done.add(ready[0])
+        remaining.discard(ready[0])
+
+    # a delay on a loop has an initial value
+    for bid, b in blocks.items():
+        if b.type == "delay" and b.set["initial"] is None and _reaches(all_deps, bid, bid):
+            raise CompileError("block %r: a delay on a loop has no setting 'initial'" % bid)
+
+    # types
+    memo = {}
+
+    def src_type(src):
+        if src[0] == "const":
+            return _const_type(src[1])
+        if src[0] == "in":
+            return inputs[src[1]]["type"]
+        return out_type(src[1], src[2])
+
+    def out_type(bid, port):
+        key = (bid, port)
+        if key in memo:
+            return memo[key]
+        b = blocks[bid]
+        t = _OUTPUTS[b.type][port]
+        if b.type == "delay":
+            if b.set["initial"] is not None:
+                t = _const_type(b.set["initial"])
+            else:
+                t = src_type(b.ins["x"])
+        elif b.type == "formula":
+            types = {p: src_type(s) for p, s in b.ins.items()}
+            try:
+                t = _type_of(b.ast, types)
+            except _FormulaError as e:
+                raise CompileError("block %r: setting 'expr': %s" % (bid, e))
+        memo[key] = t
+        return t
+
+    for bid in order:
+        b = blocks[bid]
+        for port in _OUTPUTS[b.type]:
+            b.out_types[port] = out_type(bid, port)
+    for bid, b in blocks.items():
+        for port, src in b.ins.items():
+            if b.type in ("formula", "all_good"):
+                continue
+            want = _INPUTS[b.type][port][0]
+            if b.type == "delay":
+                want = b.out_types["y"]
+            got = src_type(src)
+            if got != want:
+                what = "a constant" if src[0] == "const" else "a signal"
+                if b.type == "delay" and b.set["initial"] is not None:
+                    raise CompileError(
+                        "block %r: setting 'initial' is a %s and port 'x' is given %s "
+                        "that is a %s" % (bid, want, what, got)
+                    )
+                raise CompileError(
+                    "block %r: port %r is a %s and is given %s that is a %s" % (bid, port, want, what, got)
+                )
+
+    # fallbacks
+    for bid, b in blocks.items():
+        fb = raw_by_id[bid].get("fallback") or {}
+        for port, val in fb.items():
+            if port not in _OUTPUTS[b.type]:
+                raise CompileError("block %r: unknown port %r in fallback" % (bid, port))
+            if _const_type(val) != b.out_types[port]:
+                raise CompileError(
+                    "block %r: fallback for port %r is not a constant of type %s" % (bid, port, b.out_types[port])
+                )
+            if b.out_types[port] == NUMBER:
+                val = float(val)
+                if not math.isfinite(val):
+                    raise CompileError("block %r: fallback for port %r is not finite" % (bid, port))
+            b.fallback[port] = val
+
+    return period, inputs, blocks, order, published
 
 
-def _loops(blocks, deps):
-    """Strongly connected components that are loops, each a sorted list of ids."""
-    index, low, on, stack, out = {}, {}, set(), [], []
-    counter = [0]
+def _find_cycle(deps, remaining):
+    start = sorted(remaining)[0]
+    path = [start]
+    seen = {start: 0}
+    while True:
+        nxt = sorted(d for d in deps[path[-1]] if d in remaining)[0]
+        if nxt in seen:
+            return path[seen[nxt] :]
+        seen[nxt] = len(path)
+        path.append(nxt)
 
-    def visit(v):
-        index[v] = low[v] = counter[0]
-        counter[0] += 1
-        stack.append(v)
-        on.add(v)
-        for w in sorted(deps[v]):
-            if w not in index:
-                visit(w)
-                low[v] = min(low[v], low[w])
-            elif w in on:
-                low[v] = min(low[v], index[w])
-        if low[v] == index[v]:
-            comp = []
-            while True:
-                w = stack.pop()
-                on.discard(w)
-                comp.append(w)
-                if w == v:
-                    break
-            if len(comp) > 1 or v in deps[v]:
-                out.append(sorted(comp))
 
-    for v in sorted(blocks):
-        if v not in index:
-            visit(v)
-    return sorted(out)
+def _reaches(deps, start, target):
+    """True if target is among the blocks start depends on, at any remove."""
+    stack = list(deps[start])
+    seen = set()
+    while stack:
+        x = stack.pop()
+        if x == target:
+            return True
+        if x not in seen:
+            seen.add(x)
+            stack.extend(deps[x])
+    return False
+
+
+def _compile_settings(b, raw, period):
+    bid = b.id
+    spec = _SETTINGS[b.type]
+    for name in raw:
+        if name not in spec:
+            raise CompileError("block %r: unknown setting %r" % (bid, name))
+    for name, sp in spec.items():
+        kind, default = sp[0], sp[1]
+        if name not in raw:
+            if default is _REQ:
+                raise CompileError("block %r: required setting %r is missing" % (bid, name))
+            b.set[name] = default
+            continue
+        val = raw[name]
+
+        def wrong(what):
+            raise CompileError("block %r: setting %r is %r, which is not %s" % (bid, name, val, what))
+
+        if kind == "str":
+            if not isinstance(val, str):
+                wrong("a string")
+        elif kind == "num":
+            if not _is_num(val) or not math.isfinite(val):
+                wrong("a finite number")
+            val = float(val)
+        elif kind == "whole":
+            if not _is_num(val) or not math.isfinite(val) or val != int(val):
+                wrong("a whole number")
+            val = int(val)
+        elif kind == "const":
+            if _const_type(val) is None:
+                wrong("a number or a boolean")
+            if _is_num(val):
+                val = float(val)
+                if not math.isfinite(val):
+                    wrong("finite")
+        elif kind == "choice":
+            if not isinstance(val, str) or val not in sp[2]:
+                wrong("one of " + ", ".join(sp[2]))
+        else:
+            t = parse_time(val)
+            if t is None:
+                wrong("a length of time")
+            if kind == "counted":
+                ticks = t / period
+                if ticks.denominator != 1:
+                    wrong("a whole number of periods")
+                val = int(ticks)
+            else:
+                val = float(t)
+        b.set[name] = val
+
+    def out_of_range(name, what):
+        raise CompileError("block %r: setting %r is out of range: it must be %s" % (bid, name, what))
+
+    s = b.set
+    b.period = float(period)
+    if b.type == "formula":
+        try:
+            b.ast = _Parser(s["expr"]).parse()
+        except _FormulaError as e:
+            raise CompileError("block %r: setting 'expr': %s" % (bid, e))
+        used = _names_used(b.ast, set())
+        for name in sorted(used):
+            if name not in b.ins:
+                raise CompileError(
+                    "block %r: the formula uses %r, which is not one of the block's inputs" % (bid, name)
+                )
+        for port in b.ins:
+            if port not in used:
+                raise CompileError("block %r: input %r is not used by the formula" % (bid, port))
+    elif b.type == "delay":
+        if s["ticks"] < 1:
+            out_of_range("ticks", "at least 1")
+    elif b.type == "window":
+        if s["window"] < 1:
+            out_of_range("window", "at least one period")
+        if not (0 < s["min_good"] <= 1):
+            out_of_range("min_good", "more than 0 and at most 1")
+    elif b.type == "deadband":
+        if s["step"] < 0:
+            out_of_range("step", "not negative")
+    elif b.type == "lowpass":
+        if s["tau"] <= 0:
+            out_of_range("tau", "more than zero")
+        b.a = math.exp(-b.period / s["tau"])
+    elif b.type == "hysteresis":
+        if not s["rise"] > s["fall"]:
+            out_of_range("rise", "more than fall")
+    elif b.type == "held_for":
+        if s["on_bad"] == "hold" and s["hold_limit"] is None:
+            raise CompileError("block %r: required setting 'hold_limit' is missing (on_bad is hold)" % bid)
+        if s["on_bad"] != "hold" and s["hold_limit"] is not None:
+            raise CompileError("block %r: setting 'hold_limit' is given without on_bad: hold" % bid)
+    elif b.type == "integrate":
+        if s["per"] <= 0:
+            out_of_range("per", "more than zero")
+    elif b.type == "kalman1":
+        if s["tau"] <= 0:
+            out_of_range("tau", "more than zero")
+        if s["r"] <= 0:
+            out_of_range("r", "more than zero")
+        if s["q"] < 0:
+            out_of_range("q", "not negative")
+        b.a = math.exp(-b.period / s["tau"])
+
+
+# --------------------------------------------------------------- engine
 
 
 class Engine:
     def __init__(self, graph):
-        if not isinstance(graph, dict):
-            raise CompileError("a graph must be a mapping")
-        for key in graph:
-            if key not in _TOP_KEYS:
-                raise CompileError("unknown top-level key %r" % (key,))
-        if "period" not in graph:
-            raise CompileError("the graph has no period")
-        period = _duration(graph["period"], "period")
-        if period <= 0:
-            raise CompileError("period %r must be longer than zero" % (graph["period"],))
-        self._period = period
-
-        # external inputs
-        raw_inputs = graph.get("inputs") or {}
-        if isinstance(raw_inputs, list):
-            as_dict = {}
-            for item in raw_inputs:
-                if not isinstance(item, dict) or "signal" not in item:
-                    raise CompileError("an input needs a 'signal' name: %r" % (item,))
-                if item["signal"] in as_dict:
-                    raise CompileError("duplicate signal %r: declared as an input twice" % (item["signal"],))
-                as_dict[item["signal"]] = item
-            raw_inputs = as_dict
-        if not isinstance(raw_inputs, dict):
-            raise CompileError("'inputs' must be a mapping of signal name to its declaration")
-        self.max_age = {}
-        self._max_age = {}
-        for name, decl in raw_inputs.items():
-            if not isinstance(name, str) or not name:
-                raise CompileError("input name %r is not a non-empty string" % (name,))
-            if decl is None:
-                decl = {}
-            if not isinstance(decl, dict):
-                raise CompileError("input %r: declaration must be a mapping" % name)
-            for key in decl:
-                if key not in _INPUT_KEYS:
-                    raise CompileError("input %r: unknown key %r" % (name, key))
-            if decl.get("max_age") is None:
-                self._max_age[name] = None
-                self.max_age[name] = math.inf
-            else:
-                age = _duration(decl["max_age"], "input %r: max_age" % name)
-                if age < 0:
-                    raise CompileError(
-                        "input %r: max_age %r out of range: must not be negative" % (name, decl["max_age"])
-                    )
-                self._max_age[name] = age
-                self.max_age[name] = float(age)
-
-        # blocks
-        raw_blocks = graph.get("blocks") or []
-        if not isinstance(raw_blocks, list):
-            raise CompileError("'blocks' must be a list")
-        self._blocks = {}
-        for raw in raw_blocks:
-            b = _compile_block(raw, period, self._blocks)
-            self._blocks[b.id] = b
-
-        # every signal has exactly one writer
-        writers = {name: "an input from outside" for name in self._max_age}
-        table = {name: ("in", name) for name in self._max_age}
-        for b in self._blocks.values():
-            for port, name in b.out.items():
-                if name in writers:
-                    raise CompileError(
-                        "duplicate signal %r: written by %s and by block %r (port %r)"
-                        % (name, writers[name], b.id, port)
-                    )
-                writers[name] = "block %r (port %r)" % (b.id, port)
-                table[name] = ("blk", b.id, port)
-        for b in self._blocks.values():
-            for port in b.ports:
-                name = "%s.%s" % (b.id, port)
-                ref = ("blk", b.id, port)
-                if name in table and table[name] != ref:
-                    raise CompileError(
-                        "duplicate signal %r: it is both %s and the unpublished name of "
-                        "block %r (port %r)" % (name, writers.get(name, "another block's port"), b.id, port)
-                    )
-                table[name] = ref
-                writers.setdefault(name, "block %r (port %r)" % (b.id, port))
-
-        # resolve reads
-        deps = {bid: set() for bid in self._blocks}
-        for b in self._blocks.values():
-            b.src = {}
-            for port, (kind, v) in b.raw_in.items():
-                if kind == "const":
-                    b.src[port] = ("const", v)
-                    continue
-                if v not in table:
-                    raise CompileError(
-                        "block %r: input %r reads signal %r, which is neither an input "
-                        "nor a block's output" % (b.id, port, v)
-                    )
-                b.src[port] = table[v]
-                if table[v][0] == "blk" and port not in b.prev:
-                    deps[b.id].add(table[v][1])
-
-        # one evaluation order, ties broken by block id
-        loops = _loops(self._blocks, deps)
-        if loops:
-            raise CompileError("dependency loop through blocks: " + "; ".join(", ".join(loop) for loop in loops))
-        waiting = {bid: len(d) for bid, d in deps.items()}
-        readers = {bid: [] for bid in deps}
-        for bid, d in deps.items():
-            for dep in d:
-                readers[dep].append(bid)
-        ready = [bid for bid, n in waiting.items() if n == 0]
-        heapq.heapify(ready)
-        self._order = []
-        while ready:
-            bid = heapq.heappop(ready)
-            self._order.append(self._blocks[bid])
-            for r in readers[bid]:
-                waiting[r] -= 1
-                if waiting[r] == 0:
-                    heapq.heappush(ready, r)
-        self.order = [b.id for b in self._order]
-
-        self._published = []
-        for b in self._blocks.values():
-            for port, name in b.out.items():
-                self._published.append((name, ("blk", b.id, port)))
-
-        self._fingerprint = json.dumps(
-            {
-                "period": str(period),
-                "inputs": {n: (None if a is None else str(a)) for n, a in self._max_age.items()},
-                "blocks": {
-                    b.id: {
-                        "type": b.type,
-                        "settings": b.norm_settings,
-                        "in": {p: list(v) for p, v in b.raw_in.items()},
-                        "out": b.out,
-                        "fallback": b.fallback,
-                    }
-                    for b in self._blocks.values()
-                },
-            },
-            sort_keys=True,
-        )
+        period, inputs, blocks, order, published = _compile(graph)
+        self._signature = json.dumps(graph, sort_keys=True, default=repr)
+        self._period_exact = period
+        self._period = float(period)
+        self.inputs = inputs
+        self._blocks = blocks
+        self._order = order
+        self._published = published
         self.reset()
 
-    # -------------------------------------------------------------- running
+    # -- state
 
     def reset(self):
-        self._k = 0
-        self._written = {}
-        for b in self._blocks.values():
-            b.state = _initial_state(b)
-
-    def write(self, name, state, value=None, age=0.0):
-        if name not in self._max_age:
-            raise KeyError("%r is not an input of this graph" % (name,))
-        if state not in _STATES:
-            raise ValueError("state must be one of %r, got %r" % (_STATES, state))
-        if state == GOOD:
-            if not _is_num(value):
-                raise ValueError("a good value must be a number, got %r" % (value,))
-            value = float(value)
-        else:
-            value = None
-        age = float(age)
-        if math.isnan(age):
-            raise ValueError("age must be a number")
-        self._written[name] = (state, value, age, self._k)
-
-    def _input(self, name, k):
-        rec = self._written.get(name)
-        if rec is None:
-            return (NOT_READY, None)
-        state, value, age, k_written = rec
-        if state != GOOD:
-            return (state, None)
-        if not math.isfinite(value):
-            return (BAD, None)
-        limit = self._max_age[name]
-        if limit is not None:
-            now = age + float((k - k_written) * self._period)
-            lim = float(limit)
-            if now > lim + 1e-9 * max(1.0, abs(lim)):
-                return (BAD, None)
-        return (GOOD, value)
-
-    def tick(self):
-        k = self._k
-        vals = {}
-        for name in self._max_age:
-            vals[("in", name)] = self._input(name, k)
-
-        def read(src):
-            return (GOOD, src[1]) if src[0] == "const" else vals[src]
-
-        for b in self._order:
-            ins = {p: read(s) for p, s in b.src.items() if p not in b.prev}
-            outs = _step(b, k, ins, self._period)
-            for port in b.ports:
-                sv = _norm(outs[port])
-                if sv[0] != GOOD and port in b.fallback:
-                    sv = (GOOD, b.fallback[port])
-                vals[("blk", b.id, port)] = sv
-        for b in self._order:
-            if b.type == "delay":
-                b.state["buf"].append(read(b.src["x"]))
-                del b.state["buf"][: -b.cfg["ticks"]]
-        self._k = k + 1
-        return {name: vals[src] for name, src in self._published}
-
-    # -------------------------------------------------------- save / restore
+        self._next = 0  # index of the next tick to run
+        self._t0 = None  # time of tick 0, set by the next call
+        self._last_now = None
+        self._writes = {}  # name -> (state, value, sampled)
+        self._fresh = set()  # inputs written since the last tick that was not missed
+        self._states = {bid: _BEHAVIOUR[b.type][0](b) for bid, b in self._blocks.items()}
 
     def save(self):
-        return copy.deepcopy(
-            {
-                "graph": self._fingerprint,
-                "k": self._k,
-                "written": self._written,
-                "blocks": {bid: b.state for bid, b in self._blocks.items()},
-            }
-        )
+        return {
+            "fluxgraph2": self._signature,
+            "next": self._next,
+            "writes": dict(self._writes),
+            "fresh": set(self._fresh),
+            "states": copy.deepcopy(self._states),
+        }
 
-    def restore(self, snapshot):
-        if (
-            not isinstance(snapshot, dict)
-            or snapshot.get("graph") != self._fingerprint
-            or set(snapshot.get("blocks", {})) != set(self._blocks)
-        ):
-            raise RestoreError("this state was not saved from the same graph")
-        snap = copy.deepcopy(snapshot)
-        self._k = snap["k"]
-        self._written = snap["written"]
-        for bid, b in self._blocks.items():
-            b.state = snap["blocks"][bid]
+    def restore(self, saved):
+        if not isinstance(saved, dict) or saved.get("fluxgraph2") != self._signature:
+            raise ValueError("this state was not saved from the same graph")
+        self._next = saved["next"]
+        self._t0 = None
+        self._last_now = None
+        self._writes = dict(saved["writes"])
+        self._fresh = set(saved["fresh"])
+        self._states = copy.deepcopy(saved["states"])
+
+    # -- host side
+
+    def write(self, name, state, value, sampled):
+        if name not in self.inputs:
+            raise KeyError("no external input named %r" % (name,))
+        if state not in _RANK:
+            raise ValueError("unknown state %r" % (state,))
+        if usable(state):
+            typ = self.inputs[name]["type"]
+            if typ == BOOLEAN:
+                if not isinstance(value, bool):
+                    raise TypeError("input %r is a boolean" % name)
+            else:
+                if not _is_num(value):
+                    raise TypeError("input %r is a number" % name)
+                value = float(value)
+            if not _is_num(sampled) or math.isnan(sampled):
+                raise ValueError("a usable write needs a sample time")
+            sampled = float(sampled)
+        else:
+            value = None
+            sampled = None
+        self._writes[name] = (state, value, sampled)
+        self._fresh.add(name)
+
+    def tick(self, now):
+        if not _is_num(now) or not math.isfinite(now):
+            raise ValueError("now is not a finite number")
+        if self._last_now is not None and now < self._last_now:
+            raise ValueError("now is earlier than the last call's")
+        self._last_now = now
+        if self._t0 is None:
+            self._t0 = now - self._next * self._period
+        due = 0
+        while self._t0 + (self._next + due) * self._period <= now + self._period / 2:
+            due += 1
+        outputs = None
+        for i in range(due):
+            outputs = self._run(missed=(i < due - 1))
+        return (due, outputs)
+
+    # -- one tick
+
+    def _input_at(self, name, k, time, missed):
+        spec = self.inputs[name]
+        if missed:
+            return (BAD, None, False)
+        new = name in self._fresh
+        if name not in self._writes:
+            if spec["initial"] is not None:
+                return (UNCERTAIN, spec["initial"], new)
+            if spec["max_age_exact"] is not None and k * self._period_exact > spec["max_age_exact"]:
+                return (BAD, None, new)
+            return (NOT_READY, None, new)
+        state, value, sampled = self._writes[name]
+        if not usable(state):
+            return (state, None, new)
+        if spec["type"] == NUMBER and not math.isfinite(value):
+            return (BAD, None, new)
+        age = max(time - sampled, 0.0)
+        if spec["max_age"] is not None and age > spec["max_age"]:
+            return (BAD, None, new)
+        if sampled > time + self._period:
+            return (BAD, None, new)
+        return (state, value, new)
+
+    def _run(self, missed):
+        k = self._next
+        time = self._t0 + k * self._period
+        sig = {}
+        for name in self.inputs:
+            sig[("in", name)] = self._input_at(name, k, time, missed)
+
+        def read(src):
+            if src[0] == "const":
+                return (GOOD, src[1], False)
+            return sig[src]
+
+        # first phase: every block gives its outputs
+        for bid in self._order:
+            b = self._blocks[bid]
+            st = self._states[bid]
+            if b.type == "delay":
+                buf = st["buf"]
+                if len(buf) == b.set["ticks"]:
+                    s, v, new = buf[0]
+                elif b.set["initial"] is not None:
+                    s, v, new = GOOD, b.set["initial"], False
+                else:
+                    s, v, new = NOT_READY, None, False
+                outs = {"y": (s, v)}
+            else:
+                ins = {port: read(src) for port, src in b.ins.items()}
+                outs = _BEHAVIOUR[b.type][1](b, st, k, ins)
+                new = (not b.has_signal_inputs) or any(x[2] for x in ins.values())
+            for port, (s, v) in outs.items():
+                if usable(s) and b.out_types[port] == NUMBER and not math.isfinite(v):
+                    s = BAD
+                if not usable(s):
+                    v = None
+                    if port in b.fallback:
+                        s, v = UNCERTAIN, b.fallback[port]
+                sig[("blk", bid, port)] = (s, v, new)
+
+        # second phase: every block updates its state (only a delay has
+        # anything left to do)
+        for bid in self._order:
+            b = self._blocks[bid]
+            if b.type == "delay":
+                buf = self._states[bid]["buf"]
+                buf.append(read(b.ins["x"]))
+                del buf[: -b.set["ticks"]]
+
+        if not missed:
+            self._fresh.clear()
+        self._next = k + 1
+
+        result = {}
+        for name, (bid, port) in self._published.items():
+            s, v, _ = sig[("blk", bid, port)]
+            if usable(s) and self._blocks[bid].out_types[port] == NUMBER:
+                v = float(v)
+            result[name] = (s, v)
+        return result

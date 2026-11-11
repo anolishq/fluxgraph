@@ -1,8 +1,8 @@
-# 9.3: a required input left unconnected.
-rules: [9.3]
+# 9.4: refused: a required input left unconnected.
+rules: [9.4]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {type: boolean}}
 blocks:
-  - {id: w, type: window, settings: {window: 2s}, out: {mean: m}}
+  - {id: l, type: latch, in: {reset: x}}
 expect: compile_error
-error_mentions: [x]
+error_mentions: [set]

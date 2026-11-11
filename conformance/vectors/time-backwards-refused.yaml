@@ -1,0 +1,10 @@
+# 6.4: a call with a time earlier than the last is refused, and changes nothing.
+rules: [6.4]
+period: 1s
+blocks:
+  - {id: i, type: integrate, in: {x: 1}, out: {y: n}}
+calls:
+  - {now: 5, n: 1}
+  - {now: 4, refused: true}
+  - {now: 6, n: 2}
+  - {now: 6, ran: 0}                # the same time again is accepted

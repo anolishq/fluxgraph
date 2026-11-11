@@ -9,20 +9,30 @@ implementation is the one in second/ and not reference.py. Needs PyYAML.
 
 A vector is a YAML file:
 
-  rules: [7.2.1]             the rules of the proposal it tests
+  rules: [7.2.2]             the rules of the proposal it tests
   period: 1s
-  inputs: {x: {max_age: 5s}} signals written from outside; max_age is optional
+  inputs: {x: {max_age: 5s}} as in section 9 of the proposal
   blocks: [...]              as in section 9 of the proposal
-  ticks:                     one row per tick; tick k is at k times the period
+  calls:                     one row per call the host makes to tick(now)
     - {x: 1.0, y: not_ready}
-  expect: compile_error      in place of ticks, for a graph that must be refused
+  expect: compile_error      in place of calls, for a graph that must be refused
   error_mentions: [a, b]     words the refusal has to contain
 
-In a tick row, a key that names an input is a write before that tick: a
-number, `bad`, `not_ready`, or {v: 1.0, age: 3s} for a value sampled earlier.
-An input that is left out of a row is not written, so its last value stands
-and grows older. Every other key is the expected state and value of a
-published output: a number, true, false, `bad` or `not_ready`.
+A row of `calls` has these keys:
+
+  now: 2.5      the time passed to the call, in seconds. Left out, it is one
+                period after the call before, and 0 for the first.
+  ran: 3        how many ticks the call must say it ran. Left out, 1.
+  first: {...}  writes made before the row's own, for two writes between ticks.
+  refused: true the call must be refused, and nothing else is checked.
+  <input>       a write before the call: a number, true or false (written as
+                good); `bad` or `not_ready`; or {v: 1.0, state: uncertain,
+                at: 1.5}, where `at` is the time it was sampled. Without
+                `at`, the sample time is the call's `now`. An input left out
+                is not written.
+  <output>      what a published output must be after the call: a number,
+                true or false (it must be good); `bad` or `not_ready`; or
+                {u: 1.0} for uncertain with that value.
 
 A row with a single key starting with `$` is an operation on the engine:
 {$save: name}, {$restore: name}, {$reset: true}.
@@ -40,14 +50,42 @@ impl = reference  # the implementation under test; --second swaps it
 
 HERE = Path(__file__).resolve().parent
 TOLERANCE = 1e-9
+ROW_KEYS = {"now", "ran", "first", "refused"}
 
 
 def show(val):
-    return f"{val.v!r}" if val.state == impl.GOOD else val.state
+    return f"{val.state} {val.v!r}" if val.v is not None else val.state
+
+
+def write(engine, name, value, now):
+    state, sampled = impl.GOOD, now
+    if isinstance(value, dict):
+        state, sampled, value = value.get("state", impl.GOOD), value.get("at", now), value.get("v")
+    if value in (impl.BAD, impl.NOT_READY):
+        state, value = value, None
+    if value is not None and not isinstance(value, bool):
+        value = float(value)
+    engine.write(name, state, value, float(sampled))
+
+
+def differs(have, want):
+    """-> None, or how `have` differs from what the vector says."""
+    state = impl.GOOD
+    if isinstance(want, dict):
+        state, want = impl.UNCERTAIN, want["u"]
+    if want in (impl.BAD, impl.NOT_READY):
+        return None if have.state == want else f"is {show(have)}, the vector says {want}"
+    if have.state != state:
+        return f"is {show(have)}, the vector says {state} {want!r}"
+    if isinstance(want, bool) or isinstance(have.v, bool):
+        same = isinstance(want, bool) and isinstance(have.v, bool) and want == have.v
+    else:
+        same = abs(have.v - float(want)) <= TOLERANCE * max(1.0, abs(float(want)))
+    return None if same else f"is {show(have)}, the vector says {state} {want!r}"
 
 
 def run(path):
-    """-> (ticks, comparisons, list of differences)."""
+    """-> (calls, comparisons, list of differences)."""
     doc = yaml.safe_load(path.read_text())
     graph = {k: doc[k] for k in ("period", "inputs", "blocks") if k in doc}
     for key in doc.get("graph_extra", {}):  # a vector may add a deliberately unknown key
@@ -62,10 +100,10 @@ def run(path):
         return 0, 1, ["the graph was accepted; it should have been refused"]
 
     engine = impl.Engine(graph)
-    saved, differences, compared, ticks = {}, [], 0, 0
-    for row in doc["ticks"]:
-        ops = [k for k in row if str(k).startswith("$")]
-        if ops:
+    period = impl.seconds(doc["period"])
+    saved, differences, compared, calls, now = {}, [], 0, 0, None
+    for row in doc["calls"]:
+        if any(str(k).startswith("$") for k in row):
             if "$save" in row:
                 saved[row["$save"]] = engine.save()
             elif "$restore" in row:
@@ -73,36 +111,39 @@ def run(path):
             elif "$reset" in row:
                 engine.reset()
             continue
+        now = float(row["now"]) if "now" in row else 0.0 if now is None else now + period
+        where = f"call {calls} (now {now:g})"
+        for name, value in row.get("first", {}).items():
+            write(engine, name, value, now)
         for name, value in row.items():
-            if name not in engine.max_age:
-                continue
-            age = 0.0
-            if isinstance(value, dict):
-                age, value = impl.seconds(value.get("age", 0)), value["v"]
-            if value in (impl.BAD, impl.NOT_READY):
-                engine.write(name, value)
-            else:
-                engine.write(name, impl.GOOD, float(value), age)
-        out = engine.tick()
+            if name in engine.inputs:
+                write(engine, name, value, now)
+        compared += 1
+        if row.get("refused"):
+            try:
+                engine.tick(now)
+                differences.append(f"{where}: the call was accepted; it should have been refused")
+            except impl.CompileError:
+                raise
+            except Exception:  # noqa: S110 - any refusal will do; its wording is not specified
+                pass
+            calls += 1
+            continue
+        ran, out = engine.tick(now)
+        if ran != row.get("ran", 1):
+            differences.append(f"{where}: ran {ran} tick(s), the vector says {row.get('ran', 1)}")
         for name, want in row.items():
-            if name in engine.max_age:
+            if name in engine.inputs or name in ROW_KEYS:
                 continue
             compared += 1
-            if name not in out:
-                differences.append(f"tick {ticks}: {name} is not a published output")
+            if out is None or name not in out:
+                differences.append(f"{where}: {name} is not a published output of a tick that ran")
                 continue
-            have = out[name]
-            if want in (impl.BAD, impl.NOT_READY):
-                if have.state != want:
-                    differences.append(f"tick {ticks}: {name} is {show(have)}, the vector says {want}")
-                continue
-            want = float(want)
-            if have.state != impl.GOOD:
-                differences.append(f"tick {ticks}: {name} is {have.state}, the vector says {want!r}")
-            elif abs(have.v - want) > TOLERANCE * max(1.0, abs(want)):
-                differences.append(f"tick {ticks}: {name} is {have.v!r}, the vector says {want!r}")
-        ticks += 1
-    return ticks, compared, differences
+            difference = differs(out[name], want)
+            if difference:
+                differences.append(f"{where}: {name} {difference}")
+        calls += 1
+    return calls, compared, differences
 
 
 def main():
@@ -115,17 +156,17 @@ def main():
         impl = adapter
     paths = [Path(p) for p in args] or sorted((HERE / "vectors").glob("*.yaml"))
     ok = True
-    print(f"{'vector':34s} {'ticks':>5s} {'compared':>8s}  result")
+    print(f"{'vector':36s} {'calls':>5s} {'compared':>8s}  result")
     for path in paths:
         try:
-            ticks, compared, differences = run(path)
+            calls, compared, differences = run(path)
         except Exception as exc:  # a vector that cannot run is a failure, with its reason
-            ticks, compared, differences = 0, 0, [f"{type(exc).__name__}: {exc}"]
+            calls, compared, differences = 0, 0, [f"{type(exc).__name__}: {exc}"]
         ok = ok and not differences
-        print(f"{path.stem:34s} {ticks:5d} {compared:8d}  {'agrees' if not differences else 'DIFFERS'}")
+        print(f"{path.stem:36s} {calls:5d} {compared:8d}  {'agrees' if not differences else 'DIFFERS'}")
         for line in differences[:4]:
             print(f"    {line}")
-    print("ALL AGREE" if ok else "DIFFERENCES FOUND")
+    print(f"{len(paths)} vectors: " + ("ALL AGREE" if ok else "DIFFERENCES FOUND"))
     sys.exit(0 if ok else 1)
 
 

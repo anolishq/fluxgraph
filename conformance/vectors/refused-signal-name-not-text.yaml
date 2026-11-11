@@ -1,0 +1,8 @@
+# 9.2: refused: a signal name that is not text.
+rules: [9.2]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 2s}, out: {mean: 5}}
+expect: compile_error
+error_mentions: [mean]

@@ -1,0 +1,21 @@
+# 7.1.2: a usable true decides an `or` and a usable false decides an `and`,
+# whatever the other operand. The result is good if a good operand decided
+# it. When nothing decides, the worst state.
+rules: [7.1.2]
+period: 1s
+inputs: {a: {type: boolean}, b: {type: boolean}}
+blocks:
+  - {id: o, type: formula, in: {a: a, b: b}, settings: {expr: "a or b"}, out: {y: either}}
+  - {id: n, type: formula, in: {a: a, b: b}, settings: {expr: "a and b"}, out: {y: both}}
+calls:
+  - {a: true, b: bad, either: true, both: bad}
+  - {a: false, b: bad, either: bad, both: false}
+  - {a: {v: true, state: uncertain}, b: bad, either: {u: true}, both: bad}
+  - {a: {v: true, state: uncertain}, b: true, either: true, both: {u: true}}
+  - {a: {v: false, state: uncertain}, b: false, either: {u: false}, both: false}
+  - {a: {v: false, state: uncertain}, b: bad, either: bad, both: {u: false}}
+  - {a: not_ready, b: false, either: not_ready, both: false}
+  - {a: not_ready, b: bad, either: bad, both: bad}
+  - {a: true, b: false, either: true, both: false}
+  - {a: true, b: true, either: true, both: true}
+  - {a: false, b: false, either: false, both: false}

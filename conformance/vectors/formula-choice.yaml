@@ -1,0 +1,16 @@
+# 7.1.3: a choice takes the branch it chose and does not look at the other.
+# A condition that is not usable gives its own state.
+rules: [7.1.3]
+period: 1s
+inputs: {c: {type: boolean}, a: {}, b: {}}
+blocks:
+  - {id: f, type: formula, in: {c: c, a: a, b: b}, settings: {expr: "when(c, a, b)"}, out: {y: y}}
+calls:
+  - {c: true, a: 1, b: bad, y: 1}
+  - {c: false, a: 1, b: bad, y: bad}
+  - {c: bad, a: 1, b: 2, y: bad}
+  - {c: not_ready, a: 1, b: 2, y: not_ready}
+  - {c: {v: true, state: uncertain}, a: 1, b: 2, y: {u: 1}}
+  - {c: true, a: {v: 1, state: uncertain}, b: 2, y: {u: 1}}
+  - {c: false, a: {v: 1, state: uncertain}, b: 2, y: 2}
+  - {c: false, a: not_ready, b: 2, y: 2}

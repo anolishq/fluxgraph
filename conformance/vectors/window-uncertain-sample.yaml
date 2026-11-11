@@ -1,0 +1,11 @@
+# 7.3.4: a full window is good only if every sample in it is good.
+rules: [7.3.4]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 2s}, out: {mean: mean}}
+calls:
+  - {x: 1, mean: not_ready}
+  - {x: {v: 3, state: uncertain}, mean: {u: 2}}
+  - {x: 5, mean: {u: 4}}
+  - {x: 7, mean: 6}

@@ -1,8 +1,8 @@
-# 9.1: a graph that reads a signal which is neither an input nor a block's output is refused.
+# 9.1: refused: a signal that is neither an input nor a block's output.
 rules: [9.1]
 period: 1s
 inputs: {x: {}}
 blocks:
-  - {id: a, type: formula, in: {x: z}, settings: {expr: x + 1}, out: {y: y}}
+  - {id: f, type: formula, in: {x: pressure}, settings: {expr: "x + 1"}}
 expect: compile_error
-error_mentions: [z]
+error_mentions: [pressure]

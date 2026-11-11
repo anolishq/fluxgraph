@@ -1,0 +1,8 @@
+# A: refused: an on_bad that is not one of the block's choices.
+rules: [A]
+period: 1s
+inputs: {x: {type: boolean}}
+blocks:
+  - {id: s, type: since_true, in: {x: x}, settings: {time: 2s, on_bad: reset}}
+expect: compile_error
+error_mentions: [on_bad]

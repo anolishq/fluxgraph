@@ -1,0 +1,10 @@
+# 6.6: the input is the latest thing written, even if an earlier write
+# carried a later sample time.
+rules: [6.6]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+calls:
+  - {x: 1, y: 1}
+  - {first: {x: {v: 10, at: 0.9}}, x: {v: 2, at: 0.5}, y: 2}

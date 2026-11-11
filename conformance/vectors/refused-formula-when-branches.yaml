@@ -1,0 +1,8 @@
+# Appendix A: refused: a choice whose branches are of two types.
+rules: [A.formula]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "when(x > 0, 1, true)"}}
+expect: compile_error
+error_mentions: [f]

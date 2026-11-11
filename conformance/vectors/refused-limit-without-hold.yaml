@@ -1,0 +1,8 @@
+# A: refused: hold_limit without on_bad: hold.
+rules: [A]
+period: 1s
+inputs: {x: {type: boolean}}
+blocks:
+  - {id: h, type: held_for, in: {x: x}, settings: {time: 2s, on_bad: reset, hold_limit: 1s}}
+expect: compile_error
+error_mentions: [hold_limit]

@@ -1,0 +1,13 @@
+# 7.2.2: an input that declares an initial value is uncertain, with that
+# value, until it is written. The initial value does not grow old.
+rules: [7.2.2]
+period: 1s
+inputs: {x: {max_age: 1s, initial: 20}, run: {type: boolean, initial: true}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}, out: {y: y}}
+  - {id: g, type: formula, in: {run: run}, settings: {expr: "not run"}, out: {y: idle}}
+calls:
+  - {y: {u: 21}, idle: {u: false}}
+  - {y: {u: 21}, idle: {u: false}}
+  - {y: {u: 21}, idle: {u: false}}
+  - {x: 5, run: false, y: 6, idle: true}

@@ -1,15 +1,19 @@
-# 8: a graph's state can be saved and put back, and a reset returns it to the start.
-rules: [8.1, 8.2, 8.3]
+# 8.1, 8.2, 8.4: a restore puts the state back and the next call runs the
+# tick after the last one saved, at whatever time it is given. A reset
+# starts again from tick 0.
+rules: [8.1, 8.2, 8.4]
 period: 1s
 inputs: {x: {}}
 blocks:
-  - {id: t, type: total, in: {x: x}, out: {y: sum}}
-ticks:
-  - {x: 2, sum: 2}
-  - {x: 3, sum: 5}
-  - {$save: here}
-  - {x: 4, sum: 9}
-  - {$restore: here}
-  - {x: 1, sum: 6}
+  - {id: i, type: integrate, in: {x: x}, out: {y: total}}
+calls:
+  - {x: 1, total: 1}
+  - {x: 1, total: 2}
+  - {$save: a}
+  - {x: 1, total: 3}
+  - {x: 1, total: 4}
+  - {$restore: a}
+  - {now: 100, x: 1, total: 3}        # one tick, not a hundred
+  - {now: 101, x: 1, total: 4}
   - {$reset: true}
-  - {x: 1, sum: 1}
+  - {now: 200, x: 5, total: 5}

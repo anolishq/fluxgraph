@@ -1,0 +1,19 @@
+# Appendix A, 7.4: one pole. tau is one period over ln 2, so a = 0.5; it is
+# not a whole number of periods and need not be (6.2).
+rules: [A.lowpass, 7.4.1, 7.4.2, 7.4.4, 6.2]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: f, type: lowpass, in: {x: x}, settings: {tau: 1.4426950408889634s}, out: {y: y}}
+  - {id: g, type: lowpass, in: {x: x}, settings: {tau: 1.4426950408889634s, ride_through: 1s}, out: {y: z}}
+  # tau of one period over ln 4: a = 0.25
+  - {id: q, type: lowpass, in: {x: x}, settings: {tau: 0.7213475204444817s}, out: {y: w}}
+calls:
+  - {x: 8, y: 8, z: 8, w: 8}
+  - {x: 0, y: 4, z: 4, w: 2}
+  - {x: 0, y: 2, z: 2, w: 0.5}
+  - {x: 6, y: 4, z: 4, w: 4.625}                       # 0.25 * 0.5 + 0.75 * 6
+  - {x: bad, y: bad, z: {u: 4}, w: bad}
+  - {x: bad, y: bad, z: bad, w: bad}
+  - {x: 0, y: 2, z: 2, w: 1.15625}                     # still holding 4, and 4.625
+  - {x: {v: 2, state: uncertain}, y: {u: 2}, z: {u: 2}, w: {u: 1.7890625}}

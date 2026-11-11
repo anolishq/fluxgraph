@@ -1,0 +1,17 @@
+# 7.1.4, 3.6: division by zero, the logarithm or root of a negative number
+# and a result that is not finite are bad.
+rules: [7.1.4, 3.6]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: d, type: formula, in: {x: x}, settings: {expr: "1 / x"}, out: {y: d}}
+  - {id: l, type: formula, in: {x: x}, settings: {expr: "ln(x)"}, out: {y: l}}
+  - {id: s, type: formula, in: {x: x}, settings: {expr: "sqrt(x)"}, out: {y: s}}
+  - {id: e, type: formula, in: {x: x}, settings: {expr: "exp(x)"}, out: {y: e}}
+  - {id: p, type: formula, in: {x: x}, settings: {expr: "pow(x, 0.5)"}, out: {y: p}}
+  # the product is not finite, so the comparison has nothing to compare
+  - {id: big, type: formula, in: {x: x}, settings: {expr: "x * 1e308 * 1e10 > 0"}, out: {y: big}}
+calls:
+  - {x: 0, d: bad, l: bad, s: 0, e: 1, p: 0, big: false}
+  - {x: -4, d: -0.25, l: bad, s: bad, e: 0.01831563888873418, p: bad, big: bad}
+  - {x: 1000, d: 0.001, l: 6.907755278982137, s: 31.622776601683793, e: bad, p: 31.622776601683793, big: bad}

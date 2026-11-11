@@ -1,0 +1,10 @@
+# 3.6: a block output that would not be finite is bad, whatever the block.
+rules: [3.6]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: i, type: integrate, in: {x: x}, out: {y: total}}
+calls:
+  - {x: 1.0e308, total: 1.0e308}
+  - {x: 1.0e308, total: bad}
+  - {x: -1.0e308, total: bad}       # the state is not put right

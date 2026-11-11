@@ -1,13 +1,21 @@
-# 7.3.3: false until the input is first true. An unusable input does not set it.
-rules: [7.3.3]
+# 7.6.3, 4.8: false until set is first true, then good and true whatever set
+# does. A usable, true reset clears it and wins over set. reset need not be
+# connected.
+rules: [7.6.3, 4.8]
 period: 1s
-inputs: {s: {}}
+inputs: {s: {type: boolean}, r: {type: boolean}}
 blocks:
-  - {id: l, type: latch, in: {set: s}, out: {y: y}}
-ticks:
-  - {s: 0, y: false}
-  - {s: bad, y: false}
-  - {s: not_ready, y: false}
-  - {s: 1, y: true}
-  - {s: 0, y: true}
-  - {s: bad, y: true}
+  - {id: l, type: latch, in: {set: s, reset: r}, out: {y: l}}
+  - {id: m, type: latch, in: {set: s}, out: {y: m}}
+calls:
+  - {s: false, r: false, l: false, m: false}
+  - {s: bad, l: bad, m: bad}
+  - {s: {v: false, state: uncertain}, l: {u: false}, m: {u: false}}
+  - {s: not_ready, l: not_ready, m: not_ready}
+  - {s: true, l: true, m: true}
+  - {s: bad, l: true, m: true}
+  - {s: false, r: true, l: false, m: true}
+  - {s: true, r: true, l: false, m: true}                   # reset wins
+  - {s: true, r: bad, l: true, m: true}                     # an unusable reset does nothing
+  - {s: false, r: {v: true, state: uncertain}, l: false, m: true}
+  - {s: {v: true, state: uncertain}, r: false, l: true, m: true}

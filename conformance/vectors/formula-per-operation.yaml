@@ -1,13 +1,14 @@
-# 7.1.5: the rules apply to each operation in turn. 7.1.6: a bad argument
-# makes a min bad even if it would not have been the smaller.
-rules: [7.1.5, 7.1.6]
+# 7.1.5: the rules apply to each operation in turn. The `or` is decided by a
+# and comes out good, so b being bad does not reach the `and`.
+rules: [7.1.5, 7.1.1]
 period: 1s
-inputs: {a: {}, b: {}, c: {}}
+inputs: {a: {type: boolean}, b: {type: boolean}, c: {type: boolean}}
 blocks:
-  - {id: f, type: formula, in: {a: a, b: b, c: c}, settings: {expr: (a or b) + c}, out: {y: sum}}
-  - {id: g, type: formula, in: {a: a, b: b}, settings: {expr: "min(a, b)"}, out: {y: least}}
-ticks:
-  - {a: 1, b: bad, c: 2, sum: 3, least: bad}
-  - {a: 0, b: bad, c: 2, sum: bad, least: bad}
-  - {a: 3, b: 5, c: 1, sum: 2, least: 3}
-  - {a: not_ready, b: 5, c: 1, sum: 2, least: not_ready}
+  - {id: f, type: formula, in: {a: a, b: b, c: c}, settings: {expr: "(a or b) and c"}, out: {y: y}}
+  - {id: g, type: formula, in: {a: a}, settings: {expr: "not a"}, out: {y: na}}
+calls:
+  - {a: true, b: bad, c: true, y: true, na: false}
+  - {a: false, b: bad, c: true, y: bad, na: true}
+  - {a: false, b: bad, c: false, y: false, na: true}
+  - {a: {v: true, state: uncertain}, b: bad, c: true, y: {u: true}, na: {u: false}}
+  - {a: bad, b: true, c: true, y: true, na: bad}

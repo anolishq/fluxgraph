@@ -1,17 +1,19 @@
-# 7.2.5: a holder keeps its output until the input has moved by the step. With
-# ride_through left at zero it stops being good on the same tick as its input,
-# and it keeps what it held.
-rules: [7.2.5, 7.2.6]
+# Appendix A, 7.4.1, 7.4.4: a deadband takes its first usable input as it
+# is, then keeps its output until the input has moved by the step or more.
+# It keeps what it holds through an unusable input.
+rules: [A.deadband, 7.4.1, 7.4.2, 7.4.3, 7.4.4]
 period: 1s
 inputs: {x: {}}
 blocks:
-  - {id: d, type: deadband, in: {x: x}, settings: {step: 0.5}, out: {y: y}}
-ticks:
-  - {x: 10, y: 10}
-  - {x: 10.3, y: 10}
-  - {x: 10.5, y: 10.5}
-  - {x: 10.2, y: 10.5}
-  - {x: bad, y: bad}
-  - {x: 10.1, y: 10.5}              # moved 0.4 from what it held
-  - {x: 9.9, y: 9.9}
+  - {id: d, type: deadband, in: {x: x}, settings: {step: 1}, out: {y: y}}
+calls:
   - {x: not_ready, y: not_ready}
+  - {x: 10, y: 10}
+  - {x: 10.5, y: 10}
+  - {x: 11, y: 11}            # moved by exactly the step
+  - {x: 10.25, y: 11}
+  - {x: 10, y: 10}
+  - {x: {v: 10.5, state: uncertain}, y: {u: 10}}
+  - {x: bad, y: bad}          # ride_through is zero
+  - {x: 10.5, y: 10}          # still holding 10
+  - {x: 20, y: 20}

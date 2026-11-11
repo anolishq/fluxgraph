@@ -1,15 +1,16 @@
-# 6.4, 7.7: an input sampled longer ago than its maximum age is unusable.
-rules: [6.4, 7.7]
+# 7.2.4, 6.6: a value not written again stands and grows older. An age equal
+# to the maximum is usable; more is bad. Age is from the sample time, and a
+# maximum age need not be a whole number of periods (6.2).
+rules: [7.2.4, 6.6, 6.2]
 period: 1s
-inputs: {x: {max_age: 2s}}
+inputs: {x: {max_age: 2s}, w: {max_age: 1500ms}}
 blocks:
-  - {id: g, type: formula, in: {x: x}, settings: {expr: x + 0}, out: {y: y}}
-ticks:
-  - {x: 4, y: 4}
-  - {y: 4}                        # 1 s old
-  - {y: 4}                        # 2 s old: not longer than the maximum
-  - {y: bad}                      # 3 s old
-  - {x: {v: 9, age: 3s}, y: bad}  # written now, sampled 3 s ago
-  - {x: {v: 9, age: 1s}, y: 9}
-  - {y: 9}                        # 2 s old
-  - {y: bad}
+  - {id: fx, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+  - {id: fw, type: formula, in: {w: w}, settings: {expr: "w + 0"}, out: {y: v}}
+calls:
+  - {x: 5, w: 1, y: 5, v: 1}
+  - {y: 5, v: 1}                       # age 1 s
+  - {y: 5, v: bad}                     # age 2 s: equal to 2 s, more than 1.5 s
+  - {y: bad, v: bad}                   # age 3 s
+  - {x: {v: 7, at: 1.5}, y: bad}       # written now, sampled 2.5 s ago
+  - {x: {v: 8, at: 3.5}, y: 8}         # sampled 1.5 s ago

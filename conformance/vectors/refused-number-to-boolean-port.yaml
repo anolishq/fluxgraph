@@ -1,0 +1,8 @@
+# 3.5, 9.4: refused: a number signal connected to a boolean port.
+rules: [3.5, 9.4]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: h, type: held_for, in: {x: x}, settings: {time: 2s, on_bad: reset}}
+expect: compile_error
+error_mentions: [x]

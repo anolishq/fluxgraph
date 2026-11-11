@@ -1,0 +1,13 @@
+# 6.3, 6.4: the first call runs tick 0 at its own time. After that a call
+# runs every tick whose time is no more than half a period after it. The
+# total counts the ticks run; a constant is good in a missed tick too.
+rules: [6.3, 6.4, 4.7]
+period: 1s
+blocks:
+  - {id: i, type: integrate, in: {x: 1}, out: {y: n}}
+calls:
+  - {now: 10, n: 1}
+  - {now: 10.9, n: 2}             # tick 1 is at 11
+  - {now: 12.1, n: 3}             # tick 2 is at 12; tick 3, at 13, is not due
+  - {now: 12.4, ran: 0}
+  - {now: 13.6, ran: 2, n: 5}     # ticks 3 and 4

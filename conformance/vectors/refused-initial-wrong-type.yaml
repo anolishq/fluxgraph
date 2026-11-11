@@ -1,0 +1,8 @@
+# 9.1: refused: an input whose initial value is not of its type.
+rules: [9.1]
+period: 1s
+inputs: {b: {type: boolean, initial: 3}}
+blocks:
+  - {id: l, type: latch, in: {set: b}}
+expect: compile_error
+error_mentions: [b]
