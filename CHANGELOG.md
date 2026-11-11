@@ -10,17 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.0] - 2026-11-11
 
 1.1.0 is a minor release: it adds `CompiledProgram::model_output_signal_ids()`
-and changes a build default for embedding projects. The fixes below refuse some
+and changes build defaults for embedding projects. The fixes below refuse some
 inputs that used to load or run. Each of those was a bug, a silent misload or
 undefined behaviour, never a graph that worked, so they are fixes rather than
-breaking changes.
+breaking changes. Two fixes also change the output of a valid graph: a delay's
+tick count where `delay_sec / dt` is meant to be a half, and a server write to a
+model output, both below.
 
 Upgrade notes:
 
 - **A malformed graph file can now fail to load.** A `signals`, `models`,
-  `edges` or `rules` key that is not an array, a root that is not an object or
-  map, and a rule without `actions` used to load as an empty graph or with
-  action-less rules. They now fail with a path-qualified error. Fix the file.
+  `edges` or `rules` key that is neither an array nor null, a root that is not
+  an object or map, and a rule without `actions` used to load as an empty graph
+  or with action-less rules. They now fail with a path-qualified error. Fix the
+  file. A null section, such as a bare `rules:`, still loads as empty.
 - **A `saturation` or `linear` transform with inverted or NaN bounds** now fails
   to compile, and its constructor throws `std::invalid_argument`.
 - **`DelayTransform::apply` throws on a `dt` that is not positive and finite.**
@@ -34,6 +37,8 @@ Upgrade notes:
 - **An embedding project that relied on fluxgraph's tests or examples being
   built** as a subproject must now set `FLUXGRAPH_BUILD_TESTS` or
   `FLUXGRAPH_BUILD_EXAMPLES` to ON.
+- **A project below C++17 that links fluxgraph** is now compiled as C++17, which
+  fluxgraph's headers need. A project at C++17 or above keeps its standard.
 
 ### Added
 
@@ -46,11 +51,11 @@ Upgrade notes:
   fluxgraph is added with `add_subdirectory` or `FetchContent`, so an embedding
   project no longer needs GTest or builds the examples. They still default to
   ON when fluxgraph is the top-level project. (#119)
-- The `fluxgraph` target declares `cxx_std_20` as a public compile feature, so
-  a project that links it, including through the installed
-  `fluxgraph::fluxgraph`, is compiled as C++20 without setting the standard
-  itself. FluxGraph already required C++20; only the installed package failed
-  to pass that on. (#122)
+- The `fluxgraph` target declares `cxx_std_17` as a public compile feature, the
+  standard its headers need, so a project that links it, including through the
+  installed `fluxgraph::fluxgraph`, is compiled as at least C++17. A project at
+  C++17 or above keeps its own standard; fluxgraph itself still builds as
+  C++20. (#121)
 
 ### Fixed
 
