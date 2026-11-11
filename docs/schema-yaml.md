@@ -4,7 +4,7 @@ FluxGraph YAML files define signal processing graphs with a human-friendly synta
 
 ## YAML Structure
 
-A graph file is a YAML map with four top-level sequences. Each is optional, but a key that is present must hold a sequence (an empty `[]` is fine; a bare `rules:` with no value is null and is rejected), and any other root is rejected, including a null one (`~`, `null`, a bare `---`, or a lone `...`, which yaml-cpp reads as a document with null content). Input with no document at all (empty, or only whitespace and comments) loads as an empty graph:
+A graph file is a YAML map with four top-level sequences. Each is optional, but a key that is present must hold a sequence or be null (an empty `[]` is fine, and a bare `rules:`, `~` or `null` loads as an empty section), and any other root is rejected, including a null one (`~`, `null`, a bare `---`, or a lone `...`, which yaml-cpp reads as a document with null content). Input with no document at all (empty, or only whitespace and comments) loads as an empty graph:
 
 ```yaml
 signals:
