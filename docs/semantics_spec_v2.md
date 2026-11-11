@@ -84,7 +84,8 @@ evaluation, implicit solvers.
    its own.
 2. A 1.x transform is a block with one input and one output. A 1.x model is
    a block with several. Edges are gone: a signal is connected by naming it
-   as an input.
+   as an input. A delay is a block that gives its input from an earlier
+   tick, and a stated initial value until then.
 3. A block type declares, to the compiler:
    - its input and output ports, and which inputs are required;
    - its settings, each with a type, whether it is required, and its range;
@@ -169,49 +170,91 @@ What this leaves out, on purpose, and what it keeps open for later:
 
 ## 7. Inputs that are not good
 
-**Proposed.** The default is that a problem is never hidden.
+**Proposed.** The default is that a problem is never hidden. An input is
+**usable** at a tick when its state is `good` and its value is finite.
 
-1. **A block with no state** (a formula, a gain, a comparison): its output
-   takes the worst state among its inputs, `bad` over `not_ready` over
-   `good`.
+### 7.1 Blocks with no state
+
+1. The output of a formula, a gain or a comparison takes the worst state
+   among its inputs: `bad` over `not_ready` over `good`.
 2. **Logic is three-valued.** One true operand decides an `or` and one false
    operand decides an `and`, whatever the others are. Otherwise an operand
-   that is not good makes the result not good.
-3. **A block with state has no default.** Each such block type has a
-   required setting, `on_bad`, and a graph that leaves it out does not
-   compile. The choices a type may offer:
-   - `skip`: the bad sample is ignored and the state is left as it was.
-   - `reset`: the state is cleared, and the block starts again.
-   - `hold`: time-based state keeps running through the bad stretch.
-4. **What the output is while the input is not good** is part of each block
-   type's definition, not left to the implementation. The starting table:
+   that is not good makes the result not good, by rule 1.
+3. **A choice** between two values on a condition takes the state of the
+   condition if that is not good, and otherwise the state and value of the
+   branch it chose. The other branch is not looked at.
+4. A division by zero, and any result that is not finite, is `bad`.
 
-   | Block | Input not good, and | Output |
-   | --- | --- | --- |
-   | Window statistic | `skip` | Statistic of the samples it has, `not_ready` until full |
-   | Window statistic | `reset` | `not_ready` until the window refills |
-   | Timer on a condition | `reset` | The input's state |
-   | Timer on a condition | `hold` | `good`; true once the time has run out |
-   | Running total | `skip` | The total so far, `good` |
-   | Deadband, median | (not yet decided) | See Open |
-   | Estimator | A missing measurement | Predicts without correcting; `good`, with a wider uncertainty |
+### 7.2 Blocks that keep samples
 
-5. **A fallback is explicit.** A block may name a value to give when an
-   output is not good. It applies to one named output, not to the whole
-   block.
-6. **A value that is not a number.** An input whose state is `good` and
-   whose value is not finite is treated as `bad`.
+A median, a window statistic, a deadband: blocks whose output comes from
+samples they have stored.
+
+1. Each has a required setting, `on_bad`, with no default:
+   - `skip`: an unusable sample is not stored, and what is stored is kept.
+   - `reset`: an unusable sample empties the store.
+2. Each has a setting, `ride_through`, a length of time, which is zero unless
+   given. While the input is unusable:
+   - if the last usable sample was no longer ago than `ride_through`, and the
+     block has a value to give from what it holds, the output is that value
+     and `good`;
+   - otherwise the output takes the input's state.
+3. So with `ride_through` left at zero, the output stops being `good` on the
+   same tick as the input. A block reports through a bad stretch only as
+   far as its author said it may.
+4. A block that has not yet stored enough samples is `not_ready`.
+
+### 7.3 Timers
+
+1. **Held for.** True once its input has been true for longer than a stated
+   time. Required `on_bad`:
+   - `reset`: an unusable input stops the timer, and the output takes the
+     input's state.
+   - `hold`: an unusable input leaves the timer running. The output is
+     `good`, and true once the time has run out, even while the input is
+     still unusable. If the timer was not running, the output takes the
+     input's state.
+2. **Since true.** True when its input has not been true for longer than a
+   stated time. An unusable input counts as not true. The output is always
+   `good`, and the clock starts at the first tick.
+3. **Latch.** False until its input is first true, then true. An unusable
+   input does not set it. The output is always `good`.
+
+### 7.4 Running totals
+
+A total adds its input, times the period, on every tick where the input is
+usable. It has two outputs, both always `good`: the total, and the time it
+has missed, which is the period added up over every tick where the input
+was unusable. A total does not hide a gap and does not stop being a number
+because of one.
+
+### 7.5 Estimators
+
+1. An estimator is `not_ready` until its first usable measurement.
+2. After that it is `good`. On a tick with no usable measurement it predicts
+   and does not correct, and its reported uncertainty grows.
+3. A model input that is unusable is left out of the prediction for that
+   tick, and the uncertainty grows as if nothing were known about it.
+
+### 7.6 Fallbacks
+
+A block may name, for one output, a value to give when that output is not
+good. The substituted value is `good`. It applies to the named output only.
+
+### 7.7 Inputs from outside
+
+An external input is unusable at a tick when the host wrote it as `bad` or
+`not_ready`, when nothing has been written to it yet, when its value is not
+finite, or when it was sampled longer ago than its maximum age.
 
 **Open.**
 
-- **Blocks that hold a last good value** (a median, a deadband, a
-  sample-and-hold). Reporting the old value as `good` through any length of
-  bad input hides the problem; reporting `bad` at once loses the point of
-  the block. Proposed: they take `on_bad` like any other stateful block,
-  with `hold` limited by a stated time. Settled by: the rule table completed
-  for every block type in the first catalogue, each row with a test vector.
-- **Whether `not_ready` and `bad` should ever be treated differently** by a
-  stateful block's policy, or always alike.
+- **Whether `not_ready` and `bad` are ever treated differently by a block's
+  policy.** Here they are alike in what they do to a block's state and
+  distinct only in what the block reports. Settled by: a case where an
+  author would want them to differ.
+- **Whether a substituted value should be distinguishable from a computed
+  one** (section 3).
 
 ## 8. State, reset and restore
 
@@ -276,8 +319,7 @@ its own units, and what a declared unit has to say.
 1. A test vector is a graph, the inputs at each tick (value, state and
    sample time), and the expected state and value of every output at every
    tick.
-2. Every row of the table in section 7, and every numbered rule in sections
-   3 to 6, has at least one vector that fails if the rule is broken. A
+2. Every numbered rule in sections 3 to 7 has at least one vector that fails if the rule is broken. A
    vector is accepted only after a deliberately broken implementation has
    been shown to fail it.
 3. Expected values are worked out independently of the implementation under
