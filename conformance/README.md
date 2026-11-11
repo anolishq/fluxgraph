@@ -7,12 +7,16 @@ library. Nothing here is built or run by the library's presets.
 | --- | --- |
 | `vectors/` | One YAML file per case: a graph, what is written to its inputs at each tick, and the state and value expected of each output. |
 | `reference.py` | A small Python reading of the proposal. Stdlib only. Not the library, and shares no code with it. |
-| `run.py` | Runs the vectors against the reference. Needs PyYAML. |
+| `second/` | A second reading, written from the proposal's text alone, without sight of the reference or the vectors. `ASSUMPTIONS.md` lists what the text did not settle. |
+| `run.py` | Runs the vectors against the reference, or with `--second` against the second reading. Needs PyYAML. |
 | `mutate.py` | Breaks the reference one rule at a time and checks that a vector notices. |
+| `compare.py` | Runs the two readings side by side on random inputs and compares every output at every tick. |
 
 ```bash
-python3 conformance/run.py       # every vector agrees
-python3 conformance/mutate.py    # every breakage is noticed
+python3 conformance/run.py            # every vector agrees with the reference
+python3 conformance/run.py --second   # and with the second reading
+python3 conformance/mutate.py         # every breakage is noticed
+python3 conformance/compare.py        # the two readings never differ
 ```
 
 ## How the vectors were made
@@ -32,6 +36,28 @@ A vector is kept only if a broken reference fails it. `mutate.py` holds the
 breakages, each named for the rule it breaks. A breakage that no vector
 would notice means a missing vector: four were added that way.
 
+## The second reading
+
+The hand-worked values and the reference have one author, so agreement
+between them shows less than it seems. `second/impl.py` was written from the
+proposal and nothing else. As first written:
+
+- it agreed with all 35 vectors that existed then;
+- run beside the reference on 290,000 random comparisons, with inputs that
+  were missing, bad, not ready, not finite and stale, it never differed;
+- writing it turned up 72 places where the text did not say what to do.
+
+Those 72 went back into the proposal as stated rules, and each new rule got
+a vector: fifteen more. Against those fifteen the second reading, still as
+first written, differed on one, a chained comparison, which it had assumed
+was allowed and the proposal now refuses. Three lines of it were then
+changed to follow the proposal where it had guessed otherwise: that one,
+`kalman1`'s `model` input being required, and the period allowed for a
+`kalman1`.
+
+`compare.py` was itself checked by running it against six broken copies of
+the reference. It reported differences every time.
+
 The format of a vector is described at the top of `run.py`.
 
 ## What this does not cover
@@ -45,5 +71,6 @@ The format of a vector is described at the top of `run.py`.
 - **The library.** Nothing here runs FluxGraph. A runner for the library
   comes with the rebuilt core.
 
-The hand-worked values and the reference have the same author. A second
-implementation written from the proposal alone is the check on that.
+- **Refusing a saved state from a different graph** (section 8.3). The
+  vector format has one graph per file.
+- **Two writes to one input between ticks.** A vector writes once per tick.

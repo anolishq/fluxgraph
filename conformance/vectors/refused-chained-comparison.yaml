@@ -1,0 +1,8 @@
+# Appendix A: comparisons do not chain.
+rules: [9.3]
+period: 1s
+inputs: {x: {}, z: {}}
+blocks:
+  - {id: f, type: formula, in: {a: x, b: z}, settings: {expr: 0 < a < b}, out: {y: y}}
+expect: compile_error
+error_mentions: [chain]

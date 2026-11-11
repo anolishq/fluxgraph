@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Run the version 2 conformance vectors against the reference.
 
-  python3 conformance/run.py [vector.yaml ...]
+  python3 conformance/run.py [--second] [vector.yaml ...]
 
-With no arguments, runs every file in conformance/vectors/. Exits 1 if the
-reference disagrees with any vector. Needs PyYAML.
+With no vectors named, runs every file in conformance/vectors/. Exits 1 if
+the implementation disagrees with any vector. With --second, the
+implementation is the one in second/ and not reference.py. Needs PyYAML.
 
 A vector is a YAML file:
 
@@ -35,12 +36,14 @@ from pathlib import Path
 import reference
 import yaml
 
+impl = reference  # the implementation under test; --second swaps it
+
 HERE = Path(__file__).resolve().parent
 TOLERANCE = 1e-9
 
 
 def show(val):
-    return f"{val.v!r}" if val.state == reference.GOOD else val.state
+    return f"{val.v!r}" if val.state == impl.GOOD else val.state
 
 
 def run(path):
@@ -52,13 +55,13 @@ def run(path):
 
     if doc.get("expect") == "compile_error":
         try:
-            reference.Engine(graph)
-        except reference.CompileError as exc:
+            impl.Engine(graph)
+        except impl.CompileError as exc:
             missing = [w for w in doc.get("error_mentions", []) if str(w) not in str(exc)]
             return 0, 1, [f"refused, but the message does not mention {missing}: {exc}"] if missing else []
         return 0, 1, ["the graph was accepted; it should have been refused"]
 
-    engine = reference.Engine(graph)
+    engine = impl.Engine(graph)
     saved, differences, compared, ticks = {}, [], 0, 0
     for row in doc["ticks"]:
         ops = [k for k in row if str(k).startswith("$")]
@@ -75,11 +78,11 @@ def run(path):
                 continue
             age = 0.0
             if isinstance(value, dict):
-                age, value = reference.seconds(value.get("age", 0)), value["v"]
-            if value in (reference.BAD, reference.NOT_READY):
+                age, value = impl.seconds(value.get("age", 0)), value["v"]
+            if value in (impl.BAD, impl.NOT_READY):
                 engine.write(name, value)
             else:
-                engine.write(name, reference.GOOD, float(value), age)
+                engine.write(name, impl.GOOD, float(value), age)
         out = engine.tick()
         for name, want in row.items():
             if name in engine.max_age:
@@ -89,12 +92,12 @@ def run(path):
                 differences.append(f"tick {ticks}: {name} is not a published output")
                 continue
             have = out[name]
-            if want in (reference.BAD, reference.NOT_READY):
+            if want in (impl.BAD, impl.NOT_READY):
                 if have.state != want:
                     differences.append(f"tick {ticks}: {name} is {show(have)}, the vector says {want}")
                 continue
             want = float(want)
-            if have.state != reference.GOOD:
+            if have.state != impl.GOOD:
                 differences.append(f"tick {ticks}: {name} is {have.state}, the vector says {want!r}")
             elif abs(have.v - want) > TOLERANCE * max(1.0, abs(want)):
                 differences.append(f"tick {ticks}: {name} is {have.v!r}, the vector says {want!r}")
@@ -103,7 +106,14 @@ def run(path):
 
 
 def main():
-    paths = [Path(p) for p in sys.argv[1:]] or sorted((HERE / "vectors").glob("*.yaml"))
+    global impl
+    args = sys.argv[1:]
+    if "--second" in args:
+        args.remove("--second")
+        from second import adapter
+
+        impl = adapter
+    paths = [Path(p) for p in args] or sorted((HERE / "vectors").glob("*.yaml"))
     ok = True
     print(f"{'vector':34s} {'ticks':>5s} {'compared':>8s}  result")
     for path in paths:

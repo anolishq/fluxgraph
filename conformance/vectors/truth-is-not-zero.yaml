@@ -1,0 +1,13 @@
+# 3.6: where a block reads a truth value, anything other than zero is true.
+rules: [3.6]
+period: 1s
+inputs: {a: {}}
+blocks:
+  - {id: n, type: formula, in: {a: a}, settings: {expr: a and 1}, out: {y: both}}
+  - {id: l, type: latch, in: {set: a}, out: {y: latched}}
+  - {id: h, type: held_for, in: {x: a}, settings: {time: 1s, on_bad: reset}, out: {y: held}}
+ticks:
+  - {a: 0, both: false, latched: false, held: false}
+  - {a: 0.5, both: true, latched: true, held: false}
+  - {a: -2, both: true, latched: true, held: false}    # true for 1 s: not longer
+  - {a: 7, both: true, latched: true, held: true}

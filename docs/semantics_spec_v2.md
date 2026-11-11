@@ -64,6 +64,10 @@ evaluation, implicit solvers.
 5. A signal written from outside the graph also carries the **time it was
    sampled**. The engine does not use it to compute; it uses it to decide
    whether the value is still usable (section 6).
+6. Where a block reads a truth value, any value other than zero is true.
+7. No output is `good` with a value that is not finite. A block output that
+   would be is `bad`, whatever the block, including the outputs sections 7.3
+   and 7.4 call always `good`.
 
 **Open.**
 
@@ -96,6 +100,8 @@ evaluation, implicit solvers.
    no access to the rest of the store.
 5. Every output port is written by exactly one block. A signal written from
    outside the graph is written by nothing inside it.
+6. An input port may be given a number in place of a signal. It is `good`,
+   with that value, on every tick.
 
 **Open.**
 
@@ -107,10 +113,10 @@ evaluation, implicit solvers.
   Settled by: the simulator provider's maintainers agreeing to drop that
   path.
 - **Formulas.** Arithmetic, comparison and three-valued logic over a block's
-  inputs is one block type, with a small expression language. The core has
-  no dependencies, so the parser would be FluxGraph's own. Settled by: a
-  grammar short enough to specify here, and a decision on whether it
-  belongs in the core or beside the loaders.
+  inputs is one block type, with a small expression language. Appendix A
+  gives its grammar. The core has no dependencies, so the parser would be
+  FluxGraph's own. Settled by: a decision on whether it belongs in the core
+  or beside the loaders.
 
 ## 5. Order and loops
 
@@ -137,13 +143,15 @@ evaluation, implicit solvers.
    runs. A window of ten seconds is a number of ticks worked out once, at
    build, and the compiler refuses a window that is not a whole number of
    periods.
-3. The host does not pass a step size to `tick`. A model with a stability
-   limit is checked against the period at compile.
+3. The host does not pass a step size to `tick`. A block type with a
+   stability limit says what it is, and a graph whose period breaks it is
+   refused at compile.
 4. **Inputs from outside.** The host writes a value, its state and the time
    it was sampled, at any moment between ticks. At a tick, each external
-   input is the latest value written. An input declares a **maximum age**;
-   if the latest value was sampled longer ago than that, the input is `bad`
-   for this tick.
+   input is the latest value written, even if an earlier write carried a
+   later sample time. An input declares a **maximum age**; if the latest
+   value was sampled longer ago than that, the input is `bad` for this tick.
+   A value exactly as old as the maximum is still usable.
 5. The host's clock and the graph's ticks are the host's to line up. The
    engine promises only that a tick uses what was written before it began.
 
@@ -184,6 +192,13 @@ What this leaves out, on purpose, and what it keeps open for later:
    condition if that is not good, and otherwise the state and value of the
    branch it chose. The other branch is not looked at.
 4. A division by zero, and any result that is not finite, is `bad`.
+5. In a formula these rules apply to each operation in turn, not once to the
+   formula as a whole. In `(a or b) + c` with `a` true and `b` bad, the `or`
+   is `good` and so, with `c` good, is the sum.
+6. `not`, `abs`, `min` and `max` take the worst state of what they are given.
+   A `bad` argument makes a `min` bad even if it would not have been the
+   smaller.
+7. `==` and `!=` compare exactly.
 
 ### 7.2 Windows and holders
 
@@ -198,8 +213,12 @@ A window gives statistics of recent samples. A holder keeps one value.
    worst state among its ticks that were not usable. A tick from before the
    graph started counts as `not_ready`.
 4. A slope needs two samples at different times. With fewer it is `bad`.
+   Rule 3 comes first: a window that is short of usable samples gives the
+   state rule 3 says on every output, the slope included. This rule shows
+   only where `min_good` lets a window be `good` on one sample.
 5. **A holder** keeps its output until its input has moved by its step or
-   more. Its first usable input is taken as it is.
+   more from the value it is holding, and then takes the input as it is. Its
+   first usable input is taken as it is. The comparison is exact.
 6. A holder has a setting, `ride_through`, a length of time, zero unless
    given. While its input is unusable:
    - if the last usable input was no longer ago than `ride_through`, and the
@@ -223,7 +242,9 @@ good data per interval.
 ### 7.3 Timers
 
 1. **Held for.** True once its input has been true for longer than a stated
-   time. Required `on_bad`:
+   time. The tick on which the input becomes true counts as no time at all.
+   A usable input that is false stops the timer, and the output is `good`
+   and false. Required `on_bad`:
    - `reset`: an unusable input stops the timer, and the output takes the
      input's state.
    - `hold`: an unusable input leaves the timer running. The output is
@@ -254,20 +275,24 @@ because of one.
 
 ### 7.6 Fallbacks
 
-A block may name, for one output, a value to give when that output is not
-good. The substituted value is `good`. It applies to the named output only.
+A block may name, for any of its outputs, a value to give when that output
+is not good. The substituted value is `good`. Each applies to the output it
+names and to no other. Every reader of that output sees the substituted
+value, inside the graph as well as outside it.
 
 ### 7.7 Inputs from outside
 
-At a tick, an external input is:
+At a tick, an external input is the first of these that applies:
 
-- `not_ready` if nothing has been written to it, or if the host wrote it as
-  `not_ready`;
-- `bad` if the host wrote it as `bad`, if its value is not finite, or if it
-  was sampled longer ago than its maximum age;
-- otherwise `good`, with the value last written.
+1. `not_ready` if nothing has been written to it, or if the host's latest
+   write was `not_ready`;
+2. `bad` if the host's latest write was `bad`;
+3. `bad` if the value written is not finite, or was sampled longer ago than
+   the input's maximum age;
+4. `good`, with the value last written.
 
-A value written and not written again stands, and grows older.
+A value written and not written again stands, and grows older. A write of
+`not_ready` does not grow old: it has no sample.
 
 **Open.**
 
@@ -319,9 +344,14 @@ blocks:
 2. A block's `in` maps each input port to a signal or to a constant. Its
    `out` maps output ports to signal names; a port left out is not
    published and can still be read by another block.
-3. An unknown key, an unknown setting, a setting of the wrong type or out of
-   range, a missing required setting and a duplicate signal are compile
-   errors. 1.x ignores an unknown top-level key.
+3. These are compile errors: an unknown key, at the top of the graph or in
+   a block or an input; an unknown block type; a block with no id, or with
+   another block's id; an unknown port in `in`, `out` or `fallback`; a
+   required input left unconnected; an unknown setting; a setting of the
+   wrong type or out of range; a missing required setting; and a signal with
+   two writers. 1.x ignores an unknown top-level key.
+4. A graph with several faults is refused for one of them. Which one, and
+   the wording, are not specified. The refusal names the thing at fault.
 
 ## 10. Units
 
@@ -401,17 +431,35 @@ pin down. Times are in seconds unless a setting says otherwise.
 | `kalman1` | `z`, `model` | `tau`, `q`, `r` | `x`, `sigma` |
 
 A setting with a value in brackets may be left out and takes that value.
+Every input in the table is required. `formula` and `all_good` take one or
+more inputs under any names.
+
+Ranges, outside which a graph is refused: `ticks` a whole number, at least
+1; `window` more than zero and a whole number of periods; `min_good` more
+than 0 and at most 1; `step`, `ride_through`, `time` and `q` not negative;
+`per`, `tau` and `r` more than zero; `initial` and any fallback finite;
+`on_bad` one of `reset` and `hold`. For `kalman1` the period may not be
+longer than `tau`: past that, each prediction would overshoot.
 
 - **`formula`.** Numbers, the block's input names, `+ - * /`, unary minus,
-  the six comparisons, `and`, `or`, `not`, `abs(a)`, `min(a, b)`,
-  `max(a, b)` and `when(condition, a, b)`. A comparison or a logical
-  operator gives 1 or 0. Section 7.1 governs states.
+  the comparisons `< <= > >= == !=`, `and`, `or`, `not`, `abs(a)`,
+  `min(a, b)`, `max(a, b)` and `when(condition, a, b)`. A comparison or a
+  logical operator gives 1 or 0. Section 7.1 governs states.
+  - From loosest to tightest: `or`; `and`; `not`; the comparisons; `+` and
+    `-`; `*` and `/`; unary minus. Operators of one level group from the
+    left. Brackets group.
+  - Comparisons do not chain: `a < b < c` is refused.
+  - A name the formula uses must be one of the block's inputs, and every
+    input of the block must be used by the formula. Either fault is refused.
+  - `and`, `or`, `not`, `abs`, `min`, `max` and `when` are not input names.
 - **`all_good`.** 1 when every input is usable, else 0. Always `good`.
 - **`delay`.** At tick `k` its output is its input at tick `k - ticks`, state
-  included. Before that tick exists, its output is `initial` and `good`, or
-  `not_ready` if no initial value is given.
+  included, as that input was then: an external input's age is judged at
+  the earlier tick and not again. Before that tick exists, its output is
+  `initial` and `good`, or `not_ready` if no initial value is given.
 - **`window`.** `window` is a whole number of periods, `n`. At a tick the
-  window is that tick and the `n - 1` before it. `median` of an even number
+  window is that tick and the `n - 1` before it. It is short of usable
+  samples when it holds fewer than `min_good × n`. `median` of an even number
   of samples is the mean of the middle two. `spread` is `max - min`. `slope`
   is the least-squares slope of value against tick time, per second.
   Section 7.2 rules 1 to 4 govern states.

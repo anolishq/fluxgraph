@@ -1,0 +1,10 @@
+# 4.6: a number in place of a signal is good, with that value, on every tick.
+rules: [4.6]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: f, type: formula, in: {x: x, k: 2.5}, settings: {expr: x + k}, out: {y: y}}
+  - {id: d, type: deadband, in: {x: 3}, settings: {step: 1}, out: {y: c}}
+ticks:
+  - {x: 1, y: 3.5, c: 3}
+  - {x: bad, y: bad, c: 3}

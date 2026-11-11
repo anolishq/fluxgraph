@@ -1,0 +1,11 @@
+# 7.6: every reader of an output sees its fallback, inside the graph too.
+rules: [7.6]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 2s}, fallback: {mean: -1}}
+  - {id: f, type: formula, in: {m: w.mean}, settings: {expr: m * 2}, out: {y: y}}
+ticks:
+  - {x: 1, y: -2}
+  - {x: 3, y: 4}
+  - {x: bad, y: -2}

@@ -78,7 +78,14 @@ class Formula:
             self.tree = ast.parse(str(text), mode="eval").body
         except SyntaxError as exc:
             raise CompileError(f"formula {text!r} does not parse: {exc.msg}") from exc
+        reserved = set(names) & {"and", "or", "not", "when", *_FUNCS}
+        if reserved:
+            raise CompileError(f"{sorted(reserved)} cannot be the name of an input")
+        self.used = set()
         self._check(self.tree, set(names))
+        unused = set(names) - self.used
+        if unused:
+            raise CompileError(f"the formula does not use its input(s) {sorted(unused)}")
 
     def _check(self, node, names):
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float, bool)):
@@ -86,6 +93,7 @@ class Formula:
         if isinstance(node, ast.Name):
             if node.id not in names:
                 raise CompileError(f"formula uses {node.id!r}, which is not one of the block's inputs")
+            self.used.add(node.id)
             return
         if isinstance(node, ast.BinOp) and (type(node.op) in _BIN or isinstance(node.op, ast.Div)):
             children = [node.left, node.right]
@@ -95,6 +103,8 @@ class Formula:
             children = node.values
         elif isinstance(node, ast.Compare) and len(node.ops) == 1 and type(node.ops[0]) in _CMP:
             children = [node.left, node.comparators[0]]
+        elif isinstance(node, ast.Compare):
+            raise CompileError("comparisons do not chain: write (a < b) and (b < c)")
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and not node.keywords:
             name, n = node.func.id, len(node.args)
             if name != "when" and name not in _FUNCS:
@@ -195,7 +205,9 @@ class Delay(Block):
     def __init__(self, *a):
         super().__init__(*a)
         if self.s["ticks"] < 1:
-            raise CompileError("a delay is at least one tick")
+            raise CompileError("ticks is at least 1")
+        if self.s["initial"] is not None and not math.isfinite(self.s["initial"]):
+            raise CompileError("initial is a finite number")
         self.past = collections.deque()
         self.count = 0
 
@@ -261,6 +273,8 @@ class Deadband(Block):
 
     def __init__(self, *a):
         super().__init__(*a)
+        if self.s["step"] < 0 or self.s["ride_through"] < 0:
+            raise CompileError("step and ride_through are not negative")
         self.held, self.seen = None, None
 
     def step(self, t, ins):
@@ -283,6 +297,8 @@ class HeldFor(Block):
 
     def __init__(self, *a):
         super().__init__(*a)
+        if self.s["time"] < 0:
+            raise CompileError("time is not negative")
         self.since = None
 
     def step(self, t, ins):
@@ -304,6 +320,8 @@ class SinceTrue(Block):
 
     def __init__(self, *a):
         super().__init__(*a)
+        if self.s["time"] < 0:
+            raise CompileError("time is not negative")
         self.last = None
 
     def step(self, t, ins):
@@ -336,6 +354,8 @@ class Total(Block):
 
     def __init__(self, *a):
         super().__init__(*a)
+        if self.s["per"] <= 0:
+            raise CompileError("per is more than zero")
         self.total, self.missed = 0.0, 0.0
 
     def step(self, t, ins):
@@ -355,6 +375,10 @@ class Kalman1(Block):
 
     def __init__(self, *a):
         super().__init__(*a)
+        if self.s["tau"] <= 0 or self.s["r"] <= 0 or self.s["q"] < 0:
+            raise CompileError("tau and r are more than zero, and q is not negative")
+        if self.period > self.s["tau"] + 1e-12:
+            raise CompileError(f"the period, {self.period} s, is longer than tau, {self.s['tau']} s")
         self.x, self.var = None, None
 
     def step(self, t, ins):
@@ -458,6 +482,8 @@ class Engine:
             where = f"block {b['id']}"
             cls = CATALOGUE[b["type"]]
             given = b.get("in") or {}
+            if cls.inputs is None and not given:
+                raise CompileError(f"{where}: needs at least one input")
             if cls.inputs is not None:
                 if set(given) - set(cls.inputs):
                     raise CompileError(f"{where}: unknown input(s) {sorted(set(given) - set(cls.inputs))}")
@@ -491,9 +517,11 @@ class Engine:
                     settings[name] = raw[name]
                 else:
                     settings[name] = _setting(where, name, kind, raw[name])
-            for port in b.get("fallback") or {}:
+            for port, value in (b.get("fallback") or {}).items():
                 if port not in cls.outputs:
                     raise CompileError(f"{where}: fallback names no output {port!r}")
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                    raise CompileError(f"{where}: the fallback for {port!r} is a finite number")
             try:
                 self.blocks[b["id"]] = cls(settings, self.period, list(given))
             except CompileError as exc:
@@ -505,6 +533,7 @@ class Engine:
         self.order = self._order(deps)
         self.published = {sig: w for sig, w in writer.items() if "." not in sig or sig.split(".")[0] not in self.blocks}
         self.initial = copy.deepcopy(self.blocks)
+        self.fingerprint = repr((self.period, sorted(self.max_age.items()), specs))
         self.reset()
 
     @staticmethod
@@ -527,10 +556,14 @@ class Engine:
         self.last_inputs = {}  # input -> Val, as the previous tick saw it
 
     def save(self):
-        return copy.deepcopy((self.blocks, self.k, self.written, self.last, self.last_inputs))
+        state = (self.blocks, self.k, self.written, self.last, self.last_inputs)
+        return self.fingerprint, copy.deepcopy(state)
 
     def restore(self, saved):
-        self.blocks, self.k, self.written, self.last, self.last_inputs = copy.deepcopy(saved)
+        fingerprint, state = saved
+        if fingerprint != self.fingerprint:
+            raise ValueError("this state was saved from a different graph")  # 8.3
+        self.blocks, self.k, self.written, self.last, self.last_inputs = copy.deepcopy(state)
 
     def write(self, name, state, value=None, age=0.0):
         """The host writes an input, sampled `age` seconds before the next tick."""

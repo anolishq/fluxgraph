@@ -1,0 +1,13 @@
+# 7.1.5: the rules apply to each operation in turn. 7.1.6: a bad argument
+# makes a min bad even if it would not have been the smaller.
+rules: [7.1.5, 7.1.6]
+period: 1s
+inputs: {a: {}, b: {}, c: {}}
+blocks:
+  - {id: f, type: formula, in: {a: a, b: b, c: c}, settings: {expr: (a or b) + c}, out: {y: sum}}
+  - {id: g, type: formula, in: {a: a, b: b}, settings: {expr: "min(a, b)"}, out: {y: least}}
+ticks:
+  - {a: 1, b: bad, c: 2, sum: 3, least: bad}
+  - {a: 0, b: bad, c: 2, sum: bad, least: bad}
+  - {a: 3, b: 5, c: 1, sum: 2, least: 3}
+  - {a: not_ready, b: 5, c: 1, sum: 2, least: not_ready}

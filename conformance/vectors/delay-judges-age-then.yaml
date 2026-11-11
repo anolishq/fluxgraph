@@ -1,0 +1,14 @@
+# Appendix A, delay: its input as it was at the earlier tick. An external
+# input's age is judged at that tick and not again.
+rules: [4.2, 7.7]
+period: 1s
+inputs: {x: {max_age: 1s}}
+blocks:
+  - {id: d, type: delay, in: {x: x}, out: {y: y}}
+ticks:
+  - {x: 5, y: not_ready}
+  - {y: 5}
+  - {y: 5}              # the input one tick ago was 1 s old: still usable then
+  - {y: bad}            # one tick ago it was 2 s old
+  - {x: 6, y: bad}
+  - {y: 6}
