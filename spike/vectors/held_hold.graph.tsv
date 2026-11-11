@@ -1,0 +1,5 @@
+block	type	field	key	value
+b	held_for	in	x	sig:in/dev/x
+b	held_for	out	y	out/y
+b	held_for	param	seconds	50.0
+b	held_for	param	on_bad	hold

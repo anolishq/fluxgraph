@@ -1,0 +1,7 @@
+block	type	field	key	value
+b	window_stats	in	x	sig:in/dev/x
+b	window_stats	out	mean	out/mean
+b	window_stats	out	slope_per_min	out/slope_per_min
+b	window_stats	out	spread	out/spread
+b	window_stats	param	window	25.0
+b	window_stats	param	on_bad	skip

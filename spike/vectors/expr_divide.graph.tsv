@@ -1,0 +1,5 @@
+block	type	field	key	value
+b	expr	in	a	sig:in/dev/a
+b	expr	in	b	sig:in/dev/b
+b	expr	out	y	out/y
+b	expr	param	formula	a / b

@@ -1,0 +1,3 @@
+block	type	field	key	value
+b	latch	in	set	sig:in/dev/set
+b	latch	out	y	out/y

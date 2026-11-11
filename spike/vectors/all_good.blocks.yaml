@@ -1,0 +1,11 @@
+period_ms: 2500
+blocks:
+- id: b
+  type: all_good
+  in:
+    a: in/dev/a
+    b: in/dev/b
+  params: {}
+  publish:
+    y:
+      signal: out/y

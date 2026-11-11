@@ -1,0 +1,4 @@
+block	type	field	key	value
+b	median	in	x	sig:in/dev/x
+b	median	out	y	out/y
+b	median	param	samples	3.0

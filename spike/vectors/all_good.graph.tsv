@@ -1,0 +1,4 @@
+block	type	field	key	value
+b	all_good	in	a	sig:in/dev/a
+b	all_good	in	b	sig:in/dev/b
+b	all_good	out	y	out/y

@@ -1,0 +1,61 @@
+tick	signal	state	value
+0	out/y	good	-4.0
+1	out/y	good	-5.025
+2	out/y	good	-6.733333333333333
+3	out/y	good	-10.15
+4	out/y	good	-20.4
+5	out/y	bad	
+6	out/y	good	20.6
+7	out/y	good	10.35
+8	out/y	good	6.933333333333334
+9	out/y	good	5.225
+10	out/y	good	4.2
+11	out/y	good	3.516666666666667
+12	out/y	good	0.2571428571428572
+13	out/y	good	2.6625
+14	out/y	good	2.3777777777777778
+15	out/y	good	2.15
+16	out/y	good	1.9636363636363638
+17	out/y	good	1.8083333333333333
+18	out/y	good	1.676923076923077
+19	out/y	good	1.5642857142857143
+20	out/y	bad	
+21	out/y	good	1.38125
+22	out/y	good	1.3058823529411765
+23	out/y	good	1.238888888888889
+24	out/y	good	1.1789473684210525
+25	out/y	good	1.125
+26	out/y	good	1.0761904761904764
+27	out/y	good	1.0318181818181817
+28	out/y	good	0.991304347826087
+29	out/y	good	0.9541666666666666
+30	out/y	bad	
+31	out/y	bad	
+32	out/y	bad	
+33	out/y	bad	
+34	out/y	bad	
+35	out/y	bad	
+36	out/y	good	0.7612903225806452
+37	out/y	good	0.740625
+38	out/y	good	0.7212121212121212
+39	out/y	good	0.7029411764705882
+40	out/y	good	0.6857142857142857
+41	out/y	good	0.6694444444444445
+42	out/y	good	0.654054054054054
+43	out/y	good	0.6394736842105263
+44	out/y	not_ready	
+45	out/y	not_ready	
+46	out/y	not_ready	
+47	out/y	good	0.5880952380952381
+48	out/y	good	0.5767441860465117
+49	out/y	good	0.5659090909090909
+50	out/y	good	0.5555555555555556
+51	out/y	good	0.5456521739130435
+52	out/y	good	0.5361702127659574
+53	out/y	good	0.5270833333333333
+54	out/y	good	0.5183673469387755
+55	out/y	good	0.51
+56	out/y	good	0.5019607843137255
+57	out/y	good	0.4942307692307692
+58	out/y	good	0.4867924528301887
+59	out/y	good	0.47962962962962963

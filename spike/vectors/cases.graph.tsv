@@ -1,0 +1,98 @@
+block	type	field	key	value
+duty	window_stats	in	x	sig:bread0/rlht0/relay1_on
+duty	window_stats	out	mean	heater/duty_10m
+duty	window_stats	out	slope_per_min	
+duty	window_stats	out	spread	
+duty	window_stats	param	window	600.0
+duty	window_stats	param	on_bad	skip
+liquid	expr	in	t1	sig:bread0/rlht0/t1_c
+liquid	expr	in	bias	num:1.2
+liquid	expr	out	y	heater/liquid_c
+liquid	expr	param	formula	t1 - bias
+liquid_steady	expr	in	room	sig:adafruit0/room0/temperature
+liquid_steady	expr	in	pad	sig:bread0/rlht0/setpoint1_c
+liquid_steady	expr	in	k	num:1.1
+liquid_steady	expr	out	y	heater/liquid_steady_c
+liquid_steady	expr	param	formula	room + (pad - room) / (1 + k)
+over_temp_liquid	expr	in	t1	sig:bread0/rlht0/t1_c
+over_temp_liquid	expr	out	y	heater/over_temp_liquid
+over_temp_liquid	expr	param	formula	t1 > 45
+over_temp_pad	expr	in	t2	sig:bread0/rlht0/t2_c
+over_temp_pad	expr	out	y	heater/over_temp_pad
+over_temp_pad	expr	param	formula	t2 > 70
+pad	median	in	x	sig:bread0/rlht0/t2_c
+pad	median	out	y	heater/pad_c
+pad	median	param	samples	3.0
+pad_suggested	expr	in	room	sig:adafruit0/room0/temperature
+pad_suggested	expr	in	target	num:25.0
+pad_suggested	expr	in	k	num:1.1
+pad_suggested	expr	out	y	heater/pad_suggested_c
+pad_suggested	expr	param	formula	target + k * (target - room)
+ph_window	window_stats	in	x	sig:ezo0/ph0/ph_value
+ph_window	window_stats	out	mean	
+ph_window	window_stats	out	slope_per_min	
+ph_window	window_stats	out	spread	
+ph_window	window_stats	param	window	600.0
+ph_window	window_stats	param	on_bad	reset
+readings_good	all_good	in	t1	sig:bread0/rlht0/t1_c
+readings_good	all_good	in	t2	sig:bread0/rlht0/t2_c
+readings_good	all_good	out	y	
+relay_power	expr	in	relay	sig:bread0/rlht0/relay1_on
+relay_power	expr	in	watts	num:35.4
+relay_power	expr	out	y	
+relay_power	expr	param	formula	when(relay, watts, 0)
+relay_seen	latch	in	set	sig:bread0/rlht0/relay1_on
+relay_seen	latch	out	y	
+energy	integrate	in	x	sig:relay_power.y
+energy	integrate	out	y	heater/energy_wh
+energy	integrate	param	per	3600.0
+energy	integrate	param	on_bad	skip
+energy	integrate	param	persist	1
+energy	integrate	param	reset_on	run_start
+gap	expr	in	pad	sig:pad.y
+gap	expr	in	liquid	sig:liquid.y
+gap	expr	out	y	heater/pad_liquid_gap_c
+gap	expr	param	formula	pad - liquid
+liquid_5m	window_stats	in	x	sig:liquid.y
+liquid_5m	window_stats	out	mean	
+liquid_5m	window_stats	out	slope_per_min	
+liquid_5m	window_stats	out	spread	
+liquid_5m	window_stats	param	window	300.0
+liquid_5m	window_stats	param	on_bad	skip
+liquid_estimate	kalman1	in	z	sig:liquid.y
+liquid_estimate	kalman1	in	steady	sig:liquid_steady.y
+liquid_estimate	kalman1	out	x	heater/liquid_estimate_c
+liquid_estimate	kalman1	out	sigma	heater/liquid_estimate_sigma_c
+liquid_estimate	kalman1	param	tau_s	12600.0
+liquid_estimate	kalman1	param	q	1e-06
+liquid_estimate	kalman1	param	r	0.0025
+no_good_reading	since_true	in	x	sig:readings_good.y
+no_good_reading	since_true	out	y	heater/no_good_reading
+no_good_reading	since_true	param	longer_than_s	120.0
+pad_below_liquid	expr	in	seen	sig:relay_seen.y
+pad_below_liquid	expr	in	t1	sig:bread0/rlht0/t1_c
+pad_below_liquid	expr	in	t2	sig:bread0/rlht0/t2_c
+pad_below_liquid	expr	out	y	
+pad_below_liquid	expr	param	formula	seen and t2 < t1 - 3
+ph_steady	expr	in	slope	sig:ph_window.slope_per_min
+ph_steady	expr	in	spread	sig:ph_window.spread
+ph_steady	expr	out	y	ph/steady
+ph_steady	expr	param	formula	abs(slope) < 0.002 and spread < 0.02
+power	expr	in	duty	sig:duty.mean
+power	expr	in	watts	num:35.4
+power	expr	out	y	heater/power_w
+power	expr	param	formula	duty * watts
+compensation	deadband	in	x	sig:liquid_5m.mean
+compensation	deadband	out	y	probes/compensation_c
+compensation	deadband	param	step	0.5
+compensation	deadband	fallback		num:25.0
+pad_detached	held_for	in	x	sig:pad_below_liquid.y
+pad_detached	held_for	out	y	heater/pad_detached
+pad_detached	held_for	param	seconds	1800.0
+pad_detached	held_for	param	on_bad	reset
+trip	expr	in	a	sig:over_temp_pad.y
+trip	expr	in	b	sig:over_temp_liquid.y
+trip	expr	in	c	sig:no_good_reading.y
+trip	expr	in	d	sig:pad_detached.y
+trip	expr	out	y	heater/trip
+trip	expr	param	formula	a or b or c or d

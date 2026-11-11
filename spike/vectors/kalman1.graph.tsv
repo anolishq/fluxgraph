@@ -1,0 +1,8 @@
+block	type	field	key	value
+b	kalman1	in	z	sig:in/dev/z
+b	kalman1	in	steady	sig:in/dev/steady
+b	kalman1	out	x	out/x
+b	kalman1	out	sigma	out/sigma
+b	kalman1	param	tau_s	600.0
+b	kalman1	param	q	1e-06
+b	kalman1	param	r	0.0025

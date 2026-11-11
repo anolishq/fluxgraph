@@ -1,0 +1,4 @@
+block	type	field	key	value
+b	deadband	in	x	sig:in/dev/x
+b	deadband	out	y	out/y
+b	deadband	param	step	0.5

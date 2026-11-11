@@ -1,0 +1,5 @@
+block	type	field	key	value
+b	integrate	in	x	sig:in/dev/x
+b	integrate	out	y	out/y
+b	integrate	param	per	3600.0
+b	integrate	param	on_bad	skip

@@ -1,0 +1,121 @@
+tick	t	signal	state	value
+0	0.0	in/dev/a	good	20.0
+0	0.0	in/dev/b	good	1.0
+1	2.5	in/dev/a	good	20.1
+1	2.5	in/dev/b	good	1.0
+2	5.0	in/dev/a	good	20.2
+2	5.0	in/dev/b	good	1.0
+3	7.5	in/dev/a	good	20.3
+3	7.5	in/dev/b	good	1.0
+4	10.0	in/dev/a	good	20.4
+4	10.0	in/dev/b	good	1.0
+5	12.5	in/dev/a	good	20.5
+5	12.5	in/dev/b	good	1.0
+6	15.0	in/dev/a	good	20.6
+6	15.0	in/dev/b	good	1.0
+7	17.5	in/dev/a	good	20.7
+7	17.5	in/dev/b	good	1.0
+8	20.0	in/dev/a	good	20.8
+8	20.0	in/dev/b	good	1.0
+9	22.5	in/dev/a	good	20.9
+9	22.5	in/dev/b	good	1.0
+10	25.0	in/dev/a	good	21.0
+10	25.0	in/dev/b	good	1.0
+11	27.5	in/dev/a	good	21.1
+11	27.5	in/dev/b	good	1.0
+12	30.0	in/dev/a	good	1.8
+12	30.0	in/dev/b	good	1.0
+13	32.5	in/dev/a	good	21.3
+13	32.5	in/dev/b	good	1.0
+14	35.0	in/dev/a	good	21.4
+14	35.0	in/dev/b	good	1.0
+15	37.5	in/dev/a	good	21.5
+15	37.5	in/dev/b	good	1.0
+16	40.0	in/dev/a	good	21.6
+16	40.0	in/dev/b	good	1.0
+17	42.5	in/dev/a	good	21.7
+17	42.5	in/dev/b	good	1.0
+18	45.0	in/dev/a	good	21.8
+18	45.0	in/dev/b	good	1.0
+19	47.5	in/dev/a	good	21.9
+19	47.5	in/dev/b	good	1.0
+20	50.0	in/dev/a	bad	
+20	50.0	in/dev/b	good	1.0
+21	52.5	in/dev/a	good	22.1
+21	52.5	in/dev/b	good	1.0
+22	55.0	in/dev/a	good	22.2
+22	55.0	in/dev/b	good	1.0
+23	57.5	in/dev/a	good	22.3
+23	57.5	in/dev/b	good	1.0
+24	60.0	in/dev/a	good	22.4
+24	60.0	in/dev/b	good	1.0
+25	62.5	in/dev/a	good	22.5
+25	62.5	in/dev/b	good	1.0
+26	65.0	in/dev/a	good	22.6
+26	65.0	in/dev/b	good	1.0
+27	67.5	in/dev/a	good	22.7
+27	67.5	in/dev/b	good	1.0
+28	70.0	in/dev/a	good	22.8
+28	70.0	in/dev/b	good	1.0
+29	72.5	in/dev/a	good	22.9
+29	72.5	in/dev/b	good	1.0
+30	75.0	in/dev/a	bad	
+30	75.0	in/dev/b	good	1.0
+31	77.5	in/dev/a	bad	
+31	77.5	in/dev/b	good	1.0
+32	80.0	in/dev/a	bad	
+32	80.0	in/dev/b	good	1.0
+33	82.5	in/dev/a	bad	
+33	82.5	in/dev/b	good	1.0
+34	85.0	in/dev/a	bad	
+34	85.0	in/dev/b	good	1.0
+35	87.5	in/dev/a	bad	
+35	87.5	in/dev/b	good	1.0
+36	90.0	in/dev/a	good	23.6
+36	90.0	in/dev/b	good	1.0
+37	92.5	in/dev/a	good	23.7
+37	92.5	in/dev/b	good	1.0
+38	95.0	in/dev/a	good	23.8
+38	95.0	in/dev/b	good	1.0
+39	97.5	in/dev/a	good	23.9
+39	97.5	in/dev/b	good	1.0
+40	100.0	in/dev/a	good	24.0
+40	100.0	in/dev/b	good	1.0
+41	102.5	in/dev/a	good	24.1
+41	102.5	in/dev/b	good	1.0
+42	105.0	in/dev/a	good	24.2
+42	105.0	in/dev/b	good	1.0
+43	107.5	in/dev/a	good	24.3
+43	107.5	in/dev/b	good	1.0
+44	110.0	in/dev/a	not_ready	
+44	110.0	in/dev/b	good	1.0
+45	112.5	in/dev/a	not_ready	
+45	112.5	in/dev/b	good	1.0
+46	115.0	in/dev/a	not_ready	
+46	115.0	in/dev/b	good	1.0
+47	117.5	in/dev/a	good	24.7
+47	117.5	in/dev/b	good	1.0
+48	120.0	in/dev/a	good	24.8
+48	120.0	in/dev/b	good	1.0
+49	122.5	in/dev/a	good	24.9
+49	122.5	in/dev/b	good	1.0
+50	125.0	in/dev/a	good	25.0
+50	125.0	in/dev/b	not_ready	
+51	127.5	in/dev/a	good	25.1
+51	127.5	in/dev/b	good	1.0
+52	130.0	in/dev/a	good	25.2
+52	130.0	in/dev/b	good	1.0
+53	132.5	in/dev/a	good	25.3
+53	132.5	in/dev/b	good	1.0
+54	135.0	in/dev/a	good	25.4
+54	135.0	in/dev/b	good	1.0
+55	137.5	in/dev/a	good	25.5
+55	137.5	in/dev/b	good	1.0
+56	140.0	in/dev/a	good	25.6
+56	140.0	in/dev/b	good	1.0
+57	142.5	in/dev/a	good	25.7
+57	142.5	in/dev/b	good	1.0
+58	145.0	in/dev/a	good	25.8
+58	145.0	in/dev/b	good	1.0
+59	147.5	in/dev/a	good	25.9
+59	147.5	in/dev/b	good	1.0
