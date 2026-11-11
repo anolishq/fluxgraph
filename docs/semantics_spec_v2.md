@@ -86,10 +86,11 @@ evaluation, implicit solvers, vector values.
    third type, a vector of numbers of fixed length, is reserved and not
    defined here.
 6. No usable value is not finite. A block output that would be is `bad`,
-   whatever the block.
+   whatever the block. The block's state is not put right for it: a total
+   that has overflowed stays `bad` until it is reset.
 7. A signal written from outside the graph also carries the **time it was
-   sampled**, and at each tick it is either **new**, written since the tick
-   before, or not. A block can see both.
+   sampled**, and at each tick it is either **new** or not (section 7.2). A
+   block can see both.
 
 **Open.**
 
@@ -131,9 +132,9 @@ evaluation, implicit solvers, vector values.
    no access to the rest of the store.
 6. Every output port is written by exactly one block. A signal written from
    outside the graph is written by nothing inside it.
-7. An input port may be given a constant in place of a signal: a number, or
-   `true` or `false`. It is `good`, with that value, on every tick, and is
-   never new.
+7. An input port may be given a constant in place of a signal: a finite
+   number, or `true` or `false`. It is `good`, with that value, on every
+   tick, missed ticks included, and is never new.
 8. An input that is not required may be left unconnected. The block type
    says what that means.
 
@@ -163,8 +164,8 @@ evaluation, implicit solvers, vector values.
 2. Ties are broken by block id, so the order is the same on every compile.
 3. A loop of direct inputs is a compile error that names the blocks on it.
    A loop that passes through a deferred input is accepted.
-4. A delay on a loop has an initial value. Without one the loop would be
-   `not_ready` for ever, and the graph is refused.
+4. Every delay on a loop, direct or deferred, has an initial value. Without
+   one the loop would be `not_ready` for ever, and the graph is refused.
 5. Nothing reads a value a tick late by accident. That lag exists only
    where a block type declares an input deferred.
 
@@ -174,17 +175,23 @@ evaluation, implicit solvers, vector values.
 
 1. A graph has one **period**, fixed when it is compiled. Every block runs
    once per tick.
-2. Every length of time in a setting is a whole number of periods, and a
-   graph where one is not is refused. Inside a block, time is counted in
-   ticks. The exception is an input's maximum age (rule 6), which is
-   compared with sample times and may be any length.
+2. Every length of time a block counts (a window, a timer, a limit) is a
+   whole number of periods, and a graph where one is not is refused. Inside
+   a block, time is counted in ticks. Two kinds of length are not counted
+   and may be any length: an input's maximum age (rule 6), which is compared
+   with sample times, and a setting that only scales a value, which in the
+   first catalogue is `tau` and `per`.
 3. The host passes the time to every tick: `tick(now)`. The clock is the
    host's; it is in seconds, it does not go backwards, and it is the clock
    sample times are given on. The first call runs tick 0, and the time of
    tick 0 is that `now`. Tick `k` is at the time of tick 0 plus `k` periods.
-4. A call runs, in order, every tick not yet run whose time is not after
-   `now`. If there is none, the call does nothing. A call with a `now`
-   earlier than the last one is refused.
+4. A call runs, in order, every tick not yet run whose time is no more
+   than half a period after `now`. So a call belongs to the tick nearest
+   it, and a host that calls a little early or a little late, or whose
+   clock does not hold a multiple of the period exactly, runs one tick per
+   call. If no tick is due, the call does nothing. A call with a `now`
+   earlier than the last call's is refused and changes nothing; one with
+   the same `now` is accepted.
 5. When one call runs more than one tick, all but the last are **missed**.
    In a missed tick every external input is `bad`: nothing was sampled for
    it. The last tick uses what the host has written. The call says how many
@@ -203,8 +210,9 @@ inputs, and the graph's time is the host's again.
 What this still leaves out:
 
 - **Jitter inside a period.** A tick is treated as exactly one period after
-  the last. A host whose call comes late by less than a period is not
-  noticed.
+  the last. A call that comes early or late by less than half a period is
+  not noticed. One that is further out than that runs no tick, or runs two
+  with the first of them missed.
 - **Sample time is not tick time.** A block may use an input's sample time,
   and the blocks of the first catalogue do not: a value sampled just after
   the previous tick is treated the same as one sampled just before this
@@ -240,8 +248,9 @@ A formula is the one block with no state.
    if that is not usable. Otherwise it takes the value of the branch it
    chose, with the worse of that branch's state and the condition's. The
    other branch is not looked at.
-4. A division by zero, the logarithm or square root of a negative number,
-   and any result that is not finite, is `bad`.
+4. Among usable operands, a division by zero, the logarithm or square root
+   of a negative number, a power with no real value, and any result that is
+   not finite, is `bad`. With an unusable operand rule 1 applies instead.
 5. These rules apply to each operation in turn, not once to the formula as
    a whole. In `(a or b) and c` with `a` true and `b` bad, the `or` is
    `good` and so, with `c` good, is the whole.
@@ -255,23 +264,30 @@ At a tick, an external input is the first of these that applies:
 2. If nothing has been written to it:
    - `uncertain`, with its declared initial value, if it declares one;
    - otherwise `not_ready`, until the graph has run for longer than the
-     input's maximum age, and `bad` from then on. An input with no maximum
-     age stays `not_ready`.
+     input's maximum age, and `bad` from then on: at tick `k`, when `k`
+     periods are more than the maximum age. An input with no maximum age
+     stays `not_ready`.
 3. `not_ready` or `bad`, if that is what the host last wrote.
-4. `bad`, if the value written is not finite, or its age is more than the
-   input's maximum age.
+4. `bad`, if the value written is not finite, if its age is more than the
+   input's maximum age, or if its sample time is more than one period after
+   the tick's time. A sample from the future means the host's clock and the
+   sample's do not agree, and it would otherwise never grow old.
 5. `uncertain` or `good`, as the host last wrote, with that value.
 
 A value written and not written again stands, and grows older. An age
-exactly equal to the maximum is still usable. A write of `not_ready` does
-not grow old: it has no sample.
+exactly equal to the maximum is still usable. A write of `not_ready` or of
+`bad` does not grow old: it has no sample.
 
-An input is **new** at a tick if it was written since the tick before. In a
-missed tick nothing is new.
+An input is **new** at the first tick after it is written that is not
+missed, and at no other. Any write makes it new, whatever state it carries.
+In a missed tick no input is new, and an input still at its initial value is
+never new.
 
 A block output is new at a tick if the block has no signal inputs, or if any
-of its inputs is new. Every block of Appendix A follows that; a block type
-may say otherwise.
+of its inputs is new. Every block of Appendix A but the delay follows that;
+a block type may say otherwise. A delay's output is new when the input it
+gives was new at its own tick; before it has one to give, its output is not
+new.
 
 ### 7.3 Windows
 
@@ -279,10 +295,13 @@ may say otherwise.
    its `window` setting in periods. Its statistics are of those samples and
    no others.
 2. A window has a setting, `min_good`: the fraction of its `n` ticks that
-   must hold a usable sample. It is 1 unless given.
-3. When a window holds fewer usable samples than `min_good × n`, every
-   output but `count` takes the worst state among its ticks that hold none.
-   A tick from before the graph started counts as `not_ready`.
+   must hold a usable sample. It is 1 unless given. The number of samples
+   needed is `min_good × n`, rounded up to a whole number; a product within
+   one part in 10⁹ of a whole number is that number, so that 0.07 of a
+   hundred ticks is seven.
+3. When a window holds fewer usable samples than that, every output but
+   `count` takes the worst state among its ticks that hold none. A tick
+   from before the graph started holds none, and counts as `not_ready`.
 4. Otherwise its outputs are `good` if every one of its `n` ticks holds a
    `good` sample, and `uncertain` if not.
 5. A slope needs two usable samples. With one it is `bad`, while the other
@@ -302,9 +321,13 @@ A deadband and a low-pass each keep one value.
    - the held value, `uncertain`, if the last usable input was no more than
      `ride_through` ago and the block is holding something;
    - otherwise the input's state.
+
+   On the `m`-th unusable tick in a row the last usable input was `m`
+   periods ago.
 3. `ride_through` is zero unless given, so that the output stops being
    usable on the same tick as the input.
-4. The first usable input is taken as it is.
+4. The first usable input is taken as it is. A usable input after a gap of
+   any length is not a first input: the block goes on from what it holds.
 
 ### 7.5 Hysteresis
 
@@ -312,10 +335,11 @@ A hysteresis block turns a number into a boolean with two thresholds.
 
 1. It goes true when its input is at or above `rise`, and false when its
    input is at or below `fall`. Between the two it stays as it was.
-2. Until its input has been at or beyond one of the thresholds, its output
-   is `not_ready`.
-3. With a usable input its output takes the input's state. With an unusable
-   input it keeps what it was, and its output takes the input's state.
+2. With an unusable input it keeps what it was, and its output takes the
+   input's state.
+3. With a usable input its output takes the input's state, except that
+   until a usable input has been at or beyond one of the thresholds its
+   output is `not_ready`.
 
 ### 7.6 Timers and latches
 
@@ -333,16 +357,19 @@ Each takes a boolean.
      `hold_limit`, a required setting. While it runs the output is
      `uncertain`, and true once the time has run out. When the unusable
      stretch grows longer than the limit, or if the timer was not running,
-     the timer stops and the output takes the input's state.
+     the timer stops and the output takes the input's state. The stretch
+     at its `m`-th unusable tick in a row is `m` periods long. The output
+     stays `uncertain` for the rest of that run of the timer.
 2. **Since true.** True when its input has not been true for longer than
    `time`. Its clock starts at the first tick and restarts on every tick
    where the input is usable and true. With a usable input the output takes
    the input's state. Required `on_bad`:
    - `assume_false`: an unusable input counts as not true, and the output
-     is `uncertain`.
+     is `uncertain` on that tick.
    - `unknown`: the output takes the input's state. The clock is not
      touched.
-3. **Latch.** False until its input `set` is first true, then true.
+3. **Latch.** False until its input `set` is first usable and true, then
+   true.
    - Once set, its output is `good` and true whatever `set` then does.
    - Not yet set, its output is false with the state of `set` if that is
      usable, and takes the state of `set` if it is not.
@@ -359,7 +386,7 @@ Each takes a boolean.
 3. The total is `good` while `missed` is zero and every input it has added
    was `good`. It is `uncertain` otherwise.
 4. With `max_missed` set, the total is `bad` once `missed` is more than
-   that.
+   that, until a reset. It goes on adding meanwhile.
 5. It has an input `reset` that need not be connected. A usable, true
    `reset` returns the total and `missed` to zero, and the total to `good`,
    before that tick's addition. An unusable `reset` does nothing.
@@ -387,7 +414,7 @@ and a small fixture (Appendix B) exercises them.
 4. It has a required setting, `max_coast`. Its outputs are `uncertain` when
    it has gone longer than that without a correction, and when the
    measurement it last corrected on was `uncertain`. Otherwise they are
-   `good`.
+   `good`. Its first measurement counts as a correction.
 
 **Open.** The estimator itself: a linear state-space model with predict and
 correct, an innovation gate so that one wild measurement is refused, the
@@ -400,7 +427,8 @@ own design, after this proposal.
 A block may name, for any of its outputs, a value to give when that output
 is not usable. The substituted value is `uncertain`. Each applies to the
 output it names and to no other. Every reader of that output sees the
-substituted value, inside the graph as well as outside it.
+substituted value, inside the graph as well as outside it. An output made
+`bad` by rule 3.6 is replaced like any other.
 
 **Open.**
 
@@ -418,9 +446,11 @@ substituted value, inside the graph as well as outside it.
 **Proposed.**
 
 1. A graph can be reset to its initial state. After a reset the next call
-   runs tick 0 again.
+   runs tick 0 again, at whatever `now` it is given, and every input is as
+   if never written.
 2. A graph can write its state out and take it back, so that a host can
-   save a running graph and restore it.
+   save a running graph and restore it. The state includes what was last
+   written to each input.
 3. A state saved from one graph is refused by a graph that is not the same.
 4. Time does not pass while a graph is not running. After a restore the
    next call runs the tick after the last one saved, at the `now` it is
@@ -430,7 +460,9 @@ substituted value, inside the graph as well as outside it.
 settings and period, and in either case the same layout of state in the
 library that wrote it. And whether the gap across a restore should instead
 be run as missed ticks, which is what a window or an integrator would want
-and what a model of a plant that was also switched off would not.
+and what a model of a plant that was also switched off would not. As it
+stands, an input written before the save is judged after the restore by its
+old sample time against the new clock.
 
 ## 9. The graph file
 
@@ -456,10 +488,14 @@ blocks:
    where it has them, its unit, its maximum age and its initial value. A
    type left out is `number`. A graph that reads a signal which is neither
    an input nor a block's output is refused.
-2. A block's `in` maps each input port to a signal or to a constant. Its
-   `out` maps output ports to signal names; a port left out is not
-   published, and another block can still read it as `<block id>.<port>`.
-3. These are compile errors: an unknown key, at the top of the graph or in
+2. A block's `in` maps each input port to a signal, named as text, or to a
+   constant. Its `out` maps output ports to signal names, which are text; a
+   port left out is not published, and any output, published or not, can be
+   read by another block as `<block id>.<port>`.
+3. A length of time is written as a number and a unit with nothing between
+   them: `ms`, `s`, `m` or `h`. The number is digits, with an optional
+   point and more digits. A number without a unit is refused.
+4. These are compile errors: an unknown key, at the top of the graph or in
    a block or an input; an unknown block type; a block with no id, or with
    another block's id; an unknown port in `in`, `out` or `fallback`; a
    required input left unconnected; a signal connected to a port of the
@@ -467,7 +503,7 @@ blocks:
    range; a missing required setting; a length of time that is not a whole
    number of periods; and a signal with two writers. 1.x ignores an unknown
    top-level key.
-4. A graph with several faults is refused for one of them. Which one, and
+5. A graph with several faults is refused for one of them. Which one, and
    the wording, are not specified. The refusal names the thing at fault.
 
 ## 10. Units
@@ -568,17 +604,31 @@ is required with `on_bad: hold` and refused without it.
 - **`formula`.** Section 7.1 governs states.
   - **Numbers:** digits, an optional point and more digits, an optional
     exponent (`e` or `E`, an optional sign, digits). Nothing else: no sign
-    of its own, no hexadecimal, no separators.
+    of its own, no hexadecimal, no separators. A number too large for a
+    double is refused.
   - **Booleans:** `true` and `false`.
-  - **Names:** a letter or underscore, then letters, digits and underscores.
-    `and`, `or`, `not`, `true`, `false` and the function names are not
-    input names.
+  - **Names:** a letter or underscore, then letters, digits and underscores,
+    all ASCII. `and`, `or`, `not`, `true`, `false` and the function names
+    are not input names.
   - **Operators**, from loosest to tightest: `or`; `and`; `not`; the
     comparisons `< <= > >= == !=`; `+` and `-`; `*` and `/`; unary minus.
     Operators of one level group from the left. Brackets group. Comparisons
-    do not chain: `a < b < c` is refused.
+    do not chain: `a < b < c` is refused. As a grammar:
+
+    ```text
+    or      = and { "or" and }
+    and     = not { "and" not }
+    not     = "not" not | compare
+    compare = sum [ ("<" | "<=" | ">" | ">=" | "==" | "!=") sum ]
+    sum     = product { ("+" | "-") product }
+    product = unary { ("*" | "/") unary }
+    unary   = "-" unary | primary
+    primary = number | "true" | "false" | name | "(" or ")"
+            | function "(" or { "," or } ")"
+    ```
+
   - **Functions:** `abs(a)`, `min(a, b)`, `max(a, b)`, `exp(a)`, `ln(a)`,
-    `sqrt(a)`, `pow(a, b)` and `when(condition, a, b)`.
+    `sqrt(a)`, `pow(a, b)` and `when(condition, a, b)`. `pow` is C's.
   - **Types:** arithmetic and the functions take numbers and give a number.
     `< <= > >=` take numbers and give a boolean. `==` and `!=` take two of
     one type and give a boolean. `and`, `or` and `not` take booleans and
@@ -587,13 +637,15 @@ is required with `on_bad: hold` and refused without it.
     formula.
   - A name the formula uses must be one of the block's inputs, and every
     input of the block must be used by the formula. Either fault is refused.
-  - Spaces between tokens mean nothing. A formula is one line.
+  - Spaces and tabs between tokens mean nothing. A formula is one line, and
+    not empty.
 - **`all_good`.** True when every input is `good`, else false. Always
   `good`.
 - **`delay`.** At tick `k` its output is its input at tick `k - ticks`, state
   included, as that input was then. Before that tick exists, its output is
   `initial` and `good`, or `not_ready` if no initial value is given. Its
-  type is its input's.
+  type is its input's, and an initial value of the other type is refused.
+  What it gives is what a reader of its input saw then, after any fallback.
 - **`window`.** `window` is `n` periods. At a tick the window is that tick
   and the `n - 1` before it. `median` of an even number of samples is the
   mean of the middle two. `spread` is `max - min`. `slope` is the
@@ -642,4 +694,5 @@ measurement variance `r`:
   `x = x + k·(z - x)`, `var = var·(1 - k)`.
 
 `sigma` is the square root of `var`. `tau` and `r` are more than zero, and
-`q` and `max_coast` not negative.
+`q` and `max_coast` not negative. Both inputs are direct. An unusable
+`model` changes the prediction and not the state of the outputs.

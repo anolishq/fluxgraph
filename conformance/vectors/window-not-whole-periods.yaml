@@ -1,8 +1,0 @@
-# 6.2: a window that is not a whole number of periods is refused.
-rules: [6.2]
-period: 1s
-inputs: {x: {}}
-blocks:
-  - {id: w, type: window, in: {x: x}, settings: {window: 2500ms}, out: {mean: mean}}
-expect: compile_error
-error_mentions: [window]

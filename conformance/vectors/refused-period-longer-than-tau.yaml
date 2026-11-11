@@ -1,8 +1,0 @@
-# 6.3, Appendix A: for kalman1 the period may not be longer than tau.
-rules: [6.3]
-period: 1s
-inputs: {x: {}, m: {}}
-blocks:
-  - {id: k, type: kalman1, in: {z: x, model: m}, settings: {tau: 500ms, q: 0, r: 1}, out: {x: e}}
-expect: compile_error
-error_mentions: [tau]
