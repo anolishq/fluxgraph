@@ -1,5 +1,6 @@
-# 7.4.5, 7.4.7, 7.4.8: a low-pass that rode through unusable ticks decays
-# over the ticks it missed, and that is a doubt. a = 0.5, settle 2 ticks.
+# 7.4.5 to 7.4.7: a low-pass that rode through unusable ticks decays over
+# the ticks it missed, and that is not a doubt: it is good on the next
+# good input. a = 0.5.
 rules: [7.4.5, 7.4.6, 7.4.7, 7.4.8]
 period: 1s
 inputs: {x: {max_age: none}}
@@ -8,10 +9,10 @@ blocks:
 calls:
   - {x: 8, y: 8}
   - {x: bad, y: {u: 8}}
-  - {x: 4, y: {u: 5}}           # two ticks at once: 0.25 * 8 + 0.75 * 4
-  - {x: 4, y: {u: 4.5}}
-  - {x: 4, y: 4.25}             # 2 ticks from the doubt
+  - {x: 4, y: 5}           # two ticks at once: 0.25 * 8 + 0.75 * 4
+  - {x: 4, y: 4.5}
+  - {x: 4, y: 4.25}
   - {x: bad, y: {u: 4.25}}
   - {x: bad, y: {u: 4.25}}
   - {x: bad, y: bad}            # 3 ticks: forgotten
-  - {x: 4, y: 4}                # a first input, and no doubt
+  - {x: 4, y: 4}                # a first input

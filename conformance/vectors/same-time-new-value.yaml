@@ -8,5 +8,5 @@ blocks:
   - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
   - {id: w, type: window, in: {x: x}, settings: {window: 3s, min_good: 0.3, only_new: true}, out: {max: hi, count: count}}
 calls:
-  - {now: 0, x: {v: 2, at: 0}, y: 2, hi: {u: 2}, count: 1}
-  - {now: 1, x: {v: 50, at: 0}, y: 50, hi: {u: 2}, count: 1}
+  - {now: 0, x: {v: 2, at: 0}, y: 2, hi: 2, count: 1}
+  - {now: 1, x: {v: 50, at: 0}, y: 50, hi: 2, count: 1}

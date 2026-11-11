@@ -1,5 +1,5 @@
 # 8.6: at a gap since_true's clock is set to the gap's tick, which counts as
-# a tick in doubt. The input is false throughout; ticks 0 to 2, then a gap.
+# false throughout; ticks 0 to 2, then a gap.
 rules: [8.6, 7.6.2]
 period: 1s
 inputs: {x: {type: boolean, max_age: none}}
@@ -11,7 +11,7 @@ calls:
   - {x: false, quiet: false}
   - {$save: a}
   - {$restore: a}
-  - {now: 10, gap: true, x: false, quiet: {u: false}}     # tick 3: the clock starts here
-  - {now: 11, x: false, quiet: {u: false}}
-  - {now: 12, x: false, quiet: {u: false}}
-  - {now: 13, x: false, quiet: true}           # 3 ticks on, and the gap's tick is no longer rested on
+  - {now: 10, gap: true, x: false, quiet: false}     # tick 3: the clock is set here
+  - {now: 11, x: false, quiet: false}
+  - {now: 12, x: false, quiet: false}
+  - {now: 13, x: false, quiet: true}           # 3 ticks since

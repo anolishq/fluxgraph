@@ -140,6 +140,8 @@ class Block:
     outputs: dict = {"y": NUMBER}
     typed_late = False  # its output types wait on its inputs' types
     own_at = False  # it gives its outputs their sample time itself (3 rule 7)
+    loop_settle = None  # on a loop that holds a model: the loop's settle, in ticks (7.8 rule 8)
+    loop_doubt = None  # and the loop's doubt, a tick, given by the engine before each tick
 
     def __init__(self, s, period):
         self.s, self.period = s, float(period)
@@ -153,6 +155,15 @@ class Block:
 
     def update(self, k, ins):
         """Second phase: the state, from every input."""
+
+    def used(self, ins):
+        """Rule D: the inputs it used. Every block but a formula uses every input it has."""
+        return set(ins)
+
+    def loop_settled(self, k):
+        """7.8 rule 8: it is on a loop that holds a model, and the loop is not within settle of its doubt."""
+        d = self.loop_doubt
+        return self.loop_settle is not None and (d is None or not d < k <= d + self.loop_settle)
 
     def gap(self, k):
         """Section 8 rule 6: time went by unseen; k is the gap's tick."""
@@ -181,6 +192,9 @@ class FormulaBlock(Block):
     def output(self, k, t, ins):
         out = self.formula.eval(ins)
         return {"y": Val(out.state, out.v, ins[self.sample_of].at if self.sample_of else t)}
+
+    def used(self, ins):
+        return self.formula.uses(ins)
 
 
 class AllGood(Block):
@@ -216,6 +230,8 @@ class Delay(Block):
             if initial is None:
                 return {"y": Val(NOT_READY)}
             return {"y": Val(GOOD, initial if isinstance(initial, bool) else float(initial))}
+        if self.loop_settled(k):  # 7.8 rule 8: what it took in as uncertain becomes good
+            self.past = collections.deque(Val(GOOD, v.v, v.at) if v.state == UNCERTAIN else v for v in self.past)
         return {"y": self.past[0]}
 
     def update(self, k, ins):
@@ -224,10 +240,10 @@ class Delay(Block):
             self.past.popleft()
 
     def gap(self, k):
-        self.past = collections.deque(Val(UNCERTAIN, v.v, v.at, k) if v.state == GOOD else v for v in self.past)
+        self.past = collections.deque(Val(UNCERTAIN, v.v, v.at) if v.state == GOOD else v for v in self.past)
 
     def forget_times(self):
-        self.past = collections.deque(Val(v.state, v.v, None, v.cause) for v in self.past)
+        self.past = collections.deque(Val(v.state, v.v) for v in self.past)
 
 
 class Window(Block):
@@ -235,7 +251,7 @@ class Window(Block):
 
     settings = {
         "window": ("ticks1", True, None),
-        "min_good": ("number", False, 1.0),
+        "min_good": ("number", False, None),
         "only_new": ("bool", False, False),
     }
     ports = {"x": (NUMBER, True, True)}
@@ -244,6 +260,10 @@ class Window(Block):
     def __init__(self, *a):
         super().__init__(*a)
         self.n = self.s["window"]
+        if self.s["min_good"] is None:
+            if self.s["only_new"]:
+                raise CompileError("min_good is given with only_new: true")  # rule 8
+            self.s["min_good"] = 1.0
         if not 0.0 < self.s["min_good"] <= 1.0:
             raise CompileError("min_good is more than 0 and at most 1")
         self.need = max(1, round_up(self.s["min_good"] * self.n))
@@ -251,25 +271,25 @@ class Window(Block):
 
     def output(self, k, t, ins):
         x = ins["x"]
-        if self.s["only_new"] and usable(x):  # rule 7
+        if self.s["only_new"] and usable(x):  # rule 8
             if x.at is None or (self.last_at is not None and x.at <= self.last_at):
                 x = Val(NOT_READY)
             else:
                 self.last_at = x.at
+        if self.loop_settled(k):  # 7.8 rule 8: what it took in as uncertain counts as good
+            took = (Val(GOOD, v.v, v.at) if v.state == UNCERTAIN else v for v in self.buf)
+            self.buf = collections.deque(took, maxlen=self.n)
         self.buf.append(x)
         first = self.n - len(self.buf)  # the ticks of the window from before the start, or a gap
         held = [(first + i, v) for i, v in enumerate(self.buf) if usable(v)]
+        good = [(i, v) for i, v in held if v.state == GOOD]
         out = {"count": Val(GOOD, float(len(held)))}
         names = [name for name in self.outputs if name != "count"]
-        if len(held) < self.need:
+        if len(held) < self.need:  # rule 3
             missing = [v.state for v in self.buf if not usable(v)] + [NOT_READY] * first
             return out | dict.fromkeys(names, Val(worst(missing)))
-        if self.s["only_new"]:
-            whole = not first and all(v.state == GOOD for _, v in held)
-        else:
-            whole = not first and all(v.state == GOOD for v in self.buf)
-        state = GOOD if whole else UNCERTAIN
-        ys = [v.v for _, v in held]
+        state, of = (GOOD, good) if len(good) >= self.need else (UNCERTAIN, held)  # rules 5 and 4
+        ys = [v.v for _, v in of]
         out |= {
             "mean": Val(state, sum(ys) / len(ys)),
             "median": Val(state, statistics.median(ys)),
@@ -277,10 +297,13 @@ class Window(Block):
             "max": Val(state, max(ys)),
             "spread": Val(state, max(ys) - min(ys)),
         }
-        ts = [i * self.period for i, _ in held]
+        if len(good) < 2 <= len(held):  # rule 6: no two good samples, so the slope is of the usable ones
+            state, of = UNCERTAIN, held
+            ys = [v.v for _, v in of]
+        ts = [i * self.period for i, _ in of]
         mt, my = sum(ts) / len(ts), sum(ys) / len(ys)
         den = sum((ti - mt) ** 2 for ti in ts)
-        if len(held) < 2 or den == 0.0:
+        if len(of) < 2 or den == 0.0:
             out["slope"] = Val(BAD)
         else:
             out["slope"] = Val(state, sum((ti - mt) * (y - my) for ti, y in zip(ts, ys, strict=True)) / den)
@@ -303,19 +326,17 @@ class Deadband(Block):
         super().__init__(*a)
         if self.s["step"] < 0:
             raise CompileError("step is not negative")
-        self.held, self.seen = None, None  # the sample it holds; the tick of its last usable input
+        self.held, self.seen = None, None  # the value it holds; the tick of its last usable input
 
     def output(self, k, t, ins):
         x = ins["x"]
         if usable(x):
-            if self.held is None or abs(x.v - self.held.v) >= self.s["step"]:
-                self.held = x
+            if self.held is None or abs(x.v - self.held) >= self.s["step"]:
+                self.held = x.v
             self.seen = k
-            if self.held.state == GOOD and x.state == GOOD:
-                return {"y": Val(GOOD, self.held.v)}
-            return {"y": Val(UNCERTAIN, self.held.v, None, latest(self.held.cause, x.cause))}
+            return {"y": Val(x.state, self.held)}  # rule 2: the state of the input at this tick
         if self.held is not None and k - self.seen <= self.s["ride_through"]:
-            return {"y": Val(UNCERTAIN, self.held.v)}
+            return {"y": Val(UNCERTAIN, self.held)}
         self.held = None
         return {"y": Val(x.state)}
 
@@ -340,58 +361,85 @@ class Lowpass(Block):
 
     def output(self, k, t, ins):
         x = ins["x"]
+        if self.loop_settled(k):  # 7.8 rule 8: what it took in as uncertain counts as good
+            self.doubt = None
         if not usable(x):
             if self.y is not None and k - self.seen <= self.s["ride_through"]:
                 return {"y": Val(UNCERTAIN, self.y)}
-            self.y = None
+            self.y, self.doubt = None, None  # rule 4, and rule 7: forgetting clears the doubt
             return {"y": Val(x.state)}
         if self.y is None:
-            self.y, self.doubt = x.v, None
+            self.y = x.v
         else:
-            m = k - self.seen
-            if m > 1:
-                self.doubt = latest(self.doubt, k)
+            m = k - self.seen  # riding through is no doubt: the ticks it missed decay too
             self.y = self.a**m * self.y + (1 - self.a**m) * x.v
-        if x.state == UNCERTAIN:
-            self.doubt = latest(self.doubt, x.cause)
         self.seen = k
-        if self.doubt is not None and k - self.doubt < self.s["settle"]:
-            return {"y": Val(UNCERTAIN, self.y, None, self.doubt)}
-        return {"y": Val(GOOD, self.y)}
+        settling = self.doubt is not None and k - self.doubt <= self.s["settle"]  # the settle ticks after it
+        if x.state == UNCERTAIN:
+            self.doubt = k
+        return {"y": Val(UNCERTAIN if x.state == UNCERTAIN or settling else GOOD, self.y)}
 
     def gap(self, k):
-        self.y = None
+        self.y, self.doubt = None, None
 
 
-class Hysteresis(Block):
+class Counted(Block):
+    """A block whose memory has no end: it gives `elapsed`, `doubtful` and `gaps` (section 7, Counters)."""
+
+    def __init__(self, *a):
+        super().__init__(*a)
+        self.since, self.doubtful = None, 0  # the tick the count is from; the ticks of it not good
+        self.gaps, self.gap_at = 0, None  # the gaps at or after that tick; the tick of the last gap
+
+    def count_from(self, k):
+        self.since, self.doubtful = k, 0
+        self.gaps = int(self.gap_at == k)
+
+    def counters(self, k, not_good):
+        if self.since is None:
+            return {"elapsed": Val(GOOD, 0.0), "doubtful": Val(GOOD, 0.0), "gaps": Val(GOOD, 0.0)}
+        self.doubtful += bool(not_good)
+        return {
+            "elapsed": Val(GOOD, (k - self.since + 1) * self.period),
+            "doubtful": Val(GOOD, self.doubtful * self.period),
+            "gaps": Val(GOOD, float(self.gaps)),
+        }
+
+    def gap(self, k):
+        self.gaps, self.gap_at = self.gaps + 1, k
+
+
+COUNTERS = {"elapsed": NUMBER, "doubtful": NUMBER, "gaps": NUMBER}
+
+
+class Hysteresis(Counted):
     """Section 7.5."""
 
     settings = {"rise": ("number", True, None), "fall": ("number", True, None), "initial": ("bool", False, None)}
     ports = {"x": (NUMBER, True, True)}
-    outputs = {"y": BOOLEAN}
+    outputs = {"y": BOOLEAN} | COUNTERS
 
     def __init__(self, *a):
         super().__init__(*a)
         if not self.s["rise"] > self.s["fall"]:
             raise CompileError("rise is more than fall")
-        self.on, self.sure = self.s["initial"], True
+        self.on = self.s["initial"]
 
     def output(self, k, t, ins):
         x = ins["x"]
+        was = self.on
+        if usable(x) and (x.v >= self.s["rise"] or x.v <= self.s["fall"]):
+            self.on = x.v >= self.s["rise"]
+        if self.since is None or self.on != was:  # rule 4: from the tick its value last changed
+            self.count_from(k)
         if not usable(x):
-            self.sure = False
-            return {"y": Val(x.state)}
-        if x.v >= self.s["rise"] or x.v <= self.s["fall"]:
-            self.on, self.sure = x.v >= self.s["rise"], x.state == GOOD
-        if self.on is None:
-            return {"y": Val(NOT_READY)}
-        return {"y": Val(GOOD if self.sure and x.state == GOOD else UNCERTAIN, self.on)}
-
-    def gap(self, k):
-        self.sure = False
+            y = Val(x.state)
+        else:
+            y = Val(NOT_READY) if self.on is None else Val(x.state, self.on)
+        return {"y": y} | self.counters(k, x.state != GOOD)
 
 
-class HeldFor(Block):
+class HeldFor(Counted):
     """Section 7.6 rule 1."""
 
     settings = {
@@ -400,117 +448,113 @@ class HeldFor(Block):
         "hold_limit": ("ticks", False, None),
     }
     ports = {"x": (BOOLEAN, True, True)}
-    outputs = {"y": BOOLEAN}
+    outputs = {"y": BOOLEAN} | COUNTERS
 
     def __init__(self, *a):
         super().__init__(*a)
         if (self.s["on_bad"] == "hold") != (self.s["hold_limit"] is not None):
             raise CompileError("hold_limit is given with on_bad: hold, and only then")
-        self.since, self.degraded, self.stretch = None, False, 0
+        self.stretch = 0
 
     def output(self, k, t, ins):
         x = ins["x"]
         if usable(x):
             self.stretch = 0
             if not x.v:
-                self.since, self.degraded = None, False
-                return {"y": Val(x.state, False)}
-            if self.since is None:
-                self.since, self.degraded = k, False
-            self.degraded = self.degraded or x.state == UNCERTAIN
-            return {"y": Val(UNCERTAIN if self.degraded else GOOD, k - self.since > self.s["time"])}
-        self.stretch += 1
-        if self.s["on_bad"] == "reset" or self.since is None or self.stretch > self.s["hold_limit"]:
-            self.since, self.degraded = None, False
-            return {"y": Val(x.state)}
-        self.degraded = True
-        return {"y": Val(UNCERTAIN, k - self.since > self.s["time"])}
+                self.since = None
+                y = Val(x.state, False)
+            else:
+                if self.since is None:
+                    self.count_from(k)
+                y = Val(x.state, k - self.since > self.s["time"])
+        else:
+            self.stretch += 1
+            if self.s["on_bad"] == "reset" or self.since is None or self.stretch > self.s["hold_limit"]:
+                self.since = None
+                y = Val(x.state)
+            else:
+                y = Val(UNCERTAIN, k - self.since > self.s["time"])
+        return {"y": y} | self.counters(k, x.state != GOOD)
 
     def gap(self, k):
-        self.since, self.degraded, self.stretch = None, False, 0
+        super().gap(k)
+        self.since, self.stretch = None, 0
 
 
-class SinceTrue(Block):
+class SinceTrue(Counted):
     """Section 7.6 rule 2."""
 
     settings = {"time": ("ticks", True, None), "on_bad": ("choice", True, ("assume_false", "unknown"))}
     ports = {"x": (BOOLEAN, True, True)}
-    outputs = {"y": BOOLEAN}
-
-    def __init__(self, *a):
-        super().__init__(*a)
-        self.clock, self.doubt = None, None  # the tick the clock was set; the latest tick whose input was not good
+    outputs = {"y": BOOLEAN} | COUNTERS
 
     def output(self, k, t, ins):
         x = ins["x"]
-        if self.clock is None or (usable(x) and x.v):
-            self.clock = k
-        if x.state != GOOD:
-            self.doubt = k
-        if not usable(x) and self.s["on_bad"] == "unknown":
-            return {"y": Val(x.state)}
-        rests_from = max(self.clock, k - self.s["time"])
-        sure = self.doubt is None or self.doubt < rests_from
-        return {"y": Val(GOOD if sure else UNCERTAIN, k - self.clock > self.s["time"])}
+        if self.since is None or (usable(x) and x.v):
+            self.count_from(k)  # the clock is set
+        late = k - self.since > self.s["time"]
+        if usable(x):
+            y = Val(x.state, late)
+        else:
+            y = Val(UNCERTAIN, late) if self.s["on_bad"] == "assume_false" else Val(x.state)
+        return {"y": y} | self.counters(k, x.state != GOOD)
 
     def gap(self, k):
-        self.clock, self.doubt = k, k
+        super().gap(k)
+        self.since = None  # the clock is set to the gap's tick, when it runs
 
 
-class Latch(Block):
+class Latch(Counted):
     """Section 7.6 rule 3."""
 
     ports = {"set": (BOOLEAN, True, True), "reset": (BOOLEAN, False, True)}
-    outputs = {"y": BOOLEAN}
+    outputs = {"y": BOOLEAN} | COUNTERS
 
     def __init__(self, *a):
         super().__init__(*a)
-        self.on, self.sure = False, True
+        self.on = False
 
     def output(self, k, t, ins):
         s, r = ins["set"], ins.get("reset")
+        was = self.on
+        if self.since is None:
+            self.count_from(k)
         if r is not None and usable(r) and r.v:
-            self.on, self.sure = False, r.state == GOOD
+            self.on = False
+            self.count_from(k)
+            y = Val(r.state, False)
+        elif self.on:
+            y = Val(GOOD, True)
         elif usable(s) and s.v:
-            if not self.on or s.state == GOOD:
-                self.sure = s.state == GOOD
             self.on = True
-        elif not self.on and s.state != GOOD:
-            self.sure = False
-        if self.on:
-            return {"y": Val(GOOD if self.sure else UNCERTAIN, True)}
-        if not usable(s):
-            return {"y": Val(s.state)}
-        return {"y": Val(GOOD if self.sure else UNCERTAIN, False)}
-
-    def gap(self, k):
-        if not self.on:
-            self.sure = False
+            y = Val(s.state, True)
+        elif usable(s):
+            y = Val(s.state, False)
+        else:
+            y = Val(s.state)
+        return {"y": y} | self.counters(k, not was and s.state != GOOD)
 
 
 class Integrate(Block):
     """Section 7.7."""
 
-    settings = {
-        "per": ("seconds", False, Fraction(1)),
-        "max_missed": ("ticks", False, None),
-        "tolerance": ("number", False, 0.0),
-    }
+    settings = {"per": ("seconds", False, Fraction(1)), "max_missed": ("ticks", False, None)}
     ports = {"x": (NUMBER, True, True), "reset": (BOOLEAN, False, True)}
-    outputs = {"y": NUMBER, "missed": NUMBER}
+    outputs = dict.fromkeys(("y", "missed", "doubtful", "elapsed", "gaps"), NUMBER)
 
     def __init__(self, *a):
         super().__init__(*a)
         if self.s["per"] <= 0:
             raise CompileError("per is more than zero")
-        if self.s["tolerance"] < 0:
-            raise CompileError("tolerance is not negative")
-        self.total, self.ran, self.missed, self.doubtful, self.gapped = 0.0, 0, 0, 0, False
+        self.total, self.ran, self.missed, self.doubtful, self.gaps = 0.0, 0, 0, 0, 0
+        self.gap_at = None  # the tick of the last gap
 
     def output(self, k, t, ins):
         x, r = ins["x"], ins.get("reset")
-        if r is not None and usable(r) and r.v:
-            self.total, self.ran, self.missed, self.doubtful, self.gapped = 0.0, 0, 0, 0, False
+        resetting = r is not None and usable(r) and r.v
+        if resetting:
+            self.total, self.ran, self.missed, self.doubtful = 0.0, 0, 0, 0
+            self.gaps = int(self.gap_at == k)  # a gap at the tick it counts from is counted
         self.ran += 1
         if usable(x):
             self.total += x.v * self.period / float(self.s["per"])
@@ -518,15 +562,22 @@ class Integrate(Block):
         else:
             self.missed += 1
         limit = self.s["max_missed"]
-        if limit is not None and self.missed > limit:
+        if limit is not None and self.missed > limit:  # rule 2
             y = Val(BAD)
+        elif x.state == UNCERTAIN or (resetting and r.state == UNCERTAIN):
+            y = Val(UNCERTAIN, self.total)
         else:
-            over = self.missed + self.doubtful > self.s["tolerance"] * self.ran
-            y = Val(UNCERTAIN if over or self.gapped else GOOD, self.total)
-        return {"y": y, "missed": Val(GOOD, self.missed * self.period)}
+            y = Val(GOOD, self.total)
+        return {
+            "y": y,
+            "missed": Val(GOOD, self.missed * self.period),
+            "doubtful": Val(GOOD, self.doubtful * self.period),
+            "elapsed": Val(GOOD, self.ran * self.period),
+            "gaps": Val(GOOD, float(self.gaps)),
+        }
 
     def gap(self, k):
-        self.gapped = True
+        self.gaps, self.gap_at = self.gaps + 1, k
 
 
 # ---------------------------------------------------------------- models (4 rule 9)
@@ -652,56 +703,73 @@ class ModelBlock(Block):
                 f"a step of {self.period / self.s['substeps']:g} s is longer than this model is stable at "
                 f"({self.model.limit:g} s): raise substeps"
             )
+        self.settle_given = self.s["settle"] is not None  # rule 8 needs the author's, on a loop
         if self.s["settle"] is None and self.model.tau is not None:
             self.s["settle"] = round_up(3 * self.model.tau / self.period)
         self.ports = {name: (NUMBER, True, name in self.model.reads_now) for name in self.model.inputs}
-        self.outputs = dict.fromkeys(self.model.outputs, NUMBER)
+        self.outputs = dict.fromkeys(self.model.outputs, NUMBER) | COUNTERS
         self.x = self.model.initial()
         self.last = {}  # input -> (its last usable value, the tick of it)
-        self.doubt = None
+        self.doubt = None  # rule 6: its own. On a loop the engine gives it the loop's before each tick
+        self.doubtful, self.gaps = 0, 0
+        self.on_loop = False
 
     def output(self, k, t, ins):
-        u, state, cause = {}, GOOD, None
+        u, state = {}, GOOD
         for name in self.model.reads_now:  # rule 5
             v = ins[name]
             if usable(v):
                 u[name] = v.v
                 if v.state == UNCERTAIN:
-                    state, cause = UNCERTAIN, latest(cause, v.cause)
+                    state = UNCERTAIN  # rule D
             else:
                 u[name] = self.last[name][0] if name in self.last else 0.0
-                state, cause = UNCERTAIN, k
-        if state == GOOD and self.doubt is not None:  # rule 6
-            if self.s["settle"] is None or k - self.doubt < self.s["settle"]:
-                state, cause = UNCERTAIN, self.doubt
-        return {name: Val(state, value, None, cause) for name, value in self.model.give(self.x, u).items()}
+                state = UNCERTAIN
+        settle = self.s["settle"]
+        if settle is not None and self.doubt is not None and self.doubt < k <= self.doubt + settle:  # rule 6
+            state = UNCERTAIN
+        out = {name: Val(state, value) for name, value in self.model.give(self.x, u).items()}
+        out["elapsed"] = Val(GOOD, (k + 1) * self.period)
+        out["doubtful"] = Val(GOOD, self.doubtful * self.period)  # of the steps before this tick
+        out["gaps"] = Val(GOOD, float(self.gaps))
+        return out
 
     def update(self, k, ins):
-        u = {}
+        u, held, uncertain = {}, False, False
         for name in self.model.inputs:
             v = ins[name]
             if usable(v):
                 u[name], self.last[name] = v.v, (v.v, k)
-                if v.state == UNCERTAIN:
-                    self.doubt = latest(self.doubt, v.cause)
-            else:
-                self.doubt = latest(self.doubt, k)
-                if name in self.last and k - self.last[name][1] <= self.s["ride_through"]:  # rule 4
-                    u[name] = self.last[name][0]
-        if len(u) == len(self.model.inputs):
-            self.x = stepped(self.model, self.x, u, self.period, self.s["substeps"])
+                uncertain = uncertain or v.state == UNCERTAIN
+            elif name in self.last and k - self.last[name][1] <= self.s["ride_through"]:  # rule 4
+                u[name], held = self.last[name][0], True
+        stepped = len(u) == len(self.model.inputs)
+        if stepped:
+            self.x = self.model_step(u)
+        failed = held or not stepped
+        if failed or uncertain:
+            self.doubtful += 1
+            if not self.on_loop:
+                self.doubt = k
+
+    def model_step(self, u):
+        return stepped(self.model, self.x, u, self.period, self.s["substeps"])
 
     def gap(self, k):
-        self.doubt = latest(self.doubt, k)
+        self.doubt = k - 1  # uncertain from the gap's tick
+        self.gaps += 1
+        return True
 
 
 class ThermalMassBlock(ModelBlock):
     model_type = "thermal_mass"
+    outputs = {"temp": NUMBER} | COUNTERS
     settings = ThermalMass.params | MODEL_SETTINGS
 
 
 class StateSpaceBlock(ModelBlock):
     model_type = "state_space"
+    outputs = {"y": NUMBER} | COUNTERS
     settings = StateSpace.params | MODEL_SETTINGS
 
 
@@ -771,7 +839,7 @@ class Estimator(Block):
         self.x = self.model.initial()
         self.p = [[self.p0[i] if i == j else 0.0 for j in range(n)] for i in range(n)]
         self.considered = dict.fromkeys(self.meas)  # the sample time last considered, per port
-        self.used = dict.fromkeys(self.meas)  # the sample time last used, per port
+        self.used_at = dict.fromkeys(self.meas)  # the sample time last used, per port
         self.refused = dict.fromkeys(self.meas, 0)
         self.last_u = {}
 
@@ -812,10 +880,10 @@ class Estimator(Block):
                     row = list(self.p[i])
                     self.x = [xj + gj * innovation for xj, gj in zip(self.x, g, strict=True)]
                     self.p = [[self.p[a][b] - g[a] * row[b] for b in range(n)] for a in range(n)]
-                    self.used[port] = z.at
+                    self.used_at[port] = z.at
             out[f"refused_{port}"] = Val(GOOD, float(self.refused[port]))
             out[f"since_{port}"] = (
-                Val(NOT_READY) if self.used[port] is None else Val(GOOD, max(0, t - self.used[port]) / NS)
+                Val(NOT_READY) if self.used_at[port] is None else Val(GOOD, max(0, t - self.used_at[port]) / NS)
             )
         for i, name in enumerate(self.names):  # rule 5
             sigma = math.sqrt(max(self.p[i][i], 0.0))
@@ -830,7 +898,7 @@ class Estimator(Block):
 
     def forget_times(self):
         self.considered = dict.fromkeys(self.meas)
-        self.used = dict.fromkeys(self.meas)
+        self.used_at = dict.fromkeys(self.meas)
 
 
 CATALOGUE = {
@@ -984,6 +1052,7 @@ class Engine:
                     raise CompileError(f"{where}: {exc}") from exc
 
         self.order = self._order(direct)
+        self._loops(every)
 
         # Types, in an order where they are known.
         self.types = {
@@ -1056,6 +1125,47 @@ class Engine:
                 todo.extend(edges[node])
         return False
 
+    def _loops(self, every):
+        """7.8 rule 8: the blocks that each reach every other are a loop; one that holds a model is one block."""
+        self.loop_of, self.outside, self.loop_settle = {}, {}, {}
+        self.read_in_loop = set()  # the outputs a block of the same loop reads
+        for bid in self.blocks:
+            if bid in self.loop_of or not self._reaches(every, bid, bid):
+                continue
+            members = frozenset(
+                b for b in self.blocks if b == bid or (self._reaches(every, bid, b) and self._reaches(every, b, bid))
+            )
+            models = [b for b in sorted(members) if isinstance(self.blocks[b], ModelBlock)]
+            if not models:
+                continue  # 5 rule 6: no memory that fades, and no rule
+            where = f"the loop of blocks {sorted(members)}"
+            if not all(self.blocks[b].settle_given for b in models):
+                raise CompileError(f"{where}: every model on a loop is given settle")
+            settles = {self.blocks[b].s["settle"] for b in models}
+            if len(settles) != 1:
+                raise CompileError(f"{where}: the models on a loop are all given the same settle")
+            settle = settles.pop()
+            if any(isinstance(self.blocks[b], Estimator) for b in members):
+                raise CompileError(f"{where}: an estimator is not put on a loop that holds a model block")
+            memory = {Delay: lambda d: d.s["ticks"], Window: lambda w: w.n, Lowpass: lambda f: f.s["settle"]}
+            remembers = [b for b in sorted(members) if type(self.blocks[b]) in memory]
+            if sum(memory[type(self.blocks[b])](self.blocks[b]) for b in remembers) > settle:
+                raise CompileError(f"{where}: its delays, windows and low-passes add up to more than settle")
+            self.loop_settle[members] = settle
+            for b in members:
+                self.loop_of[b] = members
+                self.outside[b] = {
+                    port
+                    for port, src in self.wiring[b].items()
+                    if src[0] == "input" or (src[0] == "block" and src[1][0] not in members)
+                }
+                self.read_in_loop |= {
+                    src[1] for src in self.wiring[b].values() if src[0] == "block" and src[1][0] in members
+                }
+                if isinstance(self.blocks[b], ModelBlock):
+                    self.blocks[b].on_loop = True
+                self.blocks[b].loop_settle = settle
+
     @staticmethod
     def _order(deps):
         """Section 5: one order from the direct inputs, ties by id, loops refused by name."""
@@ -1080,10 +1190,11 @@ class Engine:
         self.pending = {name: [] for name in self.inputs}  # the writes not yet taken up, as made
         self.rebasing = False
         self.thrown = 0  # writes thrown away since the last call that ran a tick
+        self.loop_doubt = dict.fromkeys(self.loop_settle)  # 7.8 rule 8: each loop's doubt, a tick
         self.info = None  # what the last call that ran a tick has to say (6 rule 10)
 
     def save(self):
-        return self.fingerprint, copy.deepcopy((self.blocks, self.k))
+        return self.fingerprint, copy.deepcopy((self.blocks, self.k, self.loop_doubt))
 
     def restore(self, saved):
         fingerprint, state = saved
@@ -1091,7 +1202,7 @@ class Engine:
             raise ValueError("this state was saved from a different graph")
         if state[1] == 0:  # saved before any tick: a reset, not a gap (8 rule 3)
             return self.reset()
-        self.blocks, self.k = copy.deepcopy(state)
+        self.blocks, self.k, self.loop_doubt = copy.deepcopy(state)
         self.rebase()
 
     def rebase(self):
@@ -1148,7 +1259,7 @@ class Engine:
             ran = t - self.since
             if spec["initial"] is not None and ran <= spec["max_age"]:
                 value = spec["initial"]
-                return Val(UNCERTAIN, value if isinstance(value, bool) else float(value), None, k)
+                return Val(UNCERTAIN, value if isinstance(value, bool) else float(value))
             return Val(BAD) if ran > spec["max_age"] else Val(NOT_READY)
         state, value, at = self.standing[name]
         if state in (NOT_READY, BAD):
@@ -1157,7 +1268,7 @@ class Engine:
             return Val(BAD)
         if t - at > spec["max_age"]:
             return Val(BAD)
-        return Val(state, value, at, k if state == UNCERTAIN else None)
+        return Val(state, value, at)
 
     # ---- time (section 6)
 
@@ -1191,8 +1302,9 @@ class Engine:
                 self.zero += (due - 1) * self.period
                 due = 1
         if gap:
-            for block in self.blocks.values():  # 8 rule 6
-                block.gap(self.k)
+            for bid, block in self.blocks.items():  # 8 rule 6
+                if block.gap(self.k) and bid in self.loop_of:  # a model's doubt is its loop's
+                    self.loop_doubt[self.loop_of[bid]] = self.k - 1
         out = None
         for i in range(due):
             out = self._run(last=i == due - 1)
@@ -1223,25 +1335,42 @@ class Engine:
                     ins[port] = now[src[1]]
             return ins
 
+        doubts = set()  # the loops something not good came into at this tick (7.8 rule 8)
+
+        def from_outside(bid, ins, ports):
+            if any(ins[port].state != GOOD for port in ports if port in ins and port in self.outside[bid]):
+                doubts.add(self.loop_of[bid])
+
         for bid in self.order:  # first phase
             block, ins = self.blocks[bid], read(bid, True)
-            for port, val in block.output(k, t, ins).items():
+            if bid in self.loop_of:
+                doubt = self.loop_doubt[self.loop_of[bid]]
+                block.loop_doubt = doubt
+                if isinstance(block, ModelBlock):
+                    block.doubt = doubt
+            given = block.output(k, t, ins)
+            if bid in self.loop_of:
+                from_outside(bid, ins, block.used(ins))
+            for port, val in given.items():
                 if usable(val) and isinstance(val.v, float) and not math.isfinite(val.v):
                     val = Val(BAD)  # 3 rule 6
                 substituted = False
                 if not usable(val):
                     val = Val(val.state)
+                    if (bid, port) in self.read_in_loop:  # 7.8 rule 8: whatever stands in for it
+                        doubts.add(self.loop_of[bid])
                     if port in self.fallback[bid]:  # 7.10
                         substituted = True
                         value = self.fallback[bid][port]
-                        val = Val(UNCERTAIN, value if isinstance(value, bool) else float(value), None, k)
-                cause = None
-                if val.state == UNCERTAIN:  # 3 rule 8
-                    causes = [v.cause for v in ins.values() if v.state == UNCERTAIN]
-                    cause = val.cause if val.cause is not None else max(causes) if causes else k
+                        val = Val(UNCERTAIN, value if isinstance(value, bool) else float(value))
                 keeps = block.own_at and usable(val) and not substituted  # 3 rule 7
-                now[(bid, port)] = Val(val.state, val.v, val.at if keeps else t, cause)
+                now[(bid, port)] = Val(val.state, val.v, val.at if keeps else t)
         for bid in self.order:  # second phase
-            self.blocks[bid].update(k, read(bid, False))
+            block, ins = self.blocks[bid], read(bid, False)
+            block.update(k, ins)
+            if bid in self.loop_of:
+                from_outside(bid, ins, {p for p in ins if block.ports is not None and not block.ports[p][2]})
+        for loop in doubts:
+            self.loop_doubt[loop] = k
         self.k = k + 1
         return {sig: now[w] for sig, w in self.published.items()}

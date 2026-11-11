@@ -1,0 +1,15 @@
+# 7.8.8: an output that is not usable, and that no block of the loop reads,
+# starts no doubt. The window is on the loop and needs one good sample; at
+# tick 0 it has one, so its slope is bad, and only its mean is read.
+rules: [7.8.8, 7.3.6]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: y}}
+  - {id: w, type: window, in: {x: plant.y}, settings: {window: 2s, min_good: 0.5}, out: {slope: slope}}
+  - {id: ctl, type: formula, in: {r: r, m: w.mean}, settings: {expr: "r - m"}, out: {y: e}}
+calls:
+  - {r: 4, y: 0, e: 4, slope: bad}
+  - {r: 4, y: 2, e: 3, slope: 2}
+  - {r: 4, y: 2.5, e: 1.75, slope: 0.5}
+  - {r: 4, y: 2.125}

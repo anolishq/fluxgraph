@@ -1,0 +1,18 @@
+# 7.8.8: two models that each take the other's output are one loop. One bad
+# sample to one of them makes it miss a step, and both are uncertain for
+# settle, 2 ticks, after. Neither goes bad. Each is x' = 0.5 x + 0.5 u;
+# a takes b's output plus `extra`, b takes a's.
+rules: [7.8.8, 7.8.5]
+period: 1s
+inputs: {extra: {max_age: none}}
+blocks:
+  - {id: a, type: state_space, in: {u: ua.y}, settings: {A: [[0.5]], B: [0.5], C: [1], initial: [4], settle: 2s}, out: {y: ya}}
+  - {id: b, type: state_space, in: {u: a.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: yb}}
+  - {id: ua, type: formula, in: {y: b.y, x: extra}, settings: {expr: "y + x"}}
+calls:
+  - {extra: 0, ya: 4, yb: 0}
+  - {extra: 0, ya: 2, yb: 2}
+  - {extra: bad, ya: 2, yb: 2}                  # tick 2: a does not step
+  - {extra: 0, ya: {u: 2}, yb: {u: 2}}
+  - {extra: 0, ya: {u: 2}, yb: {u: 2}}
+  - {extra: 0, ya: 2, yb: 2}

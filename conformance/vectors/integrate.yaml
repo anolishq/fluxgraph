@@ -1,6 +1,6 @@
-# 7.7: adds the input times the period on every usable tick. missed is the
-# time not integrated. The total is uncertain once it has missed time or
-# added an uncertain input, bad past max_missed, and good again after a reset.
+# 7.7: adds the input times the period on every usable tick. The total is
+# uncertain on a tick where its input is, bad past max_missed, and good
+# otherwise: a tick it missed leaves it good, and `missed` says so.
 rules: [7.7.1, 7.7.2, 7.7.3, 7.7.4, 7.7.5, A.integrate]
 period: 1s
 inputs: {x: {max_age: none}, r: {type: boolean, max_age: none}}
@@ -10,10 +10,10 @@ blocks:
 calls:
   - {x: 6, r: false, total: 6, missed: 0, per_min: 0.1, j_missed: 0}
   - {x: 6, total: 12, missed: 0, per_min: 0.2}
-  - {x: bad, total: {u: 12}, missed: 1, per_min: {u: 0.2}, j_missed: 1}
+  - {x: bad, total: 12, missed: 1, per_min: 0.2, j_missed: 1}
   - {x: {v: 6, state: uncertain}, total: {u: 18}, missed: 1, per_min: {u: 0.3}}
-  - {x: bad, total: {u: 18}, missed: 2, per_min: {u: 0.3}, j_missed: 2}
-  - {x: not_ready, total: {u: 18}, missed: 3, per_min: bad, j_missed: 3}
+  - {x: bad, total: 18, missed: 2, per_min: 0.30000000000000004, j_missed: 2}
+  - {x: not_ready, total: 18, missed: 3, per_min: bad, j_missed: 3}
   - {x: 6, r: true, total: 6, missed: 0, per_min: bad}      # reset, then this tick's addition
   - {x: {v: 6, state: uncertain}, r: false, total: {u: 12}, missed: 0}
   - {x: 6, r: true, total: 6, missed: 0}

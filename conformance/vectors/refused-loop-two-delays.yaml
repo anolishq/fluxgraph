@@ -1,0 +1,11 @@
+# 7.8.8: refused: a loop whose two delays add up to more than its settle, though neither is longer.
+rules: [7.8.8]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: ctl.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 3s}}
+  - {id: d1, type: delay, in: {x: plant.y}, settings: {ticks: 2, initial: 0}}
+  - {id: d2, type: delay, in: {x: d1.y}, settings: {ticks: 2, initial: 0}}
+  - {id: ctl, type: formula, in: {r: r, m: d2.y}, settings: {expr: "r - m"}}
+expect: compile_error
+error_mentions: [settle]

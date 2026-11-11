@@ -1,0 +1,13 @@
+# 7.3.6: a window that is good on one good sample, and holds another that is
+# usable, gives a slope of its usable samples, uncertain. With one usable
+# sample the slope is bad. min_good of 0.5 over two ticks needs one.
+rules: [7.3.6, 7.3.5]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 2s, min_good: 0.5}, out: {mean: mean, slope: slope}}
+calls:
+  - {x: 1, mean: 1, slope: bad}
+  - {x: {v: 3, state: uncertain}, mean: 1, slope: {u: 2}}
+  - {x: 5, mean: 5, slope: {u: 2}}
+  - {x: 6, mean: 5.5, slope: 1}

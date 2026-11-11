@@ -1,7 +1,7 @@
 # Appendix A, 7.4.5 to 7.4.8: one pole. tau is one period over ln 2, so
 # a = 0.5 and settle, three time constants rounded up, is 5 ticks. For w,
-# tau is one period over ln 4: a = 0.25 and settle is 3 ticks. tau need not
-# be a whole number of periods (6.2).
+# tau is one period over ln 4: a = 0.25 and settle is 3 ticks. An uncertain
+# input is a doubt, and the output is uncertain for settle ticks after it.
 rules: [A.lowpass, 7.4.5, 7.4.6, 7.4.7, 7.4.8, 6.3]
 period: 1s
 inputs: {x: {max_age: none}}
@@ -21,10 +21,11 @@ calls:
   - {x: {v: 2, state: uncertain}, y: {u: 1}, z: {u: 1}, w: {u: 1.5}}
   - {x: 1, y: {u: 1}, z: {u: 1}, w: {u: 1.125}}
   - {x: 1, y: {u: 1}, z: {u: 1}, w: {u: 1.03125}}
-  - {x: 1, y: {u: 1}, z: {u: 1}, w: 1.0078125}         # 3 ticks from the doubt
+  - {x: 1, y: {u: 1}, z: {u: 1}, w: {u: 1.0078125}}         # the third tick after the doubt
   - {x: 1, y: {u: 1}, z: {u: 1}, w: 1.001953125}
-  - {x: 1, y: 1, z: 1, w: 1.00048828125}               # 5 ticks from the doubt
-  # tick 13: a doubt; tick 14: forgotten, or ridden through; tick 15: a first input has no doubt
+  - {x: 1, y: {u: 1}, z: {u: 1}, w: 1.00048828125}               # the fifth tick after the doubt
+  # tick 13: a doubt; tick 14: forgotten, or ridden through; tick 15: a first input has no doubt, and
+  # riding through is none, but z still has tick 13's
   - {x: {v: 3, state: uncertain}, y: {u: 2}, z: {u: 2}, w: {u: 2.5001220703125}}
   - {x: bad, y: bad, z: {u: 2}, w: bad}
   - {x: 5, y: 5, z: {u: 4.25}, w: 5}                   # z: two ticks at once, 0.25 * 2 + 0.75 * 5

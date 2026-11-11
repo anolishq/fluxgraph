@@ -7,5 +7,5 @@ blocks:
 calls:
   - {x: 4, total: 2, missed: 0}
   - {x: 4, total: 4, missed: 0}
-  - {x: bad, total: {u: 4}, missed: 0.5}
-  - {x: 4, total: {u: 6}, missed: 0.5}
+  - {x: bad, total: 4, missed: 0.5}
+  - {x: 4, total: 6, missed: 0.5}

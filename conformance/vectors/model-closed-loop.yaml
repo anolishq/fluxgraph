@@ -1,8 +1,8 @@
-# 7.8.4 to 7.8.6, 3.8, 5.3: a controller reads a model directly and the
-# model takes the controller's output deferred, so the loop compiles. The
-# model is x' = 0.5 x + 0.5 u with u = r - x, so x' = 0.5 r. One bad
-# setpoint makes it miss a step. It does not go bad, and the doubt, which
-# goes round the loop, runs out after settle.
+# 7.8.8, 5.3: a controller reads a model directly and the model takes the
+# controller's output deferred, so the loop compiles, as one loop. The
+# model is x' = 0.5 x + 0.5 u with u = r - x, so x' = 0.5 r. A setpoint
+# that is not good, read from outside the loop, is the loop's doubt, and
+# the model is uncertain for settle, 2 ticks, after it.
 rules: [7.8.4, 7.8.5, 7.8.6, 3.8, 5.3]
 period: 1s
 inputs: {r: {max_age: none}}
@@ -13,9 +13,9 @@ calls:
   - {r: 4, y: 0, e: 4}
   - {r: 4, y: 2, e: 2}
   - {r: 4, y: 2, e: 2}
-  - {r: bad, y: 2, e: bad}                           # tick 3: no step, and a doubt
+  - {r: bad, y: 2, e: bad}                           # tick 3: the loop's doubt
   - {r: 4, y: {u: 2}, e: {u: 2}}
-  - {r: 4, y: 2, e: 2}                               # 2 ticks from the doubt
-  - {r: {v: 4, state: uncertain}, y: 2, e: {u: 2}}   # tick 6: stepped on an uncertain input
+  - {r: 4, y: {u: 2}, e: {u: 2}}                               # the second tick after it
+  - {r: {v: 4, state: uncertain}, y: 2, e: {u: 2}}   # tick 6: a doubt again
   - {r: 4, y: {u: 2}, e: {u: 2}}
-  - {r: 4, y: 2, e: 2}
+  - {r: 4, y: {u: 2}, e: {u: 2}}

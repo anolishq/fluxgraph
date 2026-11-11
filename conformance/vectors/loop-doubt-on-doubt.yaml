@@ -1,0 +1,20 @@
+# 7.8.8: a doubt at tick k is seen from tick k + 1, and at tick k the loop
+# is judged by its latest doubt before k. The setpoint is uncertain at
+# ticks 2 and 3. The controller, which reads it, runs before the plant in
+# the order; at tick 3 the plant is uncertain for the doubt at tick 2. The
+# plant counts its own steps on an uncertain value. settle is 2 ticks.
+rules: [7.8.8, 7.8.6, 5.4]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: y, doubtful: db}}
+  - {id: a, type: delay, in: {x: plant.y}, settings: {initial: 0}, out: {y: prev}}
+  - {id: ctl, type: formula, in: {r: r, a: a.y}, settings: {expr: "r - a"}, out: {y: e}}
+calls:
+  - {r: 4, y: 0, prev: 0, e: 4, db: 0}
+  - {r: 4, y: 2, prev: 0, e: 4, db: 0}
+  - {r: {v: 4, state: uncertain}, y: 3, prev: 2, e: {u: 2}, db: 0}
+  - {r: {v: 4, state: uncertain}, y: {u: 2.5}, prev: 3, e: {u: 1}, db: 1}
+  - {r: 4, y: {u: 1.75}, prev: {u: 2.5}, e: {u: 1.5}, db: 2}
+  - {r: 4, y: {u: 1.625}, prev: {u: 1.75}, e: {u: 2.25}, db: 3}
+  - {r: 4, y: 1.9375, prev: 1.625, e: 2.375, db: 4}

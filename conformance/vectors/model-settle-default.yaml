@@ -1,5 +1,5 @@
 # 7.8.6: without `settle` a model's doubt lasts three of its slowest time
-# constant: tau is 2 s, so 6 ticks. The power is bad at tick 1.
+# constant: tau is 2 s, so the 6 ticks after it. The power is bad at tick 1.
 rules: [7.8.6]
 period: 1s
 inputs: {p: {max_age: none}, amb: {max_age: none}}
@@ -13,4 +13,5 @@ calls:
   - {temp: {u: 0}}
   - {temp: {u: 0}}
   - {temp: {u: 0}}                # tick 6
-  - {temp: 0}                     # 6 ticks from the doubt
+  - {temp: {u: 0}}                     # tick 7: the sixth tick after the doubt
+  - {temp: 0}

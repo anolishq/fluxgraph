@@ -19,10 +19,10 @@ the text says, not what it should say.
 | `compare.py` | Runs the two readings side by side on random inputs and call times and compares every output after every call. |
 
 ```bash
-python3 conformance/run.py            # 182 vectors: ALL AGREE
-python3 conformance/run.py --second   # 182 vectors: ALL AGREE
-python3 conformance/mutate.py         # 334 breakages: 334 noticed; every vector failed by one
-python3 conformance/compare.py        # 1086235 comparisons, 0 differences
+python3 conformance/run.py            # 225 vectors: ALL AGREE
+python3 conformance/run.py --second   # 225 vectors: ALL AGREE
+python3 conformance/mutate.py         # 392 breakages: 392 noticed; every vector failed by one
+python3 conformance/compare.py        # 1688065 comparisons, 0 differences
 ```
 
 The format of a vector is described at the top of `run.py`.
@@ -139,6 +139,82 @@ the amended text alone, and the amendment was reviewed by itself.
   than the period, and a pause short of `max_catch_up` being run as
   ordinary ticks.
 
+## Amendment 2: doubt through memory
+
+Review of the third revision showed that the tick an `uncertain` value
+carried, meant to let doubt run out round a loop, also let it run out
+down a chain. The amendment takes that out. A block is never `good` on a
+tick where a value it used is `uncertain`; a block with a declared finite
+memory is `uncertain` for that long after; a block whose memory has no end
+reports what is in front of it and gives counters; and a loop that holds a
+model block is one block with one `settle`.
+
+- 99 of the 334 breakages quoted reference code the amendment rewrote.
+  They were replaced, and the vectors whose expectations changed were
+  worked again by hand: 30 of the 182 are changed.
+- Writing the breakages found two faults in the amendment before anyone
+  else read it. A value that went unusable inside a loop and was covered
+  by a fallback started no doubt, and came out `good` a tick later. A
+  model with `settle` was `good` on the gap's own tick and `uncertain`
+  only from the tick after.
+- As first written from the amended text, the second reading agreed with
+  the reference on all 204 vectors that existed then, and differed on 1 of
+  1,495,096 random comparisons. That one was a slip of its own: a delay's
+  initial value was told from a taken-in one by the identity of an object
+  that a reset replaced. Writing it turned up 28 places where the text
+  left a choice and 9 where it was wrong or disagreed with itself. All
+  nine were taken up, and the second reading, brought up to the result
+  from the text alone, agreed on all 205 vectors and all 1,495,096
+  comparisons as written.
+- An independent review then reproduced what agreement between two
+  readings could not show.
+  - The reference crashed on an estimator in a loop with a model block:
+    no vector and no comparison graph had one.
+  - On a loop, only delays were held against the loop's `settle`. With a
+    window of 6 s on a loop with a `settle` of 1 s, the plant was `good`
+    for five ticks while it stepped on an `uncertain` value each tick.
+  - An estimator that was `uncertain` on every tick, on a loop, left the
+    plant `good` on every tick.
+  - After an hour's stall a hysteresis, a latch and `since_true` were
+    `good`, and nothing a graph could read said there had been a gap.
+  - A window on a loop whose slope the loop read kept the loop in doubt
+    for ever, with nothing from outside: a window that was `good` on one
+    good sample gave a `bad` slope, which was the loop's next doubt.
+  - Twelve rules the amendment states were pinned by no vector. Each was
+    shown by a broken copy of the reference that passed every vector and
+    differed from the reference on a small graph.
+- What was done about it. Delay ticks, window lengths and low-pass
+  settles on a loop are all held against its `settle`, and the graph is
+  refused if they add up to more. What they took in as `uncertain`
+  becomes `good` once the loop has settled. An estimator on such a loop
+  is refused. Every block that gives `elapsed` gives `gaps`. A slope with
+  fewer than two good samples is of the usable ones, and `uncertain`. The
+  twelve rules have vectors and breakages. What is left is deliberate and
+  is listed in section 7.11 of the proposal.
+- The second reading took two more rounds from the text alone. In the
+  first of them it read "counts as `good`" tick by tick where the
+  reference made the change once: they agreed on all 221 vectors and
+  differed on 8,946 of 1,688,065 comparisons, every one in the one graph
+  with a window and a low-pass on a loop. The text was made to say which
+  is meant, and two vectors were added that the tick-by-tick reading
+  fails (`loop-delay-stays-good`, `loop-window-stays-good`). Brought up
+  to that, it agreed on all 223 vectors there were then and on all
+  1,688,065 comparisons, as written.
+- The review's second pass reran its eleven findings and found each closed
+  or listed in section 7.11, and found no new way to a `good` that should
+  not be one. It broke the reference 25 more ways; two got past every
+  vector, both the rule that what a window or a low-pass on a settled loop
+  takes in at the tick itself is as its own rule says. Each now has a
+  vector and a breakage.
+- Of the 225 vectors, 45 are new with this amendment, and two were taken
+  out with the rules they tested (`integrate-tolerance`,
+  `cause-through-delay`). One of the 45 was wrong as I first worked it: a
+  latch whose `set` is a formula of an `uncertain` value is `uncertain`,
+  and I had it `good`.
+- The places the second reading still had to choose are in
+  `second/ASSUMPTIONS-amendment-2.md`. None of them is a difference from
+  the reference.
+
 ## What this does not cover
 
 - **A fault both readings share.** `compare.py` only compares them. The
@@ -155,6 +231,14 @@ the amended text alone, and the amendment was reviewed by itself.
   format has one graph per file.
 - **That a restore puts the tick's number back.** Every block treats a
   restore as a gap, so no output can show it.
+- **That a save holds a loop's doubt.** A restore is always followed by a
+  gap, which sets the doubt itself, so no output can show it either.
+- **A stall as distinct from a restore, for a loop.** Both are gaps and
+  the reference has one path for them. `loop-stall` runs the stall.
+- **A window on a settled loop turned back by a later doubt.** The vector
+  `loop-window-stays-good` pins it and the tick-by-tick second reading
+  failed it, but no entry in `mutate.py` breaks it: the reference has no
+  single piece to replace.
 - **What a host may not do.** A write to a name that is not an input, a
   write of the wrong type: the proposal does not say, and the two readings
   were not compared on it.

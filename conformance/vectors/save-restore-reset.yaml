@@ -16,11 +16,11 @@ calls:
   - {x: 5, total: 12, mean: 5, y: 5}
   - {$restore: a}
   # an earlier time than the last call's is accepted after a restore. the window held 1 and 1, and is emptied
-  - {now: 2, gap: true, tick: 2, time: 2, x: 5, total: {u: 7}, mean: not_ready, y: 5}
-  - {now: 3, total: {u: 12}, mean: 5, y: 5}
-  - {now: 4, x: 1, total: {u: 13}, mean: 3, y: 1}
+  - {now: 2, gap: true, tick: 2, time: 2, x: 5, total: 7, mean: not_ready, y: 5}
+  - {now: 3, total: 12, mean: 5, y: 5}
+  - {now: 4, x: 1, total: 13, mean: 3, y: 1}
   - {$reset: true}
   # an earlier time is accepted after a reset too, and nothing stands on x
-  - {now: 1, total: {u: 0}, mean: not_ready, y: not_ready}
-  - {now: 2, x: 5, total: {u: 5}, mean: not_ready, y: 5}
-  - {now: 3, total: {u: 10}, mean: 5, y: 5}
+  - {now: 1, total: 0, mean: not_ready, y: not_ready}
+  - {now: 2, x: 5, total: 5, mean: not_ready, y: 5}
+  - {now: 3, total: 10, mean: 5, y: 5}

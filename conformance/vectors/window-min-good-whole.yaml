@@ -12,4 +12,4 @@ calls:
   - {x: 4, mean: not_ready}
   - {x: 5, mean: not_ready}
   - {x: 6, mean: not_ready}
-  - {x: 7, mean: {u: 4}}
+  - {x: 7, mean: 4}

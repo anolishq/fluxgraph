@@ -1,5 +1,6 @@
 # 7.6.1: with hold, an unusable input leaves the timer running for at most
-# hold_limit, and the output is uncertain. The time can run out meanwhile.
+# hold_limit, and the output is uncertain while it does. The time can run
+# out meanwhile. When the input comes back the output takes its state.
 rules: [7.6.1]
 period: 1s
 inputs: {x: {type: boolean, max_age: none}}
@@ -11,7 +12,7 @@ calls:
   - {x: true, a: false, b: false}
   - {x: bad, a: {u: false}, b: {u: false}}
   - {x: bad, a: {u: false}, b: {u: true}}        # 3 s: longer than 2 s, not than 3 s
-  - {x: true, a: {u: true}, b: {u: true}}
+  - {x: true, a: true, b: true}
   - {x: bad, a: {u: true}, b: {u: true}}
   - {x: bad, a: {u: true}, b: {u: true}}
   - {x: bad, a: bad, b: {u: true}}               # unusable for 3 s: past a's limit

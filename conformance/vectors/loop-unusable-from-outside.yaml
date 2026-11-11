@@ -1,0 +1,18 @@
+# 7.8.8: an unusable value read from outside the loop is a doubt too, though
+# a fallback inside the loop makes something usable of it. The setpoint is
+# bad on ticks 2 to 4 and the controller gives its fallback of 0.
+rules: [7.8.8, 7.10]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: y}}
+  - {id: ctl, type: formula, in: {r: r, y: plant.y}, settings: {expr: "r - y"}, fallback: {y: 0}, out: {y: e}}
+calls:
+  - {r: 4, y: 0, e: 4}
+  - {r: 4, y: 2, e: 2}
+  - {r: bad, y: 2, e: {u: 0}}
+  - {r: bad, y: {u: 1}, e: {u: 0}}
+  - {r: bad, y: {u: 0.5}, e: {u: 0}}
+  - {r: 4, y: {u: 0.25}, e: {u: 3.75}}
+  - {r: 4, y: {u: 2}, e: {u: 2}}
+  - {r: 4, y: 2, e: 2}

@@ -160,34 +160,81 @@ def graphs(d, tau):
         "hysteresis": (
             {"a": NUM},
             [
-                block("hysteresis", {"x": "a"}, {"y": "y"}, rise=2, fall=-1),
+                block(
+                    "hysteresis",
+                    {"x": "a"},
+                    {"y": "y", "elapsed": "el", "doubtful": "db", "gaps": "gp"},
+                    rise=2,
+                    fall=-1,
+                ),
                 block("hysteresis", {"x": "a"}, {"y": "z"}, bid="started", rise=2, fall=-1, initial=True),
             ],
         ),
-        "held_for, reset": ({"p": BOOL}, [block("held_for", {"x": "p"}, {"y": "y"}, time=d(3), on_bad="reset")]),
+        "held_for, reset": (
+            {"p": BOOL},
+            [
+                block(
+                    "held_for",
+                    {"x": "p"},
+                    {"y": "y", "elapsed": "el", "doubtful": "db", "gaps": "gp"},
+                    time=d(3),
+                    on_bad="reset",
+                )
+            ],
+        ),
         "held_for, hold": (
             {"p": BOOL},
-            [block("held_for", {"x": "p"}, {"y": "y"}, time=d(3), on_bad="hold", hold_limit=d(2))],
+            [
+                block(
+                    "held_for",
+                    {"x": "p"},
+                    {"y": "y", "elapsed": "el", "doubtful": "db", "gaps": "gp"},
+                    time=d(3),
+                    on_bad="hold",
+                    hold_limit=d(2),
+                )
+            ],
         ),
         "since_true, assume_false": (
             {"p": BOOL},
-            [block("since_true", {"x": "p"}, {"y": "y"}, time=d(4), on_bad="assume_false")],
+            [
+                block(
+                    "since_true",
+                    {"x": "p"},
+                    {"y": "y", "elapsed": "el", "doubtful": "db", "gaps": "gp"},
+                    time=d(4),
+                    on_bad="assume_false",
+                )
+            ],
         ),
         "since_true, unknown": (
             {"p": BOOL},
-            [block("since_true", {"x": "p"}, {"y": "y"}, time=d(4), on_bad="unknown")],
+            [
+                block(
+                    "since_true",
+                    {"x": "p"},
+                    {"y": "y", "elapsed": "el", "doubtful": "db", "gaps": "gp"},
+                    time=d(4),
+                    on_bad="unknown",
+                )
+            ],
         ),
         "latch": (
             {"p": BOOL, "q": BOOL},
             [
-                block("latch", {"set": "p", "reset": "q"}, {"y": "y"}),
+                block("latch", {"set": "p", "reset": "q"}, {"y": "y", "elapsed": "el", "doubtful": "db", "gaps": "gp"}),
                 block("latch", {"set": "p"}, {"y": "z"}, bid="once"),
             ],
         ),
         "integrate": (
             {"a": NUM, "p": BOOL},
             [
-                block("integrate", {"x": "a", "reset": "p"}, {"y": "y", "missed": "missed"}, per="1m", tolerance=0.2),
+                block(
+                    "integrate",
+                    {"x": "a", "reset": "p"},
+                    {"y": "y", "missed": "missed", "doubtful": "db", "elapsed": "el", "gaps": "gaps"},
+                    per="1m",
+                ),
                 block("integrate", {"x": "a"}, {"y": "z"}, bid="strict", max_missed=d(20)),
             ],
         ),
@@ -206,11 +253,28 @@ def graphs(d, tau):
         ),
         "state space, input deferred": (
             {"a": NUM},
-            [block("state_space", {"u": "a"}, {"y": "y"}, settle=d(4), **plant)],
+            [
+                block(
+                    "state_space",
+                    {"u": "a"},
+                    {"y": "y", "elapsed": "el", "doubtful": "db", "gaps": "gp"},
+                    settle=d(4),
+                    **plant,
+                )
+            ],
         ),
         "state space, input direct": (
             {"a": NUM},
-            [block("state_space", {"u": "a"}, {"y": "y"}, D=0.5, ride_through=d(2), **plant)],
+            [
+                block(
+                    "state_space",
+                    {"u": "a"},
+                    {"y": "y", "elapsed": "el", "doubtful": "db", "gaps": "gp"},
+                    D=0.5,
+                    ride_through=d(2),
+                    **plant,
+                )
+            ],
         ),
         "a model in a loop with a formula": (
             {"a": NUM},
@@ -222,8 +286,94 @@ def graphs(d, tau):
         "two masses, each the other's ambient": (
             {"a": NUM, "b": NUM},
             [
-                block("thermal_mass", {"power": "a", "ambient": "right.temp"}, {"temp": "y"}, bid="left", **thermal),
-                block("thermal_mass", {"power": "b", "ambient": "left.temp"}, {"temp": "z"}, bid="right", **thermal),
+                block(
+                    "thermal_mass",
+                    {"power": "a", "ambient": "right.temp"},
+                    {"temp": "y"},
+                    bid="left",
+                    settle=d(5),
+                    **thermal,
+                ),
+                block(
+                    "thermal_mass",
+                    {"power": "b", "ambient": "left.temp"},
+                    {"temp": "z", "doubtful": "db"},
+                    bid="right",
+                    settle=d(5),
+                    ride_through=d(1),
+                    **thermal,
+                ),
+            ],
+        ),
+        "a model in a loop with a delay": (
+            {"a": NUM},
+            [
+                block("state_space", {"u": "i"}, {"y": "y"}, bid="plant", settle=d(4), **plant),
+                {
+                    "id": "acc",
+                    "type": "delay",
+                    "in": {"x": "i"},
+                    "settings": {"ticks": 2, "initial": 0},
+                    "out": {"y": "p"},
+                },
+                formula("ctl", "0.5 * p + 0.3 * (a - y)", {"p": "acc.y", "a": "a", "y": "plant.y"}, "i"),
+            ],
+        ),
+        "a model in a loop that reads a choice": (
+            {"a": NUM, "b": NUM, "p": BOOL, "q": BOOL},
+            [
+                block("state_space", {"u": "e"}, {"y": "y"}, bid="plant", settle=d(2), **plant),
+                formula(
+                    "ctl",
+                    "when(p or q, 0.6 * (a - y), b)",
+                    {"a": "a", "b": "b", "p": "p", "q": "q", "y": "plant.y"},
+                    "e",
+                ),
+            ],
+        ),
+        "a model in a loop with a fallback and a hold": (
+            {"a": NUM},
+            [
+                block("state_space", {"u": "held"}, {"y": "y"}, bid="plant", settle=d(3), ride_through=d(1), **plant),
+                {
+                    "id": "ctl",
+                    "type": "formula",
+                    "in": {"a": "a", "y": "plant.y"},
+                    "settings": {"expr": "a / (y - 1)"},
+                    "fallback": {"y": 0.5},
+                    "out": {"y": "e"},
+                },
+                {
+                    "id": "db",
+                    "type": "deadband",
+                    "in": {"x": "ctl.y"},
+                    "settings": {"step": 0.5, "ride_through": d(2)},
+                    "out": {"y": "held"},
+                },
+            ],
+        ),
+        "a model in a loop with a window and a low-pass": (
+            {"a": NUM},
+            [
+                block("state_space", {"u": "e"}, {"y": "y", "gaps": "gp"}, bid="plant", settle=d(5), **plant),
+                block("window", {"x": "plant.y"}, {"mean": "m", "slope": "sl"}, bid="w", window=d(3), min_good=0.6),
+                block("lowpass", {"x": "w.mean"}, {"y": "s"}, bid="f", tau=tau(0.6), settle=d(2)),
+                formula("ctl", "0.6 * (a - s) + 0 * k", {"a": "a", "s": "f.y", "k": "w.slope"}, "e"),
+            ],
+        ),
+        "slopes of windows with few good samples": (
+            {"a": NUM},
+            [block("window", {"x": "a"}, {"slope": "sl", "mean": "mean"}, window=d(4), min_good=0.25)],
+        ),
+        "a window whose min_good rounds to nothing": (
+            {"a": NUM},
+            [block("window", {"x": "a"}, {"mean": "mean", "max": "hi", "count": "n"}, window=d(5), min_good=0.01)],
+        ),
+        "a formula of one signal into new samples only": (
+            {"a": NUM},
+            [
+                formula("f", "a * 2", {"a": "a"}),
+                block("window", {"x": "f.y"}, {"mean": "mean", "count": "n"}, window=d(4), min_good=0.5, only_new=True),
             ],
         ),
         "estimator": (

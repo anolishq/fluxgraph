@@ -15,8 +15,8 @@ GOOD, UNCERTAIN, NOT_READY, BAD = "good", "uncertain", "not_ready", "bad"
 _WORST_FIRST = (BAD, NOT_READY, UNCERTAIN, GOOD)  # section 3 rule 3
 NUMBER, BOOLEAN = "number", "boolean"
 
-# A signal: its state, its value, the time it was sampled, and if it is uncertain the tick of the cause.
-Val = collections.namedtuple("Val", "state v at cause", defaults=(None, None, None))
+# A signal: its state, its value, and the time it was sampled.
+Val = collections.namedtuple("Val", "state v at", defaults=(None, None))
 
 
 class CompileError(Exception):
@@ -188,6 +188,33 @@ class Formula:
     def eval(self, env):
         out = self._eval(self.tree, env)
         return Val(out.state, out.v if usable(out) else None)
+
+    def uses(self, env):
+        """Rule D: the inputs the formula used. Not an operand that did not decide, nor a branch not taken."""
+        return self._uses(self.tree, env)
+
+    def _uses(self, node, env):
+        kind = node[0]
+        if kind == "const":
+            return set()
+        if kind == "name":
+            return {node[2]}
+        if kind in ("or", "and"):  # 7.1 rule 2
+            decides = kind == "or"
+            parts = [(self._eval(n, env), self._uses(n, env)) for n in (node[2], node[3])]
+            deciders = [(v, u) for v, u in parts if usable(v) and bool(v.v) == decides]
+            good = [u for v, u in deciders if v.state == GOOD]
+            chosen = good or [u for _, u in deciders] or [u for _, u in parts]
+            return set().union(*chosen)
+        if kind == "when":  # 7.1 rule 3
+            cond = self._eval(node[2], env)
+            used = self._uses(node[2], env)
+            return used if not usable(cond) else used | self._uses(node[3] if cond.v else node[4], env)
+        if kind in ("not", "neg"):
+            return self._uses(node[2], env)
+        if kind in ("cmp", "arith"):
+            return self._uses(node[3], env) | self._uses(node[4], env)
+        return set().union(*(self._uses(a, env) for a in node[3]))
 
     def _eval(self, node, env):
         kind = node[0]

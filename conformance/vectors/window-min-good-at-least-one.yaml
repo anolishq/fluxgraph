@@ -6,4 +6,4 @@ blocks:
   - {id: w, type: window, in: {x: x}, settings: {window: 3s, min_good: 1.0e-10}, out: {mean: mean}}
 calls:
   - {x: bad, mean: bad}
-  - {x: 4, mean: {u: 4}}
+  - {x: 4, mean: 4}

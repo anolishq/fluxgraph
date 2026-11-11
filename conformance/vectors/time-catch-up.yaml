@@ -10,6 +10,6 @@ calls:
   - {now: 0, x: 2, total: 2, missed: 0}
   - {now: 1, x: 2, total: 4, missed: 0}
   # ticks 2 and 3 add the 2 sampled at 1 s; at tick 4 it is 3 s old; tick 5 takes the 10
-  - {now: 5, ran: 4, x: 10, total: {u: 18}, missed: 1}
+  - {now: 5, ran: 4, x: 10, total: 18, missed: 1}
   - {now: 5.2, ran: 0}
-  - {now: 6, total: {u: 28}, missed: 1}
+  - {now: 6, total: 28, missed: 1}

@@ -84,21 +84,22 @@ def test_catch_up():
     check("inputs", "x" in e.inputs, True)
     ran, o = e.tick(ns(0.0))
     check("cu ran0", ran, 1)
-    check("cu y0", o["y"], ("uncertain", 0.0))
+    # a total is good on a tick where it lacks its input (rule 7.7.2)
+    check("cu y0", o["y"], ("good", 0.0))
     check("cu missed0", o["missed"], ("good", 1.0))
     e.write("x", "good", 3.0, ns(2.9))
     ran, o = e.tick(ns(3.0))
     check("cu ran3", ran, 3)
     # the write is stamped 2.9 s: ticks 1 and 2 are before it and see
     # nothing; tick 3 is the first at or after it, and adds 3
-    check("cu y3", o["y"], ("uncertain", 3.0))
+    check("cu y3", o["y"], ("good", 3.0))
     check("cu missed3", o["missed"], ("good", 3.0))
     check("cu info3", e.info, info(False, 3, 3 * S))
     check("cu none due", e.tick(ns(3.4)), (0, None))
     check("cu none due, one ns short", e.tick(ns(3.5) - 1), (0, None))
     ran, o = e.tick(ns(3.5))  # exactly half a period before tick 4
     check("cu ran half", ran, 1)
-    check("cu y4", o["y"], ("uncertain", 6.0))
+    check("cu y4", o["y"], ("good", 6.0))
     check("cu info4", e.info, info(False, 4, 4 * S))
     raises("cu backwards", lambda: e.tick(ns(3.0)))
     raises("cu nan", lambda: e.tick(float("nan")))
@@ -108,7 +109,7 @@ def test_catch_up():
     check("cu no tick", e.tick(ns(3.6)), (0, None))
     check("cu no tick info", e.info, None)
     ran, o = e.tick(ns(5.0))
-    check("cu y5", o["y"], ("uncertain", 16.0))
+    check("cu y5", o["y"], ("good", 16.0))
 
 
 def test_age():
@@ -152,17 +153,18 @@ def test_gap():
     check("gap y0", e.tick(ns(0.0))[1]["y"], ("good", 1.0))
     # ticks 1 to 8 are due, more than 3: a stall. One tick runs, numbered 1,
     # at 8 s. What stood goes on standing, 8 s old, under its 10 s maximum.
+    # The total is unchanged by the gap, and good (section 8.6).
     ran, o = e.tick(ns(8.0))
     check("gap ran", ran, 1)
     check("gap info", e.info, info(True, 1, 8 * S))
-    check("gap y", o["y"], ("uncertain", 2.0))
+    check("gap y", o["y"], ("good", 2.0))
     check("gap missed", o["missed"], ("good", 0.0))
     # three ticks are not more than three: ticks 2, 3, 4 at 9, 10, 11 s.
     # The value is 9 and 10 s old, usable, then 11 s old, bad.
     ran, o = e.tick(ns(11.0))
     check("gap three ran", ran, 3)
     check("gap three info", e.info, info(False, 4, 11 * S))
-    check("gap three y", o["y"], ("uncertain", 4.0))
+    check("gap three y", o["y"], ("good", 4.0))
     check("gap three missed", o["missed"], ("good", 1.0))
 
 
@@ -183,14 +185,14 @@ def test_stall_writes():
     ran, o = e.tick(ns(7.4))
     check("stall ran", ran, 1)
     check("stall info", e.info, info(True, 1, 7 * S, waiting=1))
-    check("stall y", o["y"], ("uncertain", 8.0))
+    check("stall y", o["y"], ("good", 8.0))
     check("stall missed", o["missed"], ("good", 0.0))
     # later ticks follow at whole periods: tick 2 at 8 s, due at 7.5 s
     check("stall none due", e.tick(ns(7.5) - 1), (0, None))
     ran, o = e.tick(ns(7.5))
     check("stall next ran", ran, 1)
     check("stall next info", e.info, info(False, 2, 8 * S))
-    check("stall next y", o["y"], ("uncertain", 17.0))
+    check("stall next y", o["y"], ("good", 17.0))
 
 
 def test_catch_up_writes():
@@ -710,10 +712,10 @@ def test_save_restore():
     ran, o = e.tick(ns(0.5))  # a gap: any now, one tick
     check("sr ran", ran, 1)
     check("sr info", e.info, info(True, 2, ns(0.5)))
-    check("sr y", o["y"], ("uncertain", 3.0))
+    check("sr y", o["y"], ("good", 3.0))
     # the next tick is at 1.5, due once now is within half a period of it
     check("sr none due", e.tick(ns(0.9)), (0, None))
-    check("sr y next", e.tick(ns(1.0))[1]["y"], ("uncertain", 4.0))
+    check("sr y next", e.tick(ns(1.0))[1]["y"], ("good", 4.0))
     other = Engine(integ_graph())
     raises("sr other graph", lambda: other.restore(saved))
     e.reset()
@@ -771,6 +773,8 @@ def test_lowpass():
         e.write("x", state, value, k * S)
         return e.tick(k * S)[1]["y"]
 
+    # settle is three time constants: 3 ticks. An uncertain input at tick 2
+    # is a doubt: uncertain at tick 2 by the input, and on ticks 3, 4, 5.
     check("lp 0", step(0, "good", 0.0), ("good", 0.0))
     y = 1 - a
     check("lp 1", step(1, "good", 1.0), ("good", y))
@@ -781,13 +785,44 @@ def test_lowpass():
     y = a * y + (1 - a)
     check("lp 4", step(4, "good", 1.0), ("uncertain", y))
     y = a * y + (1 - a)
-    check("lp 5", step(5, "good", 1.0), ("good", y))
-    check("lp 6", step(6, "bad", None), ("uncertain", y))
+    check("lp 5", step(5, "good", 1.0), ("uncertain", y))
+    y = a * y + (1 - a)
+    check("lp 6", step(6, "good", 1.0), ("good", y))
+    # riding through is uncertain while it lasts, and is not a doubt
+    check("lp 7", step(7, "bad", None), ("uncertain", y))
     y = a * a * y + (1 - a * a)
-    check("lp 7", step(7, "good", 1.0), ("uncertain", y))
-    check("lp 8", step(8, "bad", None), ("uncertain", y))
-    check("lp 9", step(9, "bad", None), ("bad", None))
-    check("lp 10", step(10, "good", 2.0), ("good", 2.0))
+    check("lp 8", step(8, "good", 1.0), ("good", y))
+    check("lp 9", step(9, "bad", None), ("uncertain", y))
+    check("lp 10", step(10, "bad", None), ("bad", None))
+    check("lp 11", step(11, "good", 2.0), ("good", 2.0))
+    # forgetting clears the doubt: the doubt of tick 12 would have made
+    # tick 15 uncertain (15 - 12 is not more than 3)
+    check("lp 12", step(12, "uncertain", 2.0), ("uncertain", 2.0))
+    check("lp 13", step(13, "bad", None), ("uncertain", 2.0))
+    check("lp 14", step(14, "bad", None), ("bad", None))
+    check("lp 15", step(15, "good", 5.0), ("good", 5.0))
+    # a first input that is uncertain is a doubt
+    got = run_seq(
+        {"type": "lowpass", "in": {"x": "x"}, "settings": {"tau": "1s", "settle": "1s"}},
+        "number",
+        [("uncertain", 1.0), ("good", 1.0), ("good", 1.0)],
+    )
+    want = [("uncertain", 1.0), ("uncertain", 1.0), ("good", 1.0)]
+    for k, (g_, w) in enumerate(zip(got, want)):
+        check("lp first %d" % k, g_, w)
+    # settle of 0s: uncertain only on the tick the input is
+    got = run_seq(
+        {"type": "lowpass", "in": {"x": "x"}, "settings": {"tau": "1s", "settle": "0s"}},
+        "number",
+        [("uncertain", 1.0), ("good", 1.0)],
+    )
+    check("lp settle 0, 0", got[0], ("uncertain", 1.0))
+    check("lp settle 0, 1", got[1], ("good", 1.0))
+    # a gap forgets what it held, and (as assumed) the doubt with it
+    e = Engine(g)
+    check("lp gap 0", step(0, "uncertain", 1.0), ("uncertain", 1.0))
+    e.rebase()
+    check("lp gap 1", step(1, "good", 3.0), ("good", 3.0))
 
 
 def run_seq(block, in_type, seq, port="y"):
@@ -805,8 +840,23 @@ def run_seq(block, in_type, seq, port="y"):
     return res
 
 
+def check_seq(label, block, in_type, seq, **want):
+    """want: for each port, the list of (state, value) expected; a counter
+    may be given as a list of plain numbers, each `good`."""
+    for port, exp in want.items():
+        got = run_seq(block, in_type, seq, port)
+        check("%s %s length" % (label, port), len(got), len(exp))
+        for k, (g_, w) in enumerate(zip(got, exp)):
+            if not isinstance(w, tuple):
+                w = ("good", float(w))
+            check("%s %s %d" % (label, port, k), g_, w)
+
+
 def test_hysteresis():
-    got = run_seq(
+    # the output takes the input's state; nothing is remembered of a doubt.
+    # The counters start again at ticks 1 and 7, where the value changes.
+    check_seq(
+        "hyst",
         {"type": "hysteresis", "in": {"x": "x"}, "settings": {"rise": 10, "fall": 5}},
         "number",
         [
@@ -817,25 +867,38 @@ def test_hysteresis():
             ("good", 7.0),
             ("uncertain", 12.0),
             ("good", 7.0),
+            ("uncertain", 5.0),
             ("good", 5.0),
         ],
+        y=[
+            ("not_ready", None),
+            ("good", True),
+            ("good", True),
+            ("bad", None),
+            ("good", True),
+            ("uncertain", True),
+            ("good", True),
+            ("uncertain", False),
+            ("good", False),
+        ],
+        elapsed=[1, 1, 2, 3, 4, 5, 6, 1, 2],
+        doubtful=[0, 0, 0, 1, 1, 2, 2, 1, 1],
     )
-    want = [
-        ("not_ready", None),
-        ("good", True),
-        ("good", True),
-        ("bad", None),
-        ("uncertain", True),
-        ("uncertain", True),
-        ("uncertain", True),
-        ("good", False),
-    ]
-    for k, (g_, w) in enumerate(zip(got, want)):
-        check("hyst %d" % k, g_, w)
+    # with an initial value: no change until it switches
+    check_seq(
+        "hyst initial",
+        {"type": "hysteresis", "in": {"x": "x"}, "settings": {"rise": 10, "fall": 5, "initial": True}},
+        "number",
+        [("good", 7.0), ("bad", None), ("good", 12.0), ("good", 4.0)],
+        y=[("good", True), ("bad", None), ("good", True), ("good", False)],
+        elapsed=[1, 2, 3, 1],
+        doubtful=[0, 1, 1, 0],
+    )
 
 
 def test_latch():
-    got = run_seq(
+    check_seq(
+        "latch",
         {"type": "latch", "in": {"set": "x"}},
         "boolean",
         [
@@ -847,111 +910,231 @@ def test_latch():
             ("bad", None),
             ("uncertain", True),
         ],
+        y=[
+            ("good", False),
+            ("uncertain", False),
+            ("good", False),
+            ("bad", None),
+            ("good", True),
+            ("good", True),
+            ("good", True),
+        ],
+        elapsed=[1, 2, 3, 4, 5, 6, 7],
+        # ticks 5 and 6: it was set when the tick began
+        doubtful=[0, 1, 1, 2, 2, 2, 2],
     )
-    want = [
-        ("good", False),
-        ("uncertain", False),
-        ("uncertain", False),
-        ("bad", None),
-        ("good", True),
-        ("good", True),
-        ("good", True),
-    ]
-    for k, (g_, w) in enumerate(zip(got, want)):
-        check("latch %d" % k, g_, w)
-    # an uncertain set of a latch that was not set leaves it not sure
-    got = run_seq(
-        {"type": "latch", "in": {"set": "x"}}, "boolean", [("uncertain", True), ("good", False), ("good", True)]
+    # set by an uncertain true: uncertain on that tick, good from the next
+    check_seq(
+        "latch unc",
+        {"type": "latch", "in": {"set": "x"}},
+        "boolean",
+        [("uncertain", True), ("good", False), ("good", True)],
+        y=[("uncertain", True), ("good", True), ("good", True)],
+        doubtful=[1, 1, 1],
     )
-    want = [("uncertain", True), ("uncertain", True), ("good", True)]
-    for k, (g_, w) in enumerate(zip(got, want)):
-        check("latch unc %d" % k, g_, w)
-    # reset wins over set
-    got = run_seq(
+    # reset wins over set, and gives its state; unusable, it is not used
+    check_seq(
+        "latch reset",
         {"type": "latch", "in": {"set": True, "reset": "x"}},
         "boolean",
-        [("good", False), ("good", True), ("bad", None)],
+        [("good", False), ("good", True), ("bad", None), ("uncertain", True), ("good", False)],
+        y=[("good", True), ("good", False), ("good", True), ("uncertain", False), ("good", True)],
+        elapsed=[1, 1, 2, 1, 2],
+        doubtful=[0, 0, 0, 0, 0],
     )
-    want = [("good", True), ("good", False), ("good", True)]
-    for k, (g_, w) in enumerate(zip(got, want)):
-        check("latch reset %d" % k, g_, w)
+    # cleared on every tick: the output has the state of `reset`, and each
+    # tick is one on which it was not set when it began
+    check_seq(
+        "latch held clear",
+        {"type": "latch", "in": {"set": "x", "reset": True}},
+        "boolean",
+        [("uncertain", True), ("bad", None), ("good", True)],
+        y=[("good", False), ("good", False), ("good", False)],
+        elapsed=[1, 1, 1],
+        doubtful=[1, 1, 0],
+    )
 
 
 def test_integrate():
-    got = run_seq(
-        {"type": "integrate", "in": {"x": "x"}, "settings": {"tolerance": 0.25}},
+    check_seq(
+        "integ",
+        {"type": "integrate", "in": {"x": "x"}},
         "number",
-        [("good", 1.0), ("good", 1.0), ("good", 1.0), ("bad", None), ("bad", None)],
+        [("good", 1.0), ("good", 1.0), ("uncertain", 1.0), ("bad", None), ("bad", None), ("good", 1.0)],
+        # uncertain only on the tick the input is; good on a tick it lacks
+        y=[("good", 1.0), ("good", 2.0), ("uncertain", 3.0), ("good", 3.0), ("good", 3.0), ("good", 4.0)],
+        missed=[0, 0, 0, 1, 2, 2],
+        doubtful=[0, 0, 1, 1, 1, 1],
+        elapsed=[1, 2, 3, 4, 5, 6],
+        gaps=[0, 0, 0, 0, 0, 0],
     )
-    want = [
-        ("good", 1.0),
-        ("good", 2.0),
-        ("good", 3.0),
-        ("good", 3.0),  # 1 missed of 4 run: not more than 0.25 * 4
-        ("uncertain", 3.0),
-    ]  # 2 missed of 5 run
-    for k, (g_, w) in enumerate(zip(got, want)):
-        check("integ %d" % k, g_, w)
-    got = run_seq(
+    check_seq(
+        "integ max_missed",
         {"type": "integrate", "in": {"x": "x"}, "settings": {"per": "1m", "max_missed": "1s"}},
         "number",
         [("good", 60.0), ("bad", None), ("bad", None), ("uncertain", 60.0)],
+        # one second missed is not more than max_missed; two are, for good
+        y=[("good", 1.0), ("good", 1.0), ("bad", None), ("bad", None)],
+        missed=[0, 1, 2, 2],
     )
-    want = [("good", 1.0), ("uncertain", 1.0), ("bad", None), ("bad", None)]
-    for k, (g_, w) in enumerate(zip(got, want)):
-        check("integ max_missed %d" % k, g_, w)
+    refused(
+        "integ tolerance is gone",
+        {"period": "1s", "blocks": [{"id": "i", "type": "integrate", "in": {"x": 1}, "settings": {"tolerance": 0.5}}]},
+    )
+    # reset, and a gap
+    ports = ("y", "missed", "doubtful", "elapsed", "gaps")
+    g = {
+        "period": "1s",
+        "max_catch_up": 3,
+        "inputs": {"x": {"max_age": "none"}, "r": {"type": "boolean", "max_age": "none"}},
+        "blocks": [{"id": "i", "type": "integrate", "in": {"x": "x", "reset": "r"}, "out": {p: p for p in ports}}],
+    }
+    e = Engine(g)
+
+    def step(label, k, x, r, want):
+        e.write("x", x[0], x[1], k * S)
+        e.write("r", r[0], r[1], k * S)
+        o = e.tick(k * S)[1]
+        check("integ r %s y" % label, o["y"], want[0])
+        for p, w in zip(ports[1:], want[1:]):
+            check("integ r %s %s" % (label, p), o[p], ("good", float(w)))
+
+    step("0", 0, ("good", 2.0), ("good", False), (("good", 2.0), 0, 0, 1, 0))
+    step("1", 1, ("bad", None), ("good", False), (("good", 2.0), 1, 0, 2, 0))
+    # an uncertain true reset: everything to zero, then this tick's addition
+    step("2", 2, ("good", 2.0), ("uncertain", True), (("uncertain", 2.0), 0, 0, 1, 0))
+    step("3", 3, ("good", 2.0), ("bad", None), (("good", 4.0), 0, 0, 2, 0))
+    # a stall: tick 4 at 10 s. The total is unchanged by it, and good
+    step("4", 10, ("uncertain", 2.0), ("uncertain", False), (("uncertain", 6.0), 0, 1, 3, 1))
+    check("integ r gap info", e.info, info(True, 4, 10 * S))
+    step("5", 11, ("good", 2.0), ("good", False), (("good", 8.0), 0, 1, 4, 1))
+    # a reset returns `gaps` to zero with the rest
+    step("6", 12, ("uncertain", 2.0), ("good", True), (("uncertain", 2.0), 0, 1, 1, 0))
 
 
 def test_timers():
-    got = run_seq(
+    check_seq(
+        "held_for",
         {"type": "held_for", "in": {"x": "x"}, "settings": {"time": "2s", "on_bad": "reset"}},
         "boolean",
-        [("good", True)] * 4 + [("bad", None), ("good", True)],
+        [("good", True)] * 4 + [("bad", None), ("good", True)] + [("uncertain", True)] * 3 + [("good", False)],
+        # the timer starts at tick 0, stops at tick 4, starts again at tick 5
+        y=[("good", False)] * 3
+        + [("good", True), ("bad", None), ("good", False)]
+        + [("uncertain", False), ("uncertain", False), ("uncertain", True), ("good", False)],
+        elapsed=[1, 2, 3, 4, 0, 1, 2, 3, 4, 0],
+        doubtful=[0, 0, 0, 0, 0, 0, 1, 2, 3, 0],
     )
-    want = [("good", False)] * 3 + [("good", True), ("bad", None), ("good", False)]
-    for k, (g_, w) in enumerate(zip(got, want)):
-        check("held_for %d" % k, g_, w)
-    got = run_seq(
+    check_seq(
+        "held_for hold",
         {"type": "held_for", "in": {"x": "x"}, "settings": {"time": "2s", "on_bad": "hold", "hold_limit": "1s"}},
         "boolean",
-        [("good", True), ("good", True), ("bad", None), ("good", True), ("bad", None), ("bad", None)],
+        [
+            ("good", True),
+            ("good", True),
+            ("bad", None),
+            ("good", True),
+            ("bad", None),
+            ("bad", None),
+            ("good", True),
+        ],
+        # uncertain only while it runs on an unusable input; tick 3 is good
+        y=[
+            ("good", False),
+            ("good", False),
+            ("uncertain", False),
+            ("good", True),
+            ("uncertain", True),
+            ("bad", None),
+            ("good", False),
+        ],
+        elapsed=[1, 2, 3, 4, 5, 0, 1],
+        doubtful=[0, 0, 1, 1, 2, 0, 0],
     )
-    want = [
-        ("good", False),
-        ("good", False),
-        ("uncertain", False),
-        ("uncertain", True),
-        ("uncertain", True),
-        ("bad", None),
-    ]
-    for k, (g_, w) in enumerate(zip(got, want)):
-        check("held_for hold %d" % k, g_, w)
-    got = run_seq(
+    check_seq(
+        "since_true",
         {"type": "since_true", "in": {"x": "x"}, "settings": {"time": "2s", "on_bad": "assume_false"}},
         "boolean",
-        [("good", False)] * 4 + [("uncertain", True)] + [("good", False)] * 4,
+        [("good", False)] * 4 + [("uncertain", True), ("good", False), ("bad", None), ("good", False), ("good", False)],
+        # the clock is set at tick 0 and again at tick 4
+        y=[("good", False)] * 3
+        + [
+            ("good", True),
+            ("uncertain", False),
+            ("good", False),
+            ("uncertain", False),
+            ("good", True),
+            ("good", True),
+        ],
+        elapsed=[1, 2, 3, 4, 1, 2, 3, 4, 5],
+        doubtful=[0, 0, 0, 0, 1, 1, 2, 2, 2],
     )
-    want = [("good", False)] * 3 + [
-        ("good", True),
-        ("uncertain", False),
-        ("uncertain", False),
-        ("uncertain", False),
-        ("good", True),
-        ("good", True),
-    ]
-    for k, (g_, w) in enumerate(zip(got, want)):
-        check("since_true %d" % k, g_, w)
+    check_seq(
+        "since_true unknown",
+        {"type": "since_true", "in": {"x": "x"}, "settings": {"time": "0s", "on_bad": "unknown"}},
+        "boolean",
+        [("good", True), ("bad", None), ("good", False)],
+        y=[("good", False), ("bad", None), ("good", True)],
+        elapsed=[1, 2, 3],
+        doubtful=[0, 1, 1],
+    )
+    # at a gap the held_for timer stops and the since_true clock is set
+    g = {
+        "period": "1s",
+        "max_catch_up": 3,
+        "blocks": [
+            {
+                "id": "h",
+                "type": "held_for",
+                "in": {"x": True},
+                "settings": {"time": "1s", "on_bad": "reset"},
+                "out": {"y": "h", "elapsed": "he"},
+            },
+            {
+                "id": "s",
+                "type": "since_true",
+                "in": {"x": False},
+                "settings": {"time": "1s", "on_bad": "unknown"},
+                "out": {"y": "s", "elapsed": "se"},
+            },
+        ],
+    }
+    e = Engine(g)
+    e.tick(0)
+    e.tick(1 * S)
+    o = e.tick(2 * S)[1]
+    check("timers h 2", o["h"], ("good", True))
+    check("timers he 2", o["he"], ("good", 3.0))
+    check("timers s 2", o["s"], ("good", True))
+    check("timers se 2", o["se"], ("good", 3.0))
+    o = e.tick(10 * S)[1]  # a stall: tick 3
+    check("timers gap info", e.info, info(True, 3, 10 * S))
+    check("timers h gap", o["h"], ("good", False))
+    check("timers he gap", o["he"], ("good", 1.0))
+    check("timers s gap", o["s"], ("good", False))
+    check("timers se gap", o["se"], ("good", 1.0))
+    o = e.tick(12 * S)[1]  # ticks 4 and 5
+    check("timers h 5", o["h"], ("good", True))
+    check("timers s 5", o["s"], ("good", True))
+    check("timers se 5", o["se"], ("good", 3.0))
 
 
 def test_deadband_window():
-    got = run_seq(
+    check_seq(
+        "deadband",
         {"type": "deadband", "in": {"x": "x"}, "settings": {"step": 1}},
         "number",
         [("good", 0.0), ("good", 0.5), ("uncertain", 0.75), ("good", 1.0), ("bad", None)],
+        y=[("good", 0.0), ("good", 0.0), ("uncertain", 0.0), ("good", 1.0), ("bad", None)],
     )
-    want = [("good", 0.0), ("good", 0.0), ("uncertain", 0.0), ("good", 1.0), ("bad", None)]
-    for k, (g_, w) in enumerate(zip(got, want)):
-        check("deadband %d" % k, g_, w)
+    # a sample that was uncertain when taken is good once its input is
+    check_seq(
+        "deadband unc",
+        {"type": "deadband", "in": {"x": "x"}, "settings": {"step": 1, "ride_through": "1s"}},
+        "number",
+        [("uncertain", 0.0), ("good", 0.5), ("bad", None), ("bad", None), ("good", 5.0)],
+        y=[("uncertain", 0.0), ("good", 0.0), ("uncertain", 0.0), ("bad", None), ("good", 5.0)],
+    )
     seq = [("good", 1.0), ("good", 2.0), ("good", 4.0), ("uncertain", 4.0)]
     blk = {"type": "window", "in": {"x": "x"}, "settings": {"window": "3s"}}
     for port, w2, w3 in (
@@ -965,10 +1148,113 @@ def test_deadband_window():
         got = run_seq(blk, "number", seq, port)
         check("window %s 0" % port, got[0], ("not_ready", None))
         check("window %s 2" % port, got[2], ("good", w2))
+        # three usable, two good, three needed: of its usable samples
         check("window %s 3" % port, got[3], ("uncertain", w3))
     got = run_seq(blk, "number", seq, "count")
     check("window count 0", got[0], ("good", 1.0))
     check("window count 2", got[2], ("good", 3.0))
+    # a tolerance: 4 ticks, 2 needed. The windows, oldest first:
+    #  0: -  -  -  1         one usable: the worst of the ticks with none
+    #  1: -  -  1  10u       two usable, one good: uncertain, of both
+    #  2: -  1  10u 3        two good: good, of the good ones alone
+    #  3: 1  10u 3  bad      the same
+    #  4: 10u 3  bad 5       good, of 3 and 5
+    #  5: 3  bad 5  7u       good, of 3 and 5
+    #  6: bad 5  7u 9u       three usable, one good: uncertain, of all three
+    #  7: 5  7u 9u bad       the same
+    #  8: 7u 9u bad bad      two usable, none good: uncertain
+    #  9: 9u bad bad bad     one usable: bad
+    seq = [
+        ("good", 1.0),
+        ("uncertain", 10.0),
+        ("good", 3.0),
+        ("bad", None),
+        ("good", 5.0),
+        ("uncertain", 7.0),
+        ("uncertain", 9.0),
+        ("bad", None),
+        ("bad", None),
+        ("bad", None),
+    ]
+    check_seq(
+        "window tol",
+        {"type": "window", "in": {"x": "x"}, "settings": {"window": "4s", "min_good": 0.5}},
+        "number",
+        seq,
+        mean=[
+            ("not_ready", None),
+            ("uncertain", 5.5),
+            ("good", 2.0),
+            ("good", 2.0),
+            ("good", 4.0),
+            ("good", 4.0),
+            ("uncertain", 7.0),
+            ("uncertain", 7.0),
+            ("uncertain", 8.0),
+            ("bad", None),
+        ],
+        max=[
+            ("not_ready", None),
+            ("uncertain", 10.0),
+            ("good", 3.0),
+            ("good", 3.0),
+            ("good", 5.0),
+            ("good", 5.0),
+            ("uncertain", 9.0),
+            ("uncertain", 9.0),
+            ("uncertain", 9.0),
+            ("bad", None),
+        ],
+        # tick 2: 1 at 1 s and 3 at 3 s of the window; tick 6: 5, 7, 9 a
+        # second apart; tick 8: 7 and 9 at 0 s and 1 s
+        slope=[
+            ("not_ready", None),
+            ("uncertain", 9.0),
+            ("good", 1.0),
+            ("good", 1.0),
+            ("good", 1.0),
+            ("good", 1.0),
+            ("uncertain", 2.0),
+            ("uncertain", 2.0),
+            ("uncertain", 2.0),
+            ("bad", None),
+        ],
+        count=[1, 2, 3, 3, 3, 3, 3, 3, 2, 1],
+    )
+    # a slope needs two samples: with one good sample and two usable ones
+    # it is of the usable ones, and uncertain (rule 7.3.6, round three)
+    check_seq(
+        "window slope",
+        {"type": "window", "in": {"x": "x"}, "settings": {"window": "2s", "min_good": 0.5}},
+        "number",
+        [("good", 1.0), ("uncertain", 5.0), ("uncertain", 7.0)],
+        mean=[("good", 1.0), ("good", 1.0), ("uncertain", 6.0)],
+        slope=[("bad", None), ("uncertain", 4.0), ("uncertain", 2.0)],
+        count=[1, 2, 2],
+    )
+    # only_new: a tick with no new sample is a hole the tolerance covers
+    g = {
+        "period": "1s",
+        "inputs": {"x": {"max_age": "none"}},
+        "blocks": [
+            {
+                "id": "w",
+                "type": "window",
+                "in": {"x": "x"},
+                "settings": {"window": "2s", "min_good": 0.5, "only_new": True},
+                "out": {"mean": "mean", "count": "count"},
+            }
+        ],
+    }
+    e = Engine(g)
+    e.write("x", "good", 1.0, 0)
+    check("window new 0", e.tick(0)[1]["mean"], ("good", 1.0))
+    check("window new 1", e.tick(1 * S)[1]["mean"], ("good", 1.0))
+    check("window new 2", e.tick(2 * S)[1]["mean"], ("not_ready", None))
+    e.write("x", "uncertain", 3.0, 3 * S)
+    check("window new 3", e.tick(3 * S)[1]["mean"], ("uncertain", 3.0))
+    del g["blocks"][0]["settings"]["min_good"]
+    refused("window only_new with no min_good", g)
 
 
 def test_formula():
@@ -1070,7 +1356,7 @@ def test_loops():
                 "id": "plant",
                 "type": "thermal_mass",
                 "in": {"power": "heat", "ambient": 20},
-                "settings": {"thermal_mass": 100, "heat_transfer": 1, "initial": 20},
+                "settings": {"thermal_mass": 100, "heat_transfer": 1, "initial": 20, "settle": "2s"},
                 "out": {"temp": "temp"},
             },
             {
@@ -1092,26 +1378,64 @@ def test_loops():
     s = 1 + z + z**2 / 2 + z**3 / 6 + z**4 / 24
     check("model 1", e.tick(ns(1.0))[1]["temp"], ("good", 120 - 100 * s))
     check("model 2", e.tick(ns(2.0))[1]["temp"], ("good", 120 - 100 * s * s))
+    # the two are a loop that holds a model: without `settle` it is refused
+    del g["blocks"][0]["settings"]["settle"]
+    refused("model loop with no settle", g)
 
-    # a missed step is a doubt, seen from the next tick, for `settle`
+    # a missed step is a doubt, seen on the `settle` ticks after it
     g = {
         "period": "1s",
+        "max_catch_up": 3,
         "inputs": {"p": {"max_age": "none"}},
         "blocks": [
             {
                 "id": "plant",
                 "type": "thermal_mass",
                 "in": {"power": "p", "ambient": 20},
-                "settings": {"thermal_mass": 10, "heat_transfer": 1, "initial": 20, "settle": "2s"},
-                "out": {"temp": "temp"},
+                "settings": {
+                    "thermal_mass": 10,
+                    "heat_transfer": 1,
+                    "initial": 20,
+                    "settle": "2s",
+                    "ride_through": "1s",
+                },
+                "out": {"temp": "temp", "elapsed": "el", "doubtful": "db"},
             }
         ],
     }
     e = Engine(g)
-    check("doubt 0", e.tick(ns(0.0))[1]["temp"], ("good", 20.0))
-    e.write("p", "good", 0.0, ns(1.0))
-    check("doubt 1", e.tick(ns(1.0))[1]["temp"], ("uncertain", 20.0))
-    check("doubt 2", e.tick(ns(2.0))[1]["temp"], ("good", 20.0))
+
+    def step(label, k, p, temp_state, doubtful):
+        if p is not None:
+            e.write("p", p[0], p[1], k * S)
+        o = e.tick(k * S)[1]
+        check("doubt %s temp" % label, o["temp"], (temp_state, 20.0))
+        check("doubt %s elapsed" % label, o["el"], ("good", float(label) + 1))
+        check("doubt %s doubtful" % label, o["db"], ("good", float(doubtful)))
+
+    # tick 0: no power yet, so no step: a doubt, tick 0. It shows on ticks
+    # 1 and 2, and `doubtful` counts it from tick 1, when the step is done.
+    step("0", 0, None, "good", 0)
+    step("1", 1, ("good", 0.0), "uncertain", 1)
+    step("2", 2, None, "uncertain", 1)
+    step("3", 3, None, "good", 1)
+    # a step on an uncertain value at tick 4: ticks 5 and 6
+    step("4", 4, ("uncertain", 0.0), "good", 1)
+    step("5", 5, ("good", 0.0), "uncertain", 2)
+    step("6", 6, None, "uncertain", 2)
+    step("7", 7, None, "good", 2)
+    # tick 8 steps on a held value, tick 9 does not step: the doubt is tick 9
+    step("8", 8, ("bad", None), "good", 2)
+    step("9", 9, None, "uncertain", 3)
+    step("10", 10, ("good", 0.0), "uncertain", 4)
+    step("11", 11, None, "uncertain", 4)
+    step("12", 12, None, "good", 4)
+    # a stall: tick 13, at 20 s. The tick before it is a doubt: uncertain
+    # on ticks 13 and 14. The counters go on, and the gap is not counted.
+    step("13", 20, None, "uncertain", 4)
+    check("doubt gap info", e.info, info(True, 13, 20 * S))
+    step("14", 21, None, "uncertain", 4)
+    step("15", 22, None, "good", 4)
     refused(
         "unstable",
         {
@@ -1137,7 +1461,7 @@ def test_loops():
                 "type": "state_space",
                 "in": {"u": "u"},
                 "settings": {"A": [[0.5]], "B": [1], "C": [2], "D": 1},
-                "out": {"y": "y"},
+                "out": {"y": "y", "doubtful": "db"},
             }
         ],
     }
@@ -1146,6 +1470,645 @@ def test_loops():
     check("ss 0", e.tick(ns(0.0))[1]["y"], ("good", 1.0))
     check("ss 1", e.tick(ns(1.0))[1]["y"], ("good", 3.0))
     check("ss 2", e.tick(ns(2.0))[1]["y"], ("good", 4.0))
+    # x is 1.75. u unusable: worked out on its last value, uncertain; no step
+    e.write("u", "bad", None, 3 * S)
+    o = e.tick(3 * S)[1]
+    check("ss 3", o["y"], ("uncertain", 4.5))
+    check("ss 3 doubtful", o["db"], ("good", 0.0))
+    # no settle and no time constant: good again, and the counter says
+    e.write("u", "good", 1.0, 4 * S)
+    o = e.tick(4 * S)[1]
+    check("ss 4", o["y"], ("good", 4.5))
+    check("ss 4 doubtful", o["db"], ("good", 1.0))
+    # rule D: an uncertain direct input. x is 1.875
+    e.write("u", "uncertain", 1.0, 5 * S)
+    check("ss 5", e.tick(5 * S)[1]["y"], ("uncertain", 4.75))
+    e.write("u", "good", 1.0, 6 * S)
+    o = e.tick(6 * S)[1]
+    check("ss 6", o["y"], ("good", 4.875))
+    check("ss 6 doubtful", o["db"], ("good", 2.0))
+
+
+def two_masses(settle_a="2s", settle_b="2s"):
+    def mass(bid, power, ambient, settle):
+        st = {"thermal_mass": 10, "heat_transfer": 1, "initial": 20}
+        if settle is not None:
+            st["settle"] = settle
+        return {
+            "id": bid,
+            "type": "thermal_mass",
+            "in": {"power": power, "ambient": ambient},
+            "settings": st,
+            "out": {"temp": bid},
+        }
+
+    return {
+        "period": "1s",
+        "max_catch_up": 3,
+        "inputs": {"p": {"max_age": "none"}},
+        "blocks": [mass("a", "p", "b.temp", settle_a), mass("b", 0, "a.temp", settle_b)],
+    }
+
+
+def test_model_loops():
+    """Rule 7.8.8: a loop that holds a model is one block."""
+    # two masses that each take the other's temperature. Nothing moves:
+    # both start at 20 and the power is 0.
+    e = Engine(two_masses())
+
+    def step(k, p, want):
+        if p is not None:
+            e.write("p", p[0], p[1], k * S)
+        o = e.tick(k * S)[1]
+        check("masses %d a" % k, o["a"], (want, 20.0))
+        check("masses %d b" % k, o["b"], (want, 20.0))
+
+    step(0, ("good", 0.0), "good")
+    # one bad sample to one of them, at tick 1: both uncertain for settle
+    step(1, ("bad", None), "good")
+    step(2, ("good", 0.0), "uncertain")
+    step(3, None, "uncertain")
+    step(4, None, "good")
+    # an uncertain value from outside is a doubt as well
+    step(5, ("uncertain", 0.0), "good")
+    step(6, ("good", 0.0), "uncertain")
+    step(7, None, "uncertain")
+    step(8, None, "good")
+    # a stall: tick 9 at 20 s; the tick before it is the loop's doubt
+    step(20, None, "uncertain")
+    check("masses gap info", e.info, info(True, 9, 20 * S))
+    step(21, None, "uncertain")
+    saved = e.save()
+    step(22, ("bad", None), "good")  # tick 11 is a doubt, after the save
+    # the loop's doubt is part of what a save holds; a restore is a gap
+    e.restore(saved)
+    e.write("p", "good", 0.0, 0)
+    step(0, None, "uncertain")  # tick 11: the doubt is tick 10
+    step(1, None, "uncertain")
+    step(2, None, "good")
+    refused("masses, one with no settle", two_masses("2s", None))
+    refused("masses, neither with settle", two_masses(None, None))
+    refused("masses, settles differ", two_masses("2s", "3s"))
+    g = two_masses(None, None)
+    g["blocks"][0]["in"]["ambient"] = 20
+    Engine(g)  # no loop: b reads a, and a reads nothing of b
+    g["blocks"][0]["in"]["ambient"] = "a.temp"
+    refused("a model that reads its own output, with no settle", g)
+    g["blocks"][0]["settings"]["settle"] = "0s"
+    Engine(g)
+
+    # a plant, a delay and a controller in one loop:
+    #   plant: x' = 0.5 x + u, y = x;  d: plant.y one tick late;
+    #   ctl: sp - d
+    def loop(expr="sp - d", settle="2s", ticks=1, fallback=None):
+        ctl = {"id": "ctl", "type": "formula", "in": {"sp": "sp", "d": "d.y"}, "settings": {"expr": expr}}
+        ctl["out"] = {"y": "u"}
+        if expr.startswith("when"):
+            ctl["in"]["en"] = "en"
+        if fallback is not None:
+            ctl["fallback"] = {"y": fallback}
+        return {
+            "period": "1s",
+            "inputs": {"sp": {"max_age": "none"}, "en": {"type": "boolean", "max_age": "none"}},
+            "blocks": [
+                {
+                    "id": "plant",
+                    "type": "state_space",
+                    "in": {"u": "ctl.y"},
+                    "settings": {"A": [[0.5]], "B": [1], "C": [1], "settle": settle},
+                    "out": {"y": "y"},
+                },
+                {"id": "d", "type": "delay", "in": {"x": "plant.y"}, "settings": {"ticks": ticks, "initial": 0}},
+                {"id": "dy", "type": "formula", "in": {"a": "d.y"}, "settings": {"expr": "a"}, "out": {"y": "dy"}},
+                ctl,
+            ],
+        }
+
+    e = Engine(loop())
+
+    def step(k, sp, y, dy, u):
+        e.write("sp", sp, 1.0, k * S)
+        o = e.tick(k * S)[1]
+        check("loop %d y" % k, o["y"], y)
+        check("loop %d dy" % k, o["dy"], dy)
+        check("loop %d u" % k, o["u"], u)
+
+    #        plant.y              the delay          ctl
+    step(0, "good", ("good", 0.0), ("good", 0.0), ("good", 1.0))
+    step(1, "good", ("good", 1.0), ("good", 0.0), ("good", 1.0))
+    # tick 2: the formula uses an uncertain value from outside: a doubt
+    step(2, "uncertain", ("good", 1.5), ("good", 1.0), ("uncertain", 0.0))
+    # ticks 3 and 4: the plant is uncertain. The formula follows its own
+    # rule: at tick 3 both its values are good.
+    step(3, "good", ("uncertain", 0.75), ("good", 1.5), ("good", -0.5))
+    # tick 4: the delay gives what it took in at tick 3, uncertain
+    step(4, "good", ("uncertain", -0.125), ("uncertain", 0.75), ("uncertain", 0.25))
+    # tick 5: the loop is no longer within settle of its doubt, and the
+    # delay gives the uncertain value it took in at tick 4 as good
+    step(5, "good", ("good", 0.1875), ("good", -0.125), ("good", 1.125))
+    step(6, "good", ("good", 1.21875), ("good", 0.1875), ("good", 0.8125))
+
+    # the delays of a loop may not add up to more than settle
+    Engine(loop(ticks=2))
+    refused("loop: delays longer than settle", loop(ticks=3))
+    refused("loop: a delay and settle of 0s", loop(settle="0s"))
+
+    # a setpoint uncertain on every tick: the plant is uncertain on every
+    # tick but the first, which gives its initial state
+    e = Engine(loop())
+    for k in range(5):
+        e.write("sp", "uncertain", 1.0, k * S)
+        o = e.tick(k * S)[1]
+        check("loop unc %d" % k, o["y"][0], "good" if k == 0 else "uncertain")
+
+    # an output that is not usable is a doubt, whether or not a fallback
+    # stands in for it: sp / d divides by zero at tick 0
+    e = Engine(loop(expr="sp / d", fallback=0))
+    e.write("sp", "good", 1.0, 0)
+    o = e.tick(0)[1]
+    check("loop fb 0 u", o["u"], ("uncertain", 0.0))
+    check("loop fb 0 y", o["y"], ("good", 0.0))
+    o = e.tick(1 * S)[1]
+    check("loop fb 1 u", o["u"], ("uncertain", 0.0))
+    check("loop fb 1 y", o["y"], ("uncertain", 0.0))
+
+    # round two: an output no block of the loop reads starts nothing. The
+    # window's slope is bad at tick 0 (one sample); only its mean is read.
+    #   plant: x' = 0.5 x + u, y = x;  w: plant.y over 2 ticks;  ctl: 1 - m
+    def wloop(expr, ins):
+        return {
+            "period": "1s",
+            "blocks": [
+                {
+                    "id": "plant",
+                    "type": "state_space",
+                    "in": {"u": "ctl.y"},
+                    "settings": {"A": [[0.5]], "B": [1], "C": [1], "settle": "2s"},
+                    "out": {"y": "y"},
+                },
+                {
+                    "id": "w",
+                    "type": "window",
+                    "in": {"x": "plant.y"},
+                    "settings": {"window": "2s", "min_good": 0.5},
+                    "out": {"slope": "slope"},
+                },
+                {"id": "ctl", "type": "formula", "in": ins, "settings": {"expr": expr}, "out": {"y": "u"}},
+            ],
+        }
+
+    e = Engine(wloop("1 - m", {"m": "w.mean"}))
+    o = e.tick(0)[1]
+    check("wloop 0 slope", o["slope"], ("bad", None))
+    check("wloop 0 y", o["y"], ("good", 0.0))
+    check("wloop 0 u", o["u"], ("good", 1.0))
+    o = e.tick(1 * S)[1]  # the window holds 0 and 1
+    check("wloop 1 slope", o["slope"], ("good", 1.0))
+    check("wloop 1 y", o["y"], ("good", 1.0))
+    check("wloop 1 u", o["u"], ("good", 0.5))
+    check("wloop 2 y", e.tick(2 * S)[1]["y"], ("good", 1.0))
+    # the same with the slope read by the formula: bad at tick 0 to a block
+    # of the loop, so tick 0 is the loop's doubt and the plant misses a step
+    e = Engine(wloop("1 - m + 0 * s", {"m": "w.mean", "s": "w.slope"}))
+    o = e.tick(0)[1]
+    check("wloop read 0 y", o["y"], ("good", 0.0))
+    check("wloop read 0 u", o["u"], ("bad", None))
+    # round three. Tick 1: the window holds a good 0 and an uncertain 0.
+    # It is good on the one good sample, and its slope is of both usable
+    # ones, uncertain and 0 (rule 7.3.6): the formula is uncertain, and
+    # that starts nothing. The plant steps.
+    o = e.tick(1 * S)[1]
+    check("wloop read 1 y", o["y"], ("uncertain", 0.0))
+    check("wloop read 1 u", o["u"], ("uncertain", 1.0))
+    # tick 2: within settle of tick 0; two uncertain samples, 0 and 1
+    o = e.tick(2 * S)[1]
+    check("wloop read 2 y", o["y"], ("uncertain", 1.0))
+    check("wloop read 2 u", o["u"], ("uncertain", 0.5))
+    # tick 3: the loop has settled. The window counts the uncertain 1 it
+    # took in at tick 2 as a good one (rule 7.8.8): 1 and 1, slope 0
+    o = e.tick(3 * S)[1]
+    check("wloop read 3 y", o["y"], ("good", 1.0))
+    check("wloop read 3 u", o["u"], ("good", 0.0))
+    o = e.tick(4 * S)[1]  # 1 and 0.5
+    check("wloop read 4 y", o["y"], ("good", 0.5))
+    check("wloop read 4 u", o["u"], ("good", 0.25))
+    check("wloop read 5 y", e.tick(5 * S)[1]["y"], ("good", 0.5))
+
+    # round two: for the loop's doubt a block counts as using every input
+    # it has, whatever its own rule says. An integrator does not use a
+    # `reset` that is false (rule 7.7.4), and its total is good; read from
+    # outside the loop and uncertain, that `reset` is still a doubt.
+    g = {
+        "period": "1s",
+        "inputs": {"r": {"type": "boolean", "max_age": "none"}},
+        "blocks": [
+            {
+                "id": "plant",
+                "type": "state_space",
+                "in": {"u": "ctl.y"},
+                "settings": {"A": [[0.5]], "B": [1], "C": [1], "settle": "2s"},
+                "out": {"y": "y"},
+            },
+            {"id": "i", "type": "integrate", "in": {"x": "plant.y", "reset": "r"}, "out": {"y": "total"}},
+            {"id": "ctl", "type": "formula", "in": {"t": "i.y"}, "settings": {"expr": "1 - 0 * t"}},
+        ],
+    }
+    e = Engine(g)
+    e.write("r", "uncertain", False, 0)
+    o = e.tick(0)[1]
+    check("iloop 0 total", o["total"], ("good", 0.0))
+    check("iloop 0 y", o["y"], ("good", 0.0))
+    e.write("r", "good", False, 1 * S)
+    check("iloop 1 y", e.tick(1 * S)[1]["y"], ("uncertain", 1.0))
+    check("iloop 2 y", e.tick(2 * S)[1]["y"], ("uncertain", 1.5))
+    check("iloop 3 y", e.tick(3 * S)[1]["y"], ("good", 1.75))
+
+    # round two, 7.11: an unusable value that gets into this loop does not
+    # go round: the model does not step on it and still gives its state
+    e = Engine(loop())
+    want = [
+        ("good", ("good", 0.0), ("good", 0.0), ("good", 1.0)),
+        ("good", ("good", 1.0), ("good", 0.0), ("good", 1.0)),
+        ("bad", ("good", 1.5), ("good", 1.0), ("bad", None)),
+        ("good", ("uncertain", 1.5), ("good", 1.5), ("good", -0.5)),
+        ("good", ("uncertain", 0.25), ("uncertain", 1.5), ("uncertain", -0.5)),
+        ("good", ("good", -0.375), ("good", 0.25), ("good", 0.75)),
+    ]
+    for k, (sp, y, dy, u) in enumerate(want):
+        e.write("sp", sp, 1.0 if sp == "good" else None, k * S)
+        o = e.tick(k * S)[1]
+        check("loop bad %d y" % k, o["y"], y)
+        check("loop bad %d dy" % k, o["dy"], dy)
+        check("loop bad %d u" % k, o["u"], u)
+
+    # a formula does not use the branch it did not take: with en false the
+    # uncertain setpoint is not used, and starts nothing
+    e = Engine(loop(expr="when(en, sp - d, 0 * d)"))
+    for k in range(3):
+        e.write("sp", "uncertain", 1.0, k * S)
+        e.write("en", "good", False, k * S)
+        o = e.tick(k * S)[1]
+        check("loop when %d u" % k, o["u"], ("good", 0.0))
+        check("loop when %d y" % k, o["y"], ("good", 0.0))
+    e.write("en", "good", True, 3 * S)
+    o = e.tick(3 * S)[1]
+    check("loop when 3 u", o["u"], ("uncertain", 1.0))
+    check("loop when 3 y", o["y"], ("good", 0.0))
+    check("loop when 4 y", e.tick(4 * S)[1]["y"], ("uncertain", 1.0))
+
+    # a loop with no model is left alone (rule 5.6): one uncertain value
+    # stays in it
+    g = {
+        "period": "1s",
+        "inputs": {"x": {"max_age": "none"}},
+        "blocks": [
+            {"id": "d", "type": "delay", "in": {"x": "n"}, "settings": {"initial": 0}},
+            {
+                "id": "f",
+                "type": "formula",
+                "in": {"p": "d.y", "x": "x"},
+                "settings": {"expr": "p + x"},
+                "out": {"y": "n"},
+            },
+        ],
+    }
+    e = Engine(g)
+    e.write("x", "uncertain", 1.0, 0)
+    check("bare loop 0", e.tick(0)[1]["n"], ("uncertain", 1.0))
+    e.write("x", "good", 1.0, 1 * S)
+    check("bare loop 1", e.tick(1 * S)[1]["n"], ("uncertain", 2.0))
+    check("bare loop 9", e.tick(9 * S)[1]["n"], ("uncertain", 10.0))
+
+
+def test_round_three():
+    """`gaps` on every block that gives `elapsed`; what a loop holds against
+    its settle; a low-pass on a loop that has settled."""
+    ports = ("elapsed", "gaps")
+    g = {
+        "period": "1s",
+        "max_catch_up": 3,
+        "inputs": {
+            "x": {"max_age": "none"},
+            "b": {"type": "boolean", "max_age": "none"},
+            "r": {"type": "boolean", "max_age": "none"},
+        },
+        "blocks": [
+            {"id": "h", "type": "hysteresis", "in": {"x": "x"}, "settings": {"rise": 10, "fall": 5}},
+            {"id": "l", "type": "latch", "in": {"set": "b", "reset": "r"}},
+            {"id": "hf", "type": "held_for", "in": {"x": "b"}, "settings": {"time": "1s", "on_bad": "reset"}},
+            {"id": "st", "type": "since_true", "in": {"x": "b"}, "settings": {"time": "1s", "on_bad": "unknown"}},
+            {
+                "id": "m",
+                "type": "thermal_mass",
+                "in": {"power": 0, "ambient": 20},
+                "settings": {"thermal_mass": 10, "heat_transfer": 1, "initial": 20},
+            },
+        ],
+    }
+    for b in g["blocks"]:
+        b["out"] = {p: "%s_%s" % (b["id"], p) for p in ports}
+    e = Engine(g)
+
+    def step(label, now, x, b, r, want):
+        """want: for h, l, hf, st, m in turn, (elapsed, gaps)."""
+        e.write("x", "good", x, now * S)
+        e.write("b", "good", b, now * S)
+        e.write("r", "good", r, now * S)
+        o = e.tick(now * S)[1]
+        for bid, (el, gp) in zip(("h", "l", "hf", "st", "m"), want):
+            check("gaps %s %s elapsed" % (label, bid), o[bid + "_elapsed"], ("good", float(el)))
+            check("gaps %s %s gaps" % (label, bid), o[bid + "_gaps"], ("good", float(gp)))
+
+    #                               h       l       hf      st      m
+    step("0", 0, 7.0, False, False, [(1, 0), (1, 0), (0, 0), (1, 0), (1, 0)])
+    step("1", 1, 12.0, False, False, [(1, 0), (2, 0), (0, 0), (2, 0), (2, 0)])
+    # a stall: tick 2. The hysteresis and the latch go on and count it. The
+    # timer starts, and the clock is set, at the gap's tick: one each.
+    step("2", 10, 7.0, True, False, [(2, 1), (3, 1), (1, 1), (1, 1), (3, 1)])
+    check("gaps 2 info", e.info, info(True, 2, 10 * S))
+    # tick 3: the hysteresis changes and the clock is set again, after the
+    # gap: none. The timer's run still began at the gap's tick.
+    step("3", 11, 4.0, True, False, [(1, 0), (4, 1), (2, 1), (1, 0), (4, 1)])
+    # tick 4: the latch is cleared, after the gap; the timer stops
+    step("4", 12, 4.0, False, True, [(2, 0), (1, 0), (0, 0), (2, 0), (5, 1)])
+    # a second stall: tick 5. The hysteresis changes, and the latch is
+    # cleared, at the gap's tick: each counts from it, and counts it.
+    step("5", 20, 12.0, False, True, [(1, 1), (1, 1), (0, 0), (1, 1), (6, 2)])
+    check("gaps 5 info", e.info, info(True, 5, 20 * S))
+    # tick 6: the timer starts a tick after the gap: none
+    step("6", 21, 12.0, True, False, [(2, 1), (2, 1), (1, 0), (1, 0), (7, 2)])
+    # a reset sets them to zero
+    e.reset()
+    step("reset", 0, 7.0, False, False, [(1, 0), (1, 0), (0, 0), (1, 0), (1, 0)])
+
+    # a gap whose tick is the tick of an integrator's reset is counted
+    g = {
+        "period": "1s",
+        "max_catch_up": 3,
+        "inputs": {"r": {"type": "boolean", "max_age": "none"}},
+        "blocks": [{"id": "i", "type": "integrate", "in": {"x": 1, "reset": "r"}, "out": {"y": "y", "gaps": "gaps"}}],
+    }
+    e = Engine(g)
+    e.write("r", "good", False, 0)
+    check("integ gap reset 0", e.tick(0)[1]["gaps"], ("good", 0.0))
+    o = e.tick(10 * S)[1]  # a stall, tick 1, and no reset
+    check("integ gap reset 1 gaps", o["gaps"], ("good", 1.0))
+    check("integ gap reset 1 y", o["y"], ("good", 2.0))
+    e.write("r", "good", True, 11 * S)
+    o = e.tick(11 * S)[1]  # a reset a tick after the gap: none
+    check("integ gap reset 2 gaps", o["gaps"], ("good", 0.0))
+    o = e.tick(20 * S)[1]  # a stall, tick 3, with the reset still true
+    check("integ gap reset 3 info", e.info, info(True, 3, 20 * S))
+    check("integ gap reset 3 gaps", o["gaps"], ("good", 1.0))
+    check("integ gap reset 3 y", o["y"], ("good", 1.0))
+    o = e.tick(21 * S)[1]  # reset again, a tick after the gap
+    check("integ gap reset 4 gaps", o["gaps"], ("good", 0.0))
+
+    # the slope of a window that is good on one good sample is of its
+    # usable samples, and uncertain (rule 7.3.6)
+    check_seq(
+        "slope usable",
+        {"type": "window", "in": {"x": "x"}, "settings": {"window": "4s", "min_good": 0.25}},
+        "number",
+        [("good", 1.0), ("uncertain", 2.0), ("uncertain", 3.0), ("uncertain", 4.0), ("good", 5.0)],
+        # tick 4: the window is 2u 3u 4u 5: one good sample still
+        mean=[("good", 1.0), ("good", 1.0), ("good", 1.0), ("good", 1.0), ("good", 5.0)],
+        slope=[("bad", None), ("uncertain", 1.0), ("uncertain", 1.0), ("uncertain", 1.0), ("uncertain", 1.0)],
+    )
+    # with fewer usable samples than are needed, rule 7.3.3 gives the slope
+    # its state as it gives the rest (as assumed): 4 ticks, 3 needed
+    check_seq(
+        "slope too few",
+        {"type": "window", "in": {"x": "x"}, "settings": {"window": "4s", "min_good": 0.75}},
+        "number",
+        [("good", 1.0), ("good", 2.0), ("good", 3.0)],
+        slope=[("not_ready", None), ("not_ready", None), ("good", 1.0)],
+    )
+
+    # what else remembers on a loop is held against its settle
+    def plant(settle="3s", u="ctl.y"):
+        return {
+            "id": "plant",
+            "type": "state_space",
+            "in": {"u": u},
+            "settings": {"A": [[0.5]], "B": [1], "C": [1], "settle": settle},
+            "out": {"y": "y"},
+        }
+
+    def lploop(lp_settings, settle="3s", more=()):
+        return {
+            "period": "1s",
+            "inputs": {"sp": {"max_age": "none"}},
+            "blocks": [
+                plant(settle),
+                {"id": "lp", "type": "lowpass", "in": {"x": "plant.y"}, "settings": lp_settings, "out": {"y": "lp"}},
+                # the same low-pass, off the loop
+                {"id": "lq", "type": "lowpass", "in": {"x": "plant.y"}, "settings": lp_settings, "out": {"y": "lq"}},
+                {
+                    "id": "ctl",
+                    "type": "formula",
+                    "in": {"sp": "sp", "a": "lp.y"},
+                    "settings": {"expr": "sp + 0 * a"},
+                    "out": {"y": "u"},
+                },
+            ]
+            + list(more),
+        }
+
+    Engine(lploop({"tau": "1s", "settle": "3s"}))
+    Engine(lploop({"tau": "1s"}))  # three time constants: 3 ticks
+    refused("loop: low-pass settle longer than the loop's", lploop({"tau": "1s", "settle": "4s"}))
+    refused("loop: low-pass default settle longer than the loop's", lploop({"tau": "1s"}, settle="2s"))
+    g = lploop({"tau": "1s", "settle": "2s"})
+    g["blocks"].append({"id": "d", "type": "delay", "in": {"x": "lp.y"}, "settings": {"initial": 0}})
+    g["blocks"][3]["in"]["a"] = "d.y"
+    Engine(g)  # 2 and 1 are not more than 3
+    g["blocks"][4]["settings"]["ticks"] = 2
+    refused("loop: a low-pass and a delay longer than settle", g)
+    w = {"id": "w", "type": "window", "in": {"x": "plant.y"}, "settings": {"window": "3s", "min_good": 0.5}}
+    ctl = {"id": "ctl", "type": "formula", "in": {"m": "w.mean"}, "settings": {"expr": "1 - m"}}
+    Engine({"period": "1s", "blocks": [plant("3s"), w, ctl]})
+    refused("loop: a window longer than settle", {"period": "1s", "blocks": [plant("2s"), w, ctl]})
+    # an estimator on a loop that holds a model block is refused
+    est = {
+        "id": "est",
+        "type": "estimator",
+        "in": {"u": 0, "z": "plant.y"},
+        "settings": {
+            "model": {"type": "state_space", "A": [[1]], "B": [0], "C": [1]},
+            "q": {"x0": 1},
+            "p0": {"x0": 4},
+            "measure": {"z": {"of": "x0", "r": 1}},
+        },
+    }
+    refused("loop: a model block and an estimator", {"period": "1s", "blocks": [plant("3s", "est.x0"), est]})
+    # off the loop it is accepted, and so is an estimator on a loop with
+    # no model block
+    Engine({"period": "1s", "blocks": [plant("3s", 1), est]})
+    est2 = dict(est, **{"in": {"u": 0, "z": "d.y"}})
+    d = {"id": "d", "type": "delay", "in": {"x": "est.x0"}, "settings": {"initial": 0}}
+    Engine({"period": "1s", "blocks": [est2, d]})
+
+    # a low-pass on a loop that has settled has no doubt. The setpoint is
+    # uncertain at tick 1: the loop's doubt. The plant is uncertain on
+    # ticks 2, 3, 4, and so are both low-passes, by their input; each has
+    # tick 4 for its doubt. At tick 5 the loop has settled: the one on the
+    # loop is good, and the one off it is uncertain for its own settle,
+    # ticks 5, 6, 7.
+    e = Engine(lploop({"tau": "1s", "settle": "3s"}))
+    want = [
+        # sp,        plant,       lp,          lq
+        ("good", "good", "good", "good"),
+        ("uncertain", "good", "good", "good"),
+        ("good", "uncertain", "uncertain", "uncertain"),
+        ("good", "uncertain", "uncertain", "uncertain"),
+        ("good", "uncertain", "uncertain", "uncertain"),
+        ("good", "good", "good", "uncertain"),
+        ("good", "good", "good", "uncertain"),
+        ("good", "good", "good", "uncertain"),
+        ("good", "good", "good", "good"),
+    ]
+    for k, (sp, y, lp, lq) in enumerate(want):
+        e.write("sp", sp, 1.0, k * S)
+        o = e.tick(k * S)[1]
+        check("lploop %d y" % k, o["y"][0], y)
+        check("lploop %d lp" % k, o["lp"][0], lp)
+        check("lploop %d lq" % k, o["lq"][0], lq)
+        check("lploop %d same value" % k, o["lp"][1], o["lq"][1])
+
+
+def test_round_four():
+    """Rule 7.8.8: on a settled loop what was taken in as uncertain becomes
+    good and stays so; a window still filling is the loop's doubt."""
+
+    def plant(settle):
+        return {
+            "id": "plant",
+            "type": "state_space",
+            "in": {"u": "ctl.y"},
+            "settings": {"A": [[0.5]], "B": [1], "C": [1], "settle": settle},
+            "out": {"y": "y"},
+        }
+
+    # a window. The plant's state is 0, 0, 1, 1.5, 1.75, 1.875, 1.9375,
+    # 1.96875 on ticks 0 to 7 (it misses the step of tick 0, when the
+    # window, with one sample of two needed, is not_ready: the loop's
+    # doubt from the start). The setpoint is uncertain at ticks 1 and 5.
+    g = {
+        "period": "1s",
+        "inputs": {"sp": {"max_age": "none"}},
+        "blocks": [
+            plant("3s"),
+            {
+                "id": "w",
+                "type": "window",
+                "in": {"x": "plant.y"},
+                "settings": {"window": "3s", "min_good": 0.6},
+                "out": {"mean": "mean"},
+            },
+            {"id": "ctl", "type": "formula", "in": {"sp": "sp", "m": "w.mean"}, "settings": {"expr": "sp + 0 * m"}},
+        ],
+    }
+    e = Engine(g)
+    want = [
+        (("good", 0.0), ("not_ready", None)),
+        # the doubts of ticks 0 and 1: uncertain on ticks 1 to 4
+        (("uncertain", 0.0), ("uncertain", 0.0)),
+        (("uncertain", 1.0), ("uncertain", 1.0 / 3)),
+        (("uncertain", 1.5), ("uncertain", 2.5 / 3)),
+        (("uncertain", 1.75), ("uncertain", 4.25 / 3)),
+        # tick 5: settled. The samples of ticks 3 and 4 become good.
+        (("good", 1.875), ("good", 5.125 / 3)),
+        # tick 6: in doubt again (tick 5). The sample of tick 4 stays good:
+        # two good ones, 1.75 and 1.875, and the statistics are of those
+        (("uncertain", 1.9375), ("good", 1.8125)),
+        # tick 7: the samples of ticks 5, 6, 7: one good one
+        (("uncertain", 1.96875), ("uncertain", 5.78125 / 3)),
+    ]
+    for k, (y, mean) in enumerate(want):
+        e.write("sp", "uncertain" if k in (1, 5) else "good", 1.0, k * S)
+        o = e.tick(k * S)[1]
+        check("r4 window %d y" % k, o["y"], y)
+        check("r4 window %d mean" % k, o["mean"], mean)
+
+    # a delay of two ticks; the setpoint is uncertain at ticks 1 and 4.
+    #   plant: x' = 0.5 x + u;  d: plant.y two ticks late;  ctl: sp - d
+    g = {
+        "period": "1s",
+        "inputs": {"sp": {"max_age": "none"}},
+        "blocks": [
+            plant("2s"),
+            {"id": "d", "type": "delay", "in": {"x": "plant.y"}, "settings": {"ticks": 2, "initial": 0}},
+            {"id": "dy", "type": "formula", "in": {"a": "d.y"}, "settings": {"expr": "a"}, "out": {"y": "dy"}},
+            {
+                "id": "ctl",
+                "type": "formula",
+                "in": {"sp": "sp", "d": "d.y"},
+                "settings": {"expr": "sp - d"},
+                "out": {"y": "u"},
+            },
+        ],
+    }
+    e = Engine(g)
+    want = [
+        #  plant.y               the delay          ctl
+        (("good", 0.0), ("good", 0.0), ("good", 1.0)),
+        (("good", 1.0), ("good", 0.0), ("uncertain", 1.0)),
+        (("uncertain", 1.5), ("good", 0.0), ("good", 1.0)),
+        (("uncertain", 1.75), ("good", 1.0), ("good", 0.0)),
+        # tick 4: settled. The delay holds 1.5 and 1.75, both taken in as
+        # uncertain: both become good. The setpoint is a new doubt.
+        (("good", 0.875), ("good", 1.5), ("uncertain", -0.5)),
+        # tick 5: within settle of tick 4, and the 1.75 stays good
+        (("uncertain", -0.0625), ("good", 1.75), ("good", -0.75)),
+    ]
+    for k, (y, dy, u) in enumerate(want):
+        e.write("sp", "uncertain" if k in (1, 4) else "good", 1.0, k * S)
+        o = e.tick(k * S)[1]
+        check("r4 delay %d y" % k, o["y"], y)
+        check("r4 delay %d dy" % k, o["dy"], dy)
+        check("r4 delay %d u" % k, o["u"], u)
+
+    # a low-pass. f passes the plant's output at tick 4 only, and gives a
+    # good 5 otherwise; the setpoint is uncertain at ticks 1 and 5. The
+    # low-pass takes an uncertain input at tick 4: its doubt. At tick 5
+    # the loop has settled and that doubt is cleared; at ticks 6 and 7
+    # the loop is in doubt again and the low-pass, on a good input, is good
+    # (its own settle would have run to tick 7).
+    g = {
+        "period": "1s",
+        "inputs": {"sp": {"max_age": "none"}, "en": {"type": "boolean", "max_age": "none"}},
+        "blocks": [
+            plant("3s"),
+            {"id": "f", "type": "formula", "in": {"en": "en", "y": "plant.y"}, "settings": {"expr": "when(en, y, 5)"}},
+            {
+                "id": "lp",
+                "type": "lowpass",
+                "in": {"x": "f.y"},
+                "settings": {"tau": "1s", "settle": "3s"},
+                "out": {"y": "lp"},
+            },
+            {"id": "ctl", "type": "formula", "in": {"sp": "sp", "a": "lp.y"}, "settings": {"expr": "sp + 0 * a"}},
+        ],
+    }
+    e = Engine(g)
+    want = [
+        # plant,      lp
+        ("good", "good"),
+        ("good", "good"),
+        ("uncertain", "good"),
+        ("uncertain", "good"),
+        ("uncertain", "uncertain"),
+        ("good", "good"),
+        ("uncertain", "good"),
+        ("uncertain", "good"),
+    ]
+    for k, (y, lp) in enumerate(want):
+        e.write("sp", "uncertain" if k in (1, 5) else "good", 1.0, k * S)
+        e.write("en", "good", k == 4, k * S)
+        o = e.tick(k * S)[1]
+        check("r4 lowpass %d y" % k, o["y"][0], y)
+        check("r4 lowpass %d lp" % k, o["lp"][0], lp)
 
 
 def test_estimator():

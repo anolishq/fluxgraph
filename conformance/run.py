@@ -51,6 +51,7 @@ A row with a single key starting with `$` is an operation on the engine:
 
 from __future__ import annotations
 
+import os
 import sys
 from fractions import Fraction
 from pathlib import Path
@@ -212,7 +213,7 @@ def main():
             calls, compared, differences = 0, 0, [f"{type(exc).__name__}: {exc}"]
         ok = ok and not differences
         print(f"{path.stem:36s} {calls:5d} {compared:8d}  {'agrees' if not differences else 'DIFFERS'}")
-        for line in differences[:4]:
+        for line in differences[: int(os.environ.get("SHOW", 4))]:
             print(f"    {line}")
     print(f"{len(paths)} vectors: " + ("ALL AGREE" if ok else "DIFFERENCES FOUND"))
     sys.exit(0 if ok else 1)

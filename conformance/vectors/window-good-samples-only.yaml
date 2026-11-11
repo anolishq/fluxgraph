@@ -1,0 +1,14 @@
+# 7.3.4, 7.3.5: min_good of 0.5 over four ticks needs two good samples. With
+# two usable and one good the window is uncertain, and its statistics are
+# of both. With two good it is good, and its statistics are of the good
+# ones alone: the uncertain 25 is left out as a missing sample would be.
+rules: [7.3.4, 7.3.5, 7.3.6, 7.3.7]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 4s, min_good: 0.5}, out: {mean: mean, min: lo, spread: spread, slope: slope, count: count}}
+calls:
+  - {x: 37, mean: not_ready, count: 1}
+  - {x: {v: 25, state: uncertain}, mean: {u: 31}, lo: {u: 25}, spread: {u: 12}, slope: {u: -12}, count: 2}
+  - {x: 37, mean: 37, lo: 37, spread: 0, slope: 0, count: 3}
+  - {x: 37, mean: 37, lo: 37, spread: 0, slope: 0, count: 4}

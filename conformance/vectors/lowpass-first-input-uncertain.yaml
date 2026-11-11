@@ -1,0 +1,11 @@
+# 7.4.7: a first input that is uncertain is a doubt. settle is 2 ticks.
+rules: [7.4.7, 7.4.8]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: lowpass, in: {x: x}, settings: {tau: 1.4426950408889634s, settle: 2s}, out: {y: y}}
+calls:
+  - {x: {v: 8, state: uncertain}, y: {u: 8}}
+  - {x: 8, y: {u: 8}}
+  - {x: 8, y: {u: 8}}
+  - {x: 8, y: 8}

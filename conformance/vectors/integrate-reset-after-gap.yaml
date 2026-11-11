@@ -8,5 +8,5 @@ calls:
   - {x: 1, r: false, total: 1}
   - {$save: a}
   - {$restore: a}
-  - {now: 10, gap: true, x: 1, r: false, total: {u: 2}}
+  - {now: 10, gap: true, x: 1, r: false, total: 2}
   - {now: 11, x: 1, r: true, total: 1}

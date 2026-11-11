@@ -6,5 +6,5 @@ inputs: {x: {max_age: none}}
 blocks:
   - {id: w, type: window, in: {x: x}, settings: {window: 4s, min_good: 0.25}, out: {mean: mean, slope: slope}}
 calls:
-  - {x: 5, mean: {u: 5}, slope: bad}
-  - {x: 7, mean: {u: 6}, slope: {u: 2}}
+  - {x: 5, mean: 5, slope: bad}
+  - {x: 7, mean: 6, slope: 2}

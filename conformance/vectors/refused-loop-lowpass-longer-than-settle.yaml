@@ -1,0 +1,10 @@
+# 7.8.8: refused: a loop whose low-pass settles for longer than it does.
+rules: [7.8.8]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: ctl.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}}
+  - {id: f, type: lowpass, in: {x: plant.y}, settings: {tau: 1s}}
+  - {id: ctl, type: formula, in: {r: r, m: f.y}, settings: {expr: "r - m"}}
+expect: compile_error
+error_mentions: [settle]

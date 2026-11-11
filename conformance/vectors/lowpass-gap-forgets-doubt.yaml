@@ -1,0 +1,15 @@
+# 8.6: at a gap a low-pass forgets its doubt with what it held. a = 0.5 and
+# settle is 5 ticks; the doubt is at tick 1 and the gap at tick 3.
+rules: [8.6, 7.4.7]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: lowpass, in: {x: x}, settings: {tau: 1.4426950408889634s, settle: 5s}, out: {y: y}}
+calls:
+  - {x: 8, y: 8}
+  - {x: {v: 4, state: uncertain}, y: {u: 6}}
+  - {x: 4, y: {u: 5}}
+  - {$save: a}
+  - {$restore: a}
+  - {now: 50, gap: true, x: 4, y: 4}
+  - {now: 51, x: 4, y: 4}

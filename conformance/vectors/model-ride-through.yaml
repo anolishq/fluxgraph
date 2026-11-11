@@ -1,6 +1,7 @@
 # 7.8.4, 7.8.6: with an input unusable a model steps on its last usable
-# value for up to ride_through, then does not step. The model is x' = x + u.
-# Without settle a model whose memory does not fade stays in doubt.
+# value for up to ride_through, then does not step. Either is a doubt. The
+# model is x' = x + u. Without settle, and with no memory that fades, it
+# reports good.
 rules: [7.8.4, 7.8.5, 7.8.6]
 period: 1s
 inputs: {u: {max_age: none}}
@@ -11,7 +12,7 @@ calls:
   - {u: 1, y: 0, z: 0}
   - {u: 1, y: 1, z: 1}
   - {u: bad, y: 2, z: 2}                  # tick 2: steps on the 1 it last had
-  - {u: bad, y: {u: 3}, z: {u: 3}}        # tick 3: 2 s ago: no step
-  - {u: 1, y: {u: 3}, z: {u: 3}}
-  - {u: 1, y: 4, z: {u: 4}}               # 2 ticks from the doubt at tick 3
-  - {u: 1, y: 5, z: {u: 5}}
+  - {u: bad, y: {u: 3}, z: 3}        # tick 3: 2 s ago: no step
+  - {u: 1, y: {u: 3}, z: 3}
+  - {u: 1, y: {u: 4}, z: 4}               # the second tick after the doubt at tick 3
+  - {u: 1, y: 5, z: 5}

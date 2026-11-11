@@ -1,0 +1,19 @@
+# 7.7.2 to 7.7.4, 8.6: missed, doubtful, elapsed and gaps. The total is good
+# on a tick it missed and across a gap, and uncertain on a tick where its
+# input is, or where an uncertain reset cleared it.
+rules: [7.7.2, 7.7.3, 7.7.4, 8.6]
+period: 1s
+inputs: {x: {max_age: none}, r: {type: boolean, max_age: none}}
+blocks:
+  - {id: i, type: integrate, in: {x: x, reset: r}, out: {y: total, missed: missed, doubtful: doubtful, elapsed: elapsed, gaps: gaps}}
+calls:
+  - {x: 2, r: false, total: 2, missed: 0, doubtful: 0, elapsed: 1, gaps: 0}
+  - {x: bad, total: 2, missed: 1, doubtful: 0, elapsed: 2, gaps: 0}
+  - {x: {v: 2, state: uncertain}, total: {u: 4}, missed: 1, doubtful: 1, elapsed: 3, gaps: 0}
+  - {x: 2, total: 6, missed: 1, doubtful: 1, elapsed: 4, gaps: 0}
+  - {$save: a}
+  - {$restore: a}
+  - {now: 10, gap: true, x: 2, r: false, total: 8, missed: 1, doubtful: 1, elapsed: 5, gaps: 1}
+  - {now: 11, x: 2, r: true, total: 2, missed: 0, doubtful: 0, elapsed: 1, gaps: 0}
+  - {now: 12, x: 2, r: {v: true, state: uncertain}, total: {u: 2}, elapsed: 1}
+  - {now: 13, x: 2, r: bad, total: 4, elapsed: 2}

@@ -9,7 +9,7 @@ blocks:
   - {id: w, type: window, in: {x: d.y}, settings: {window: 3s, min_good: 0.3, only_new: true}, out: {mean: mean, count: count}}
 calls:
   - {x: 4, mean: not_ready, count: 0}
-  - {mean: {u: 4}, count: 1}       # two ticks of three have run
+  - {mean: 4, count: 1}       # two ticks of three have run
   - {mean: 4, count: 1}
   - {x: 8, mean: 4, count: 1}
   - {mean: 8, count: 1}

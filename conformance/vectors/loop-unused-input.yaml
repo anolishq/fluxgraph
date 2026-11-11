@@ -1,0 +1,13 @@
+# 7.8.8, rule D: an uncertain value from outside that the controller's
+# formula did not use starts no doubt. The branch with `o` is not taken.
+rules: [7.8.8, D, 7.1.3]
+period: 1s
+inputs: {r: {max_age: none}, o: {max_age: none}, m: {type: boolean, max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: y}}
+  - {id: ctl, type: formula, in: {r: r, y: plant.y, o: o, m: m}, settings: {expr: "when(m, o, r - y)"}, out: {y: e}}
+calls:
+  - {r: 4, m: false, o: {v: 9, state: uncertain}, y: 0, e: 4}
+  - {o: {v: 9, state: uncertain}, y: 2, e: 2}
+  - {o: {v: 9, state: uncertain}, y: 2, e: 2}
+  - {o: {v: 9, state: uncertain}, y: 2, e: 2}
