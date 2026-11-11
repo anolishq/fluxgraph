@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-11
+
+1.1.0 is a minor release: it adds `CompiledProgram::model_output_signal_ids()`
+and changes a build default for embedding projects. The fixes below refuse some
+inputs that used to load or run. Each of those was a bug, a silent misload or
+undefined behaviour, never a graph that worked, so they are fixes rather than
+breaking changes.
+
+Upgrade notes:
+
+- **A malformed graph file can now fail to load.** A `signals`, `models`,
+  `edges` or `rules` key that is not an array, a root that is not an object or
+  map, and a rule without `actions` used to load as an empty graph or with
+  action-less rules. They now fail with a path-qualified error. Fix the file.
+- **A `saturation` or `linear` transform with inverted or NaN bounds** now fails
+  to compile, and its constructor throws `std::invalid_argument`.
+- **`DelayTransform::apply` throws on a `dt` that is not positive and finite.**
+  `Engine::tick` with a NaN or infinite `dt` therefore throws when the graph has
+  a delay edge.
+- **A delay's tick count can differ by one** where `delay_sec / dt` is meant to
+  be a half but its floating-point quotient lands just below it, and after a
+  `dt` change the delay now follows `delay_sec`.
+- **Through `fluxgraph-server`, a write to any model output** is refused with
+  `PERMISSION_DENIED`, not only to `thermal_mass` outputs.
+- **An embedding project that relied on fluxgraph's tests or examples being
+  built** as a subproject must now set `FLUXGRAPH_BUILD_TESTS` or
+  `FLUXGRAPH_BUILD_EXAMPLES` to ON.
+
 ### Added
 
 - `CompiledProgram::model_output_signal_ids()` returns every compiled model's
@@ -411,7 +439,8 @@ FluxGraph follows these principles:
 
 ---
 
-[Unreleased]: https://github.com/anolishq/fluxgraph/compare/v1.0.6...HEAD
+[Unreleased]: https://github.com/anolishq/fluxgraph/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/anolishq/fluxgraph/compare/v1.0.6...v1.1.0
 [1.0.6]: https://github.com/anolishq/fluxgraph/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/anolishq/fluxgraph/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/anolishq/fluxgraph/compare/v1.0.3...v1.0.4

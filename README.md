@@ -27,16 +27,16 @@ target:
 include(FetchContent)
 FetchContent_Declare(
     fluxgraph
-    URL https://github.com/anolishq/fluxgraph/releases/download/v1.0.6/fluxgraph-1.0.6-source.tar.gz
+    URL https://github.com/anolishq/fluxgraph/releases/download/v1.1.0/fluxgraph-1.1.0-source.tar.gz
 )
-set(FLUXGRAPH_BUILD_TESTS OFF)     # v1.0.6 builds tests by default, and tests need GTest
+set(FLUXGRAPH_BUILD_TESTS OFF)     # needed only for v1.0.6 and earlier, which build tests
 set(FLUXGRAPH_BUILD_EXAMPLES OFF)
 FetchContent_MakeAvailable(fluxgraph)
 target_link_libraries(your_target PRIVATE fluxgraph)
 target_compile_features(your_target PRIVATE cxx_std_20)
 ```
 
-Replace `v1.0.6` with the
+Replace `v1.1.0` with the
 [latest release](https://github.com/anolishq/fluxgraph/releases/latest) tag.
 The namespaced target `fluxgraph::fluxgraph` exists only when you use
 `find_package(fluxgraph)` against an installed package.
