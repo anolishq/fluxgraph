@@ -127,8 +127,9 @@ target_include_directories(fluxgraph PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-# Consumers of the installed package need C++20 too
-target_compile_features(fluxgraph PUBLIC cxx_std_20)
+# The public headers need C++17. A consumer at C++17 or above keeps its own standard;
+# fluxgraph itself builds as C++20 through CMAKE_CXX_STANDARD.
+target_compile_features(fluxgraph PUBLIC cxx_std_17)
 
 # Compiler warnings
 if(MSVC)
