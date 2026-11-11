@@ -1,5 +1,5 @@
 # 6.9: a call that would run exactly max_catch_up ticks runs them, and is not a gap.
-rules: [6.9]
+rules: [6.9, 8.4]
 period: 1s
 max_catch_up: 3
 blocks:

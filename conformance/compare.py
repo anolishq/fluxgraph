@@ -2,15 +2,17 @@
 """Run the reference and the second implementation side by side on random inputs.
 
 The vectors pin down the cases someone thought of. This looks for the ones
-nobody did. Each graph below is run at periods of 1 s and 100 ms, with the
-host's clock starting near 100 s and near 1.7e9 s: ten seeded runs of 250
-calls at each. Before a call each input is written once, several times or
+nobody did. Each graph below is run at periods of 1 s, 100 ms and 37 ms,
+with the host's clock starting near 100 s and near 1.7e9 s: ten seeded runs
+of 250 calls at each. Before a call each input is written once, several times or
 not at all, in any of the four states, finite or not, with a time that is
 the call's, earlier, or ahead, and sometimes a time it has carried before.
 Calls come on time, early, late, twice, after a stall of several periods,
-and after one long enough to be a gap. Among the calls the engines are
-saved, restored, rebased and reset, and after a restore or a rebase the
-clock may start again from a low value. What is compared after every call:
+and after one long enough to be a gap, at times on a grid of tenths of a
+period or at any nanosecond. Some calls and some writes are ones that must
+be refused. Among the calls the engines are saved, restored, rebased once
+or twice and reset, and after a restore or a rebase the clock may start
+again from a low value. What is compared after every call:
 how many ticks it ran, what it says of itself, and the state and value of
 every published output.
 
@@ -324,8 +326,10 @@ def write_random(rng, engines, last, name, kind, now, period, quiet):
         if r < 0.08 and name in last:  # the same sample, written again
             state, value, at = last[name]
         else:
-            # now, a little or a lot earlier, or ahead: in tenths of a period
+            # now, a little or a lot earlier, or ahead: in tenths of a period, or at any nanosecond
             at = now - period * rng.choice([0, 0, 0, 4, 10, 25, 40, -6, -15, -300]) // 10
+            if rng.random() < 0.3:
+                at = now - rng.randint(-2 * period, 4 * period)
             value = None
             if r < 0.18:
                 state = "bad"
@@ -357,16 +361,18 @@ def same(a, b):
 def main():
     total = differences = 0
     print(f"{'graph':42s} {'period':>6s} {'clock':>6s} {'compared':>9s}  differences")
-    for base, origin in ((1000, 100), (100, 100), (1000, 1_700_000_000), (100, 1_700_000_000)):
+    for base, origin in ((1000, 100), (100, 100), (37, 100), (1000, 1_700_000_000), (100, 1_700_000_000)):
         period = base * 10**6  # nanoseconds
         catalogue = graphs(lambda n, base=base: f"{n * base}ms", lambda x, base=base: f"{round(x * base)}ms")
         for index, (label, (inputs, blocks)) in enumerate(catalogue.items()):
             declared = {}
             for name, kind in inputs.items():
                 declared[name] = {"type": kind, "max_age": f"{3 * base}ms" if name != "c" else "none"}
+                if name == "b":
+                    declared[name]["max_ahead"] = f"{2 * base}ms"
                 if name in INITIAL.get(label, {}):
                     declared[name]["initial"] = INITIAL[label][name]
-            graph = {"period": f"{base}ms", "max_catch_up": 20, "inputs": declared, "blocks": blocks}
+            graph = {"period": f"{base}ms", "max_catch_up": 20, "max_waiting": 3, "inputs": declared, "blocks": blocks}
             compared = found = 0
             first = None
             for run in range(RUNS):
@@ -374,6 +380,7 @@ def main():
                 quiet = rng.choice([0.1, 0.1, 0.5])  # how often an input is left unwritten
                 engines = [reference.Engine(graph), second.Engine(graph)]
                 start, tick, last_now, saved, last = origin * SECOND, 0, None, None, {}
+                fresh = [engine.save() for engine in engines]  # a state saved before any tick
                 for call in range(CALLS):
                     op = rng.random()
                     if call and op < 0.01:
@@ -385,7 +392,16 @@ def main():
                     elif call and op < 0.03:
                         for engine in engines:
                             engine.rebase()
+                        if rng.random() < 0.3:  # written, and then a second rebase
+                            for name, kind in inputs.items():
+                                write_random(rng, engines, last, name, kind, start, period, 0.0)
+                            for engine in engines:
+                                engine.rebase()
                         last_now, start = None, rng.choice([start, 5 * SECOND])
+                    elif call and op < 0.033:
+                        for engine, state in zip(engines, fresh, strict=True):
+                            engine.restore(state)
+                        last_now = None
                     elif call and op < 0.035:
                         for engine in engines:
                             engine.reset()
@@ -394,10 +410,28 @@ def main():
                     tick += rng.choice([1, 1, 1, 1, 1, 1, 1, 1, 0, 2, 4, 30]) if call else 0
                     jitter = rng.choice([0, 0, 2, -2, 3, -3, 5]) if call else 0  # tenths of a period
                     now = start + period * tick + period * jitter // 10
+                    if call and rng.random() < 0.3:  # or at any nanosecond within half a period
+                        now = start + period * tick + rng.randint(-period // 2, period // 2)
                     now = now if last_now is None else max(now, last_now)
-                    last_now = now
+                    called, last_now = last_now, now  # the time of the call before this one
                     for name, kind in inputs.items():
                         write_random(rng, engines, last, name, kind, now, period, quiet)
+                    if called is not None and rng.random() < 0.02:  # what must be refused, by both
+                        compared += 1
+                        refusals = 0
+                        for engine in engines:
+                            for attempt in (
+                                lambda e=engine: e.tick(called - 1),
+                                lambda e=engine: e.write(next(iter(inputs)), "good", "text", now),
+                                lambda e=engine: e.write("not an input", "good", 1.0, now),
+                            ):
+                                try:
+                                    attempt()
+                                except Exception:  # noqa: BLE001 - any refusal will do
+                                    refusals += 1
+                        if refusals != 6:
+                            found += 1
+                            first = first or f"run {run} call {call} now {now}: {refusals} of 6 refusals"
                     (ran_a, a), (ran_b, b) = engines[0].tick(now), engines[1].tick(now)
                     compared += 1
                     if ran_a != ran_b or (a is None) != (b is None) or (ran_a and engines[0].info != engines[1].info):

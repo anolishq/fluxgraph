@@ -1,5 +1,5 @@
-# 7.7.5, 8.4: after a gap a total is uncertain until its next reset.
-rules: [7.7.5, 8.4]
+# 7.7.5, 8.6: after a gap a total is uncertain until its next reset.
+rules: [7.7.5, 8.6]
 period: 1s
 inputs: {x: {max_age: none}, r: {type: boolean, max_age: none}}
 blocks:

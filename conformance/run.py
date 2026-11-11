@@ -29,6 +29,8 @@ A row of `calls` has these keys:
   gap: true     the call must say it was a gap. Left out, it must say it was not.
   tick: 7       the number of the last tick the call ran, if given.
   time: 7.5     the time of that tick, in seconds, if given.
+  thrown: 2     how many writes the call says were thrown away, if given.
+  waiting: 1    how many writes it says still wait, if given.
   <input>       a write before the call: a number, true or false (written as
                 good); `bad` or `not_ready`; or {v: 1.0, state: uncertain,
                 at: 1.5}, where `at` is the time the write carries. Without
@@ -60,7 +62,7 @@ impl = reference  # the implementation under test; --second swaps it
 
 HERE = Path(__file__).resolve().parent
 TOLERANCE = 1e-9
-ROW_KEYS = {"now", "ran", "first", "refused", "gap", "tick", "time"}
+ROW_KEYS = {"now", "ran", "first", "refused", "gap", "tick", "time", "thrown", "waiting"}
 
 
 def show(val):
@@ -106,7 +108,7 @@ def differs(have, want):
 def run(path):
     """-> (calls, comparisons, list of differences)."""
     doc = yaml.safe_load(path.read_text())
-    graph = {k: doc[k] for k in ("period", "max_catch_up", "inputs", "blocks") if k in doc}
+    graph = {k: doc[k] for k in ("period", "max_catch_up", "max_waiting", "inputs", "blocks") if k in doc}
     for key in doc.get("graph_extra", {}):  # a vector may add a deliberately unknown key
         graph[key] = doc["graph_extra"][key]
 
@@ -175,6 +177,9 @@ def run(path):
                 differences.append(f"{where}: the last tick is {info['tick']}, the vector says {row['tick']}")
             if "time" in row and info["time"] != ns(row["time"]):
                 differences.append(f"{where}: the last tick is at {info['time']} ns, the vector says {row['time']} s")
+            for key in ("thrown", "waiting"):
+                if key in row and info[key] != row[key]:
+                    differences.append(f"{where}: {key} is {info[key]}, the vector says {row[key]}")
         for name, want in row.items():
             if name in engine.inputs or name in ROW_KEYS:
                 continue

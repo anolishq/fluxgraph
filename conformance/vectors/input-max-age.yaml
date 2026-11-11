@@ -1,4 +1,4 @@
-# 7.2.4, 6.6: a value not written again stands and grows older. An age equal
+# 7.2.4: a value not written again stands and grows older. An age equal
 # to the maximum is usable; more is bad. Age is from the sample time, and a
 # maximum age need not be a whole number of periods (6.2).
 rules: [7.2.4, 6.3]

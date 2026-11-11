@@ -2,7 +2,7 @@
 # a = 0.5 and settle, three time constants rounded up, is 5 ticks. For w,
 # tau is one period over ln 4: a = 0.25 and settle is 3 ticks. tau need not
 # be a whole number of periods (6.2).
-rules: [A.lowpass, 7.4.5, 7.4.6, 7.4.7, 7.4.8, 6.2]
+rules: [A.lowpass, 7.4.5, 7.4.6, 7.4.7, 7.4.8, 6.3]
 period: 1s
 inputs: {x: {max_age: none}}
 blocks:

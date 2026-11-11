@@ -11,8 +11,8 @@ calls:
   - {x: {v: 5, at: 2}, w: {v: 5, at: 2}, y: not_ready, v: not_ready}   # w's max_ahead is one period: done with
   - {y: not_ready, v: not_ready}
   - {y: 5, v: not_ready}            # tick 2: x's time has come
-  - {x: {v: 9, at: 100}, y: 5}      # stamped far ahead: done with
-  - {x: {v: bad, at: 6}, y: 5}      # a failed read stamped 2 s ahead waits like any write
-  - {y: 5}
+  - {x: {v: 9, at: 100}, y: 5, thrown: 1}      # stamped far ahead: thrown away
+  - {x: {v: bad, at: 6}, y: 5, thrown: 0, waiting: 1}   # a failed read stamped 2 s ahead waits like any write
+  - {first: {x: {v: bad, at: 90}}, y: 5, thrown: 1, waiting: 1}   # and one stamped far ahead is thrown away like any
   - {y: bad}                        # tick 6
   - {now: 100, ran: 94, x: 6, y: 6}

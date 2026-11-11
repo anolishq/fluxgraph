@@ -1,4 +1,4 @@
-# 6.7: refused: a max_catch_up of zero.
+# 6.9: refused: a max_catch_up of zero.
 rules: [6.9]
 period: 1s
 max_catch_up: 0

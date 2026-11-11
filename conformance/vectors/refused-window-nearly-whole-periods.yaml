@@ -1,4 +1,4 @@
-# 6.2: refused: a length a hair off a whole number of periods.
+# 6.3: refused: a length a hair off a whole number of periods.
 rules: [6.3]
 period: 1s
 inputs: {x: {max_age: none}}

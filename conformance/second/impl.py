@@ -1516,7 +1516,7 @@ class Engine:
         if not isinstance(graph, dict):
             raise CompileError("the graph must be a map")
         for key in graph:
-            if key not in ("period", "max_catch_up", "inputs", "blocks"):
+            if key not in ("period", "max_catch_up", "max_waiting", "inputs", "blocks"):
                 raise CompileError("unknown key %r at the top of the graph" % (key,))
         if "period" not in graph:
             raise CompileError("the graph has no 'period'")
@@ -1528,6 +1528,9 @@ class Engine:
         self._max_catch_up = graph.get("max_catch_up", 100)
         if not isinstance(self._max_catch_up, int) or isinstance(self._max_catch_up, bool) or self._max_catch_up < 1:
             raise CompileError("max_catch_up: must be a whole number, at least 1")
+        self._max_waiting = graph.get("max_waiting", 1024)
+        if not isinstance(self._max_waiting, int) or isinstance(self._max_waiting, bool) or self._max_waiting < 1:
+            raise CompileError("max_waiting: must be a whole number, at least 1")
         self._compile_inputs(graph.get("inputs"))
         self._compile_blocks(graph.get("blocks"))
         self._graph_key = json.dumps(graph, default=repr)
@@ -1561,8 +1564,12 @@ class Engine:
                 max_age = None
             else:
                 max_age = parse_duration(what + " max_age", d["max_age"])
+                if 2 * max_age < self._period_ns:
+                    raise CompileError("%s: max_age is less than half a period" % what)
             if "max_ahead" in d:
                 max_ahead = parse_duration(what + " max_ahead", d["max_ahead"])
+                if 2 * max_ahead < self._period_ns:
+                    raise CompileError("%s: max_ahead is less than half a period" % what)
             else:
                 max_ahead = self._period_ns
             has_initial = "initial" in d
@@ -1808,6 +1815,7 @@ class Engine:
         self._rebase = False  # the next call is a rebase (rule 8.3)
         self._standing = {}  # name -> (state, value, time)
         self._waiting = {}  # name -> [(state, value, time)], in the order made
+        self._thrown = 0  # writes thrown away since the last call that ran a tick
         self.info = None
         for b in self._blocks.values():
             b.reset()
@@ -1833,6 +1841,8 @@ class Engine:
         )
         for bid, b in self._blocks.items():
             b.s = copy.deepcopy(saved["blocks"][bid])
+        # nothing stands or waits from this moment (rule 8.5)
+        self._standing = {}
         self._waiting = {}
         self._rebase = True
 
@@ -1840,6 +1850,8 @@ class Engine:
         """The host says that its clock has stepped (rule 8.3)."""
         self._waiting = {}
         if self._last_k is not None:
+            # nothing stands from this moment (rule 8.5)
+            self._standing = {}
             self._rebase = True
 
     def write(self, name, state, value, at):
@@ -1858,7 +1870,17 @@ class Engine:
             if not _is_num(value):
                 raise ValueError("input %r takes a number" % name)
             value = float(value)
-        self._waiting.setdefault(name, []).append((state, value, at))
+        standing = self._standing.get(name)
+        if standing is not None and at < standing[2]:
+            # it can never stand: thrown away as it is made (rule 6.8)
+            self._thrown += 1
+            return
+        writes = self._waiting.setdefault(name, [])
+        writes.append((state, value, at))
+        if len(writes) > self._max_waiting:
+            # the earliest time goes, the earlier written of two the same
+            del writes[min(range(len(writes)), key=lambda i: writes[i][2])]
+            self._thrown += 1
 
     def _time(self, k):
         return self._anchor_t + (k - self._anchor_k) * self._period_ns
@@ -1871,10 +1893,12 @@ class Engine:
         if self._last_k is not None and not self._rebase and now < self._last_now:
             raise ValueError("now is earlier than the last call's")
         # stamped ahead (rule 6.8): at every call, a waiting write whose
-        # time is more than max_ahead after now is done with
+        # time is more than max_ahead after now is thrown away
         for name, writes in self._waiting.items():
             limit = now + self.inputs[name].max_ahead
-            writes[:] = [w for w in writes if w[2] <= limit]
+            kept = [w for w in writes if w[2] <= limit]
+            self._thrown += len(writes) - len(kept)
+            writes[:] = kept
         if self._last_k is None:
             ticks = [(0, now)]
             self._anchor_k, self._anchor_t = 0, now
@@ -1885,7 +1909,6 @@ class Engine:
             g = self._last_k + 1
             self._anchor_k, self._anchor_t = g, now
             self._origin_t = now
-            self._standing = {}
             for b in self._blocks.values():
                 b.rebase()
                 b.gap(g)
@@ -1918,7 +1941,14 @@ class Engine:
             sig = self._run_tick(k, t)
             self._last_k = k
         self._last_now = now
-        self.info = {"gap": gap, "tick": ticks[-1][0], "time": ticks[-1][1]}
+        self.info = {
+            "gap": gap,
+            "tick": ticks[-1][0],
+            "time": ticks[-1][1],
+            "thrown": self._thrown,
+            "waiting": sum(len(w) for w in self._waiting.values()),
+        }
+        self._thrown = 0
         outputs = {}
         for name, key in self._published.items():
             s = sig[key]

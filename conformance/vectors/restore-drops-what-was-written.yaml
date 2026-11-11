@@ -1,6 +1,6 @@
-# 8.4: after a restore, what was written before it and not yet taken up is
+# 8.5: after a restore, what was written before it and not yet seen is
 # dropped. What is written after it is taken up.
-rules: [8.4]
+rules: [8.5]
 period: 1s
 inputs: {x: {max_age: none}}
 blocks:

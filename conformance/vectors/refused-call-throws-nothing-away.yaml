@@ -1,0 +1,12 @@
+# 6.11, 6.8: a refused call changes nothing. A write stamped 5.9 s is not
+# ahead of the last call at 5 s; the refused call at 3 s does not throw it away.
+rules: [6.11, 6.8]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+calls:
+  - {now: 5, x: 1, y: 1}
+  - {$write: [x, good, 7.0, 5.9]}
+  - {now: 3, refused: true}
+  - {now: 6, y: 7, thrown: 0}

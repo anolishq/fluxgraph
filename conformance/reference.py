@@ -850,7 +850,7 @@ CATALOGUE = {
     "estimator": Estimator,
 }
 
-_GRAPH_KEYS = {"period", "max_catch_up", "inputs", "blocks"}
+_GRAPH_KEYS = {"period", "max_catch_up", "max_waiting", "inputs", "blocks"}
 _BLOCK_KEYS = {"id", "type", "in", "settings", "out", "fallback"}
 _INPUT_KEYS = {"type", "unit", "max_age", "max_ahead", "initial"}
 
@@ -879,6 +879,9 @@ class Engine:
         self.max_catch_up = graph.get("max_catch_up", 100)
         if isinstance(self.max_catch_up, bool) or not isinstance(self.max_catch_up, int) or self.max_catch_up < 1:
             raise CompileError("max_catch_up is a whole number, at least 1")
+        self.max_waiting = graph.get("max_waiting", 1024)  # 6 rule 8
+        if isinstance(self.max_waiting, bool) or not isinstance(self.max_waiting, int) or self.max_waiting < 1:
+            raise CompileError("max_waiting is a whole number, at least 1")
 
         self.inputs = {}
         for name, spec in (graph.get("inputs") or {}).items():
@@ -903,6 +906,8 @@ class Engine:
                 max_ahead = nanoseconds(spec["max_ahead"]) if "max_ahead" in spec else self.period
             except CompileError as exc:
                 raise CompileError(f"{where}: max_ahead: {exc}") from exc
+            if 2 * max_age < self.period or 2 * max_ahead < self.period:  # 7.2, and 6 rule 8
+                raise CompileError(f"{where}: max_age and max_ahead are not less than half a period")
             self.inputs[name] = {"type": kind, "max_age": max_age, "max_ahead": max_ahead, "initial": initial}
 
         specs = graph.get("blocks") or []
@@ -1074,6 +1079,7 @@ class Engine:
         self.standing = {}  # input -> (state, value, time): the write last taken up
         self.pending = {name: [] for name in self.inputs}  # the writes not yet taken up, as made
         self.rebasing = False
+        self.thrown = 0  # writes thrown away since the last call that ran a tick
         self.info = None  # what the last call that ran a tick has to say (6 rule 10)
 
     def save(self):
@@ -1091,6 +1097,7 @@ class Engine:
     def rebase(self):
         """The host's clock has stepped, or a state was restored: the next call is a gap, at any time."""
         self.pending = {name: [] for name in self.inputs}  # 8 rule 5: what was written before is done with
+        self.standing = {}  # and nothing stands, from now: a write on the new clock is not judged by the old
         if self.zero is None and self.k == 0:
             return  # nothing has run: the next call runs tick 0, and is no gap
         self.last_now, self.rebasing = None, True
@@ -1114,7 +1121,15 @@ class Engine:
                 value = float(value)
         else:
             value = None
-        self.pending[name].append((state, value, at))
+        stands = self.standing.get(name)
+        if stands is not None and at < stands[2]:  # it can never stand: thrown away as it is made
+            self.thrown += 1
+            return
+        waiting = self.pending[name]
+        waiting.append((state, value, at))
+        if len(waiting) > self.max_waiting:  # the earliest goes, the earlier written of two with one time
+            del waiting[min(range(len(waiting)), key=lambda i: (waiting[i][2], i))]
+            self.thrown += 1
 
     def _take_up(self, t, last):
         """6 rule 8: the writes this tick may see are done with, and the one with the latest time stands."""
@@ -1155,13 +1170,13 @@ class Engine:
         self.last_now = now
         for name, writes in self.pending.items():  # rule 8: stamped too far ahead
             self.pending[name] = [w for w in writes if w[2] - now <= self.inputs[name]["max_ahead"]]
+            self.thrown += len(writes) - len(self.pending[name])
         if self.zero is None:  # rule 5
             self.zero = self.since = now
         gap = False
         if self.rebasing:  # 8 rule 5: one tick, at the call's time, on what may be another clock
             self.rebasing, gap, due = False, True, 1
             self.zero, self.since = now - self.k * self.period, now
-            self.standing = {}
             for block in self.blocks.values():
                 block.forget_times()
         else:
@@ -1181,7 +1196,14 @@ class Engine:
         out = None
         for i in range(due):
             out = self._run(last=i == due - 1)
-        self.info = {"gap": gap, "tick": self.k - 1, "time": self.zero + (self.k - 1) * self.period}
+        self.info = {
+            "gap": gap,
+            "tick": self.k - 1,
+            "time": self.zero + (self.k - 1) * self.period,
+            "thrown": self.thrown,  # since the last call that ran a tick
+            "waiting": sum(len(writes) for writes in self.pending.values()),
+        }
+        self.thrown = 0
         return due, out
 
     def _run(self, last):

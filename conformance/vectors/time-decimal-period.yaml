@@ -1,4 +1,4 @@
-# 6.4: a period that is not exact in binary still runs one tick per call.
+# 6.6, 6.2: at a period of 100 ms every time is exact: one tick per call.
 # Three periods of 0.1 come to more than 0.3.
 rules: [6.6, 6.2]
 period: 100ms

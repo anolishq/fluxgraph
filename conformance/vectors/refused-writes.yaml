@@ -11,5 +11,6 @@ calls:
   - {$refused_write: [x, good, true, 0]}
   - {$refused_write: [b, good, 1.0, 0]}
   - {$refused_write: [x, good, 1.0, 0.0000000005]}
+  - {$refused_write: [x, good, 1.0, 9223372036.854775808]}
   - {y: not_ready, nb: not_ready}
   - {x: 4, b: true, y: 4, nb: false}

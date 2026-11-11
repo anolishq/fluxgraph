@@ -1,7 +1,7 @@
-# 8.1 to 8.4: a restore puts the blocks back, and the next call is a gap:
+# 8.1 to 8.6: a restore puts the blocks back, and the next call is a gap:
 # one tick, numbered after the last one saved, at whatever time it is given.
 # A reset starts again from tick 0.
-rules: [8.1, 8.2, 8.3, 8.4]
+rules: [8.1, 8.2, 8.3, 8.5, 8.6]
 period: 1s
 inputs: {x: {max_age: none}}
 blocks:

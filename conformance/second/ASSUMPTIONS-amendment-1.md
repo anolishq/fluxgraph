@@ -352,3 +352,94 @@ implementations disagree first.
   `max_ahead`; a write stamped far in the past is still accepted).
 - Still open, choice unchanged: 10, 12, 14, 15, 18, 19, 20, 22, 23, 24, 25,
   26, 27, 29, 31.
+
+## Third round
+
+What the third revision of Amendment 1 (writes thrown away and counted,
+`max_waiting`, the half-period floors, "nothing stands from the moment" of
+a restore or `rebase`, rule 8.5's closing paragraph) still leaves open,
+and what `impl.py` now does. Most likely to make two implementations
+disagree first.
+
+1. **What starts the count of writes thrown away again, besides a call
+   that ran a tick.** Rule 6.10: "how many writes have been thrown away
+   (rule 8) since the last call that ran a tick". Nothing says what a
+   reset, a restore or a `rebase` does to the count, and after a reset
+   there is no such call.
+   *Chosen:* a reset sets it to zero, and so does restoring a state saved
+   before any tick (rule 8.3: "is a reset"). Any other restore, and a
+   `rebase`, leave it: a write thrown away before a `rebase` is reported by
+   the rebase's call. Writes thrown away before the first call ever are
+   reported by it.
+
+2. **Which writes are "thrown away" for the count.** Rule 6.8 uses the
+   words for three things (stamped too far ahead; "thrown away as it is
+   made"; over `max_waiting`) and says "done with" of the rest.
+   *Chosen:* only those three are counted. Not counted: a write a tick saw
+   that lost to a later time; the writes waiting at a reset, a restore or
+   a `rebase` ("done with"); a refused write.
+
+3. **`max_waiting`: is the write just made one of those that may be thrown
+   away?** "When one more is written, the waiting write with the earliest
+   time is thrown away, the earlier written of two with the same time."
+   *Chosen:* the new write waits first, and then the earliest of them all
+   goes, the new one itself if it is the earliest (one with the same time
+   as an older one survives it). The other reading throws away the
+   earliest of those already waiting and always keeps the new one.
+
+4. **A write "earlier than that of what stands" is judged when it is made,
+   and against what stands only.** *Chosen:* thrown away, without an
+   error, if its time is earlier than the time of what stands on that
+   input at that moment, whatever either state is; a write with the same
+   time waits. It is not judged against writes still waiting. It is thrown
+   away before `max_waiting` is looked at, and throws nothing else out.
+   With nothing standing (before tick 0, after a reset, and from the
+   moment of a restore or `rebase`) no write is thrown away this way.
+
+5. **"How many writes still wait".** *Chosen:* the number waiting on all
+   inputs together, after the call's last tick has run.
+
+6. **"`rebase` before any tick has run ... does away with the writes
+   waiting, and nothing else ... So does restoring a state saved before
+   any tick had run" (rule 8.5) against "is a reset" (rule 8.3).** A
+   restore into an engine that has run ticks has to put every block back,
+   so it does more than that.
+   *Chosen:* restoring such a state is a full reset (blocks, tick number,
+   what stands, the waiting writes, the count of entry 1, `info`).
+   `rebase` before any tick does away with the waiting writes only, and
+   leaves the count.
+
+7. **`max_age` and `max_ahead` "not less than half a period" with an odd
+   period.** *Chosen:* compared exactly, as twice the length against the
+   period: with a period of 3 ns, 2 ns is accepted and 1 ns refused. A
+   length equal to half a period is accepted. `max_ahead` has no `none`.
+
+8. **`since_<port>` "not less than zero" (rule 7.9.6).** *Chosen:* a
+   difference below zero is given as zero, `good`. (This line was changed
+   in the copy of `impl.py` I was handed.)
+
+9. **What a saved state holds.** Rule 8.5: "A state saved between a
+   `rebase` and the call that follows it is as one saved before the
+   `rebase`", and nothing stands from the moment of a restore.
+   *Chosen:* a saved state carries neither the waiting writes, nor a
+   pending rebase, nor the count of entry 1; what stood is saved and
+   ignored by `restore`. `engine.info` is not touched by `save`, `restore`
+   or `rebase`.
+
+10. **Range of `max_waiting`.** "1024 unless given and at least 1".
+    *Chosen:* a whole number (an `int`, not a `bool`), at least 1, with no
+    upper limit. It is for each input on its own.
+
+11. **The host's instruction against rule 6.8.** Section 6: "never write a
+    time earlier than one already written to the same input: it is thrown
+    away". Rule 6.8 throws away only a time earlier than what *stands*.
+    *Chosen:* the rule. (See the report for the case.)
+
+### The "Revised text" entries against the third revision
+
+- Settled as chosen: 2, 3, 4, 5, 6, 8, 9, 13, 14, 15.
+- Settled otherwise, and `impl.py` changed: 1 and 11 (`max_ahead` under
+  half a period is refused, so the clash cannot arise), 7 (an age below
+  zero is usable as chosen, but `since_<port>` is not less than zero).
+- Still open, choice unchanged: 10, 12 (now also: such writes are not
+  counted as thrown away, entry 2 above).

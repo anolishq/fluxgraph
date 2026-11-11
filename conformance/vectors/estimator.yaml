@@ -1,7 +1,7 @@
 # 7.9: an estimator over the model x' = 0.5 x + u, starting at 8 with
 # variance 4. q is 1 per second, r is 1, the gate is 3 sigmas, and a state
 # is uncertain above a sigma of 1.5. Worked by hand from rules 7.9.2 and 7.9.4.
-rules: [7.9.1, 7.9.2, 7.9.3, 7.9.4, 7.9.5, 7.9.6, 8.4]
+rules: [7.9.1, 7.9.2, 7.9.3, 7.9.4, 7.9.5, 7.9.6, 8.5, 8.6]
 period: 1s
 inputs: {u: {max_age: none}, z: {max_age: none}}
 blocks:

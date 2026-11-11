@@ -19,10 +19,10 @@ the text says, not what it should say.
 | `compare.py` | Runs the two readings side by side on random inputs and call times and compares every output after every call. |
 
 ```bash
-python3 conformance/run.py            # 171 vectors: ALL AGREE
-python3 conformance/run.py --second   # 171 vectors: ALL AGREE
-python3 conformance/mutate.py         # 321 breakages: 321 noticed; every vector failed by one
-python3 conformance/compare.py        # 862031 comparisons, 0 differences
+python3 conformance/run.py            # 182 vectors: ALL AGREE
+python3 conformance/run.py --second   # 182 vectors: ALL AGREE
+python3 conformance/mutate.py         # 334 breakages: 334 noticed; every vector failed by one
+python3 conformance/compare.py        # 1086235 comparisons, 0 differences
 ```
 
 The format of a vector is described at the top of `run.py`.
@@ -120,6 +120,24 @@ the amended text alone, and the amendment was reviewed by itself.
   latched trip and eight times the energy
   (`stall-host-keeps-only-latest.yaml`). The engine cannot see what it was
   never given, and the text now says what a host has to do.
+- The second form was reviewed in its turn, and its core held: no way was
+  found to take one sample twice or to bring an old one back. What the
+  review asked for was added. A call reports how many writes were thrown
+  away and how many wait; `max_ahead` and a maximum age under half a period
+  are refused; a write earlier than what stands is thrown away as it is
+  made, and `max_waiting` bounds the rest. Counting the writes thrown away
+  showed a fault nobody had reported: after a rebase to a lower clock, new
+  writes were judged against what stood on the old one. Nothing stands now
+  from the moment of the rebase.
+- Brought up to that from the text alone, the second reading agreed with
+  the reference on all 182 vectors and on 1,086,235 random comparisons, as
+  first written. The comparison now also runs at a period of 37 ms, at
+  times on any nanosecond, with calls and writes that must be refused, two
+  rebases in a row, and restores of a state saved before any tick.
+- Two things the review found are left for later amendments and named at
+  the head of the proposal: a window with `only_new` under a host slower
+  than the period, and a pause short of `max_catch_up` being run as
+  ordinary ticks.
 
 ## What this does not cover
 

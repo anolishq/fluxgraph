@@ -1,6 +1,6 @@
-# 8.4: at a gap since_true's clock is set to the gap's tick, which counts as
+# 8.6: at a gap since_true's clock is set to the gap's tick, which counts as
 # a tick in doubt. The input is false throughout; ticks 0 to 2, then a gap.
-rules: [8.4, 7.6.2]
+rules: [8.6, 7.6.2]
 period: 1s
 inputs: {x: {type: boolean, max_age: none}}
 blocks:

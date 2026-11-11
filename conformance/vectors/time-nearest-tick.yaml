@@ -1,4 +1,4 @@
-# 6.3, 6.4: the first call runs tick 0 at its own time. After that a call
+# 6.5, 6.6: the first call runs tick 0 at its own time. After that a call
 # runs every tick whose time is no more than half a period after it. The
 # total counts the ticks run; a constant is good in a missed tick too.
 rules: [6.5, 6.6, 4.7]

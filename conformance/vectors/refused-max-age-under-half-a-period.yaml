@@ -1,0 +1,8 @@
+# 7.2: refused: a maximum age of less than half a period.
+rules: [7.2]
+period: 1s
+inputs: {x: {max_age: 499ms}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}}
+expect: compile_error
+error_mentions: [x]

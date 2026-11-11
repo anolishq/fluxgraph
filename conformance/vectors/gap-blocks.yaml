@@ -1,4 +1,4 @@
-# 8.4: what each block does at a gap. Ticks 0 to 2, a save and a restore,
+# 8.6: what each block does at a gap. Ticks 0 to 2, a save and a restore,
 # then ticks 3 to 5.
 rules: [8.6]
 period: 1s
