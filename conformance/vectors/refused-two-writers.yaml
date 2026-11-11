@@ -1,7 +1,7 @@
 # 9.4, 4.6: refused: a signal with two writers.
 rules: [9.4, 4.6]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}, out: {y: y}}
   - {id: g, type: formula, in: {x: x}, settings: {expr: "x + 2"}, out: {y: y}}

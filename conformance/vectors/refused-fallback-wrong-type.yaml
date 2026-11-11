@@ -1,7 +1,7 @@
 # A, 7.10: refused: a fallback that is not of its port's type.
 rules: [A, 7.10]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: h, type: hysteresis, in: {x: x}, settings: {rise: 2, fall: 1}, fallback: {y: 0}}
 expect: compile_error

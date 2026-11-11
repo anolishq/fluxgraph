@@ -1,7 +1,7 @@
 # Appendix A: refused: a trailing comma.
 rules: [A.formula]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: f, type: formula, in: {x: x}, settings: {expr: "min(x, 1,)"}}
 expect: compile_error

@@ -3,7 +3,7 @@
 # total wants the integrate block, which has a rule for it.
 rules: [5.3, 4.4]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: prev, type: delay, in: {x: acc}, settings: {initial: 0}}
   - {id: sum, type: formula, in: {p: prev.y, x: x}, settings: {expr: "p + x"}, out: {y: acc}}

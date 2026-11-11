@@ -1,7 +1,7 @@
 # Appendix A: refused: a choice on a number.
 rules: [A.formula]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: f, type: formula, in: {x: x}, settings: {expr: "when(x, 1, 2)"}}
 expect: compile_error

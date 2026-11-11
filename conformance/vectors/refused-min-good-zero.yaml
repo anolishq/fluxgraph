@@ -1,7 +1,7 @@
 # A: refused: min_good of zero.
 rules: [A]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: w, type: window, in: {x: x}, settings: {window: 2s, min_good: 0}}
 expect: compile_error

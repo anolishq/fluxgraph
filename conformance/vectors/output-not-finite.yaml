@@ -1,7 +1,7 @@
 # 3.6: a block output that would not be finite is bad, whatever the block.
 rules: [3.6]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: i, type: integrate, in: {x: x}, out: {y: total}}
 calls:

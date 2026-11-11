@@ -1,9 +1,10 @@
-# Appendix A, 7.4.1, 7.4.4: a deadband takes its first usable input as it
-# is, then keeps its output until the input has moved by the step or more.
-# It keeps what it holds through an unusable input.
+# Appendix A, 7.4.1 to 7.4.4: a deadband takes its first usable input as it
+# is, then keeps what it holds until the input has moved by the step or
+# more. Its output is good only if the sample it holds and the input both
+# are. Past ride_through it forgets, and the next input is a first input.
 rules: [A.deadband, 7.4.1, 7.4.2, 7.4.3, 7.4.4]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: d, type: deadband, in: {x: x}, settings: {step: 1}, out: {y: y}}
 calls:
@@ -13,7 +14,10 @@ calls:
   - {x: 11, y: 11}            # moved by exactly the step
   - {x: 10.25, y: 11}
   - {x: 10, y: 10}
-  - {x: {v: 10.5, state: uncertain}, y: {u: 10}}
-  - {x: bad, y: bad}          # ride_through is zero
-  - {x: 10.5, y: 10}          # still holding 10
-  - {x: 20, y: 20}
+  - {x: {v: 10.5, state: uncertain}, y: {u: 10}}    # kept, on an uncertain input
+  - {x: 10.5, y: 10}          # the sample held is good, and so is the input
+  - {x: {v: 12, state: uncertain}, y: {u: 12}}      # holds an uncertain sample
+  - {x: 12.5, y: {u: 12}}     # and still does
+  - {x: 14, y: 14}
+  - {x: bad, y: bad}          # ride_through is zero: forgotten
+  - {x: 14.5, y: 14.5}        # a first input again

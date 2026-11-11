@@ -1,12 +1,17 @@
-# 7.2.4: a sample time more than one period after the tick is bad. Up to one
-# period ahead its age is zero (6.6).
-rules: [7.2.4, 6.6]
+# 7.2.4: a sample stamped more than max_ahead after the tick that takes it
+# up is refused, and stays refused until something else is written.
+# max_ahead is one period unless given.
+rules: [7.2.4]
 period: 1s
-inputs: {x: {max_age: 2s}}
+inputs: {x: {max_age: 2s}, w: {max_age: 2s, max_ahead: 3s}}
 blocks:
   - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+  - {id: g, type: formula, in: {w: w}, settings: {expr: "w + 0"}, out: {y: v}}
 calls:
-  - {x: {v: 5, at: 100}, y: bad}
-  - {x: {v: 6, at: 1.9}, y: 6}         # now 1: 0.9 s ahead
-  - {y: 6}                             # now 2: age 0.1 s
-  - {x: {v: 7, at: 4.5}, y: bad}       # now 3: 1.5 s ahead
+  - {x: {v: 5, at: 100}, w: {v: 1, at: 2.5}, y: bad, v: 1}
+  - {x: {v: 6, at: 1.9}, y: 6, v: 1}   # now 1: 0.9 s ahead
+  - {y: 6, v: 1}                       # now 2: age 0.1 s
+  - {x: {v: 7, at: 4.5}, y: bad, v: 1} # now 3: 1.5 s ahead: refused
+  - {y: bad, v: 1}                     # now 4: only 0.5 s ahead now, and still refused
+  - {y: bad, v: bad}                   # now 5: w is 2.5 s old
+  - {x: 9, y: 9}

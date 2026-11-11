@@ -1,19 +1,26 @@
-# 8.1, 8.2, 8.4: a restore puts the state back and the next call runs the
-# tick after the last one saved, at whatever time it is given. A reset
-# starts again from tick 0.
-rules: [8.1, 8.2, 8.4]
+# 8.1 to 8.4: a restore puts the blocks back, and the next call is a gap:
+# one tick, numbered after the last one saved, at whatever time it is given.
+# A reset starts again from tick 0.
+rules: [8.1, 8.2, 8.3, 8.4]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: i, type: integrate, in: {x: x}, out: {y: total}}
+  - {id: w, type: window, in: {x: x}, settings: {window: 2s}, out: {mean: mean}}
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
 calls:
-  - {x: 1, total: 1}
-  - {x: 1, total: 2}
+  - {x: 1, total: 1, mean: not_ready, y: 1}
+  - {x: 1, total: 2, mean: 1, y: 1}
   - {$save: a}
-  - {x: 1, total: 3}
-  - {x: 1, total: 4}
+  - {x: 5, total: 7, mean: 3, y: 5}
+  - {x: 5, total: 12, mean: 5, y: 5}
   - {$restore: a}
-  - {now: 100, x: 1, total: 3}        # one tick, not a hundred
-  - {now: 101, x: 1, total: 4}
+  # an earlier time than the last call's is accepted after a restore. the window held 1 and 1, and is emptied
+  - {now: 2, x: 5, total: {u: 7}, mean: not_ready, y: 5}
+  - {now: 3, total: {u: 12}, mean: 5, y: 5}
+  - {now: 4, x: 1, total: {u: 13}, mean: 3, y: 1}
   - {$reset: true}
-  - {now: 200, x: 5, total: 5}
+  # an earlier time is accepted after a reset too, and nothing stands on x
+  - {now: 1, total: {u: 0}, mean: not_ready, y: not_ready}
+  - {now: 2, x: 5, total: {u: 5}, mean: not_ready, y: 5}
+  - {now: 3, total: {u: 10}, mean: 5, y: 5}

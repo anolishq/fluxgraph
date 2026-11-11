@@ -3,7 +3,7 @@
 # stops the timer. An uncertain input since the start makes the output uncertain.
 rules: [7.6.1, A.held_for]
 period: 1s
-inputs: {x: {type: boolean}}
+inputs: {x: {type: boolean, max_age: none}}
 blocks:
   - {id: h, type: held_for, in: {x: x}, settings: {time: 2s, on_bad: reset}, out: {y: y}}
 calls:

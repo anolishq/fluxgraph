@@ -1,7 +1,7 @@
 # Appendix A: refused: arithmetic on a boolean.
 rules: [A.formula]
 period: 1s
-inputs: {b: {type: boolean}}
+inputs: {b: {type: boolean, max_age: none}}
 blocks:
   - {id: f, type: formula, in: {b: b}, settings: {expr: "b + 1"}}
 expect: compile_error

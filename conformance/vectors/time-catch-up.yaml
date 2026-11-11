@@ -1,13 +1,15 @@
-# 6.4, 6.5, 7.2.1: a call runs every tick that is due. All but the last are
-# missed, and in a missed tick every external input is bad.
-rules: [6.4, 6.5, 7.2.1]
+# 6.5, 6.6: a call runs every tick that is due. What was written before it
+# is taken up at the last of them. The ticks before see what stood, a period
+# older each time, until its maximum age ends it.
+rules: [6.5, 6.6, 6.8, 7.2.5]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: 2s}}
 blocks:
   - {id: i, type: integrate, in: {x: x}, out: {y: total, missed: missed}}
 calls:
   - {now: 0, x: 2, total: 2, missed: 0}
   - {now: 1, x: 2, total: 4, missed: 0}
-  - {now: 5, ran: 4, x: 2, total: {u: 6}, missed: 3}     # ticks 2, 3, 4 missed
+  # ticks 2 and 3 add the 2 sampled at 1 s; at tick 4 it is 3 s old; tick 5 takes the 10
+  - {now: 5, ran: 4, x: 10, total: {u: 18}, missed: 1}
   - {now: 5.2, ran: 0}
-  - {now: 6, total: {u: 8}, missed: 3}
+  - {now: 6, total: {u: 28}, missed: 1}

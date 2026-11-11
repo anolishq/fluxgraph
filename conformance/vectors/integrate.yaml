@@ -3,7 +3,7 @@
 # added an uncertain input, bad past max_missed, and good again after a reset.
 rules: [7.7.1, 7.7.2, 7.7.3, 7.7.4, 7.7.5, A.integrate]
 period: 1s
-inputs: {x: {}, r: {type: boolean}}
+inputs: {x: {max_age: none}, r: {type: boolean, max_age: none}}
 blocks:
   - {id: i, type: integrate, in: {x: x, reset: r}, out: {y: total, missed: missed}}
   - {id: j, type: integrate, in: {x: x}, settings: {per: 1m, max_missed: 2s}, out: {y: per_min, missed: j_missed}}

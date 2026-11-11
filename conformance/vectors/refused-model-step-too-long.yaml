@@ -1,0 +1,8 @@
+# 7.8.7: refused: a period longer than a model is stable at.
+rules: [7.8.7]
+period: 5s
+inputs: {p: {max_age: none}, a: {max_age: none}}
+blocks:
+  - {id: m, type: thermal_mass, in: {power: p, ambient: a}, settings: {thermal_mass: 1, heat_transfer: 1, initial: 16}}
+expect: compile_error
+error_mentions: [m]

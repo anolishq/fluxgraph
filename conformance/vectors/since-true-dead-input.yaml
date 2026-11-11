@@ -1,7 +1,7 @@
 # 7.6.2: an input that has never been usable does not keep the detector quiet.
 rules: [7.6.2]
 period: 1s
-inputs: {x: {type: boolean}}
+inputs: {x: {type: boolean, max_age: none}}
 blocks:
   - {id: a, type: since_true, in: {x: x}, settings: {time: 2s, on_bad: assume_false}, out: {y: a}}
 calls:

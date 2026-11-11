@@ -3,14 +3,14 @@
 # graph see it.
 rules: [7.10]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
-  - {id: w, type: window, in: {x: x}, settings: {window: 3s}, fallback: {mean: -1}, out: {mean: mean, median: median}}
+  - {id: w, type: window, in: {x: x}, settings: {window: 3s}, fallback: {mean: -1}, out: {median: median}}
   - {id: f, type: formula, in: {m: w.mean}, settings: {expr: "m * 2"}, out: {y: twice}}
   - {id: h, type: hysteresis, in: {x: x}, settings: {rise: 10, fall: 5}, fallback: {y: false}, out: {y: high}}
 calls:
-  - {x: 7, mean: {u: -1}, median: not_ready, twice: {u: -2}, high: {u: false}}
-  - {x: 7, mean: {u: -1}, median: not_ready, twice: {u: -2}, high: {u: false}}
-  - {x: 7, mean: 7, median: 7, twice: 14, high: {u: false}}
-  - {x: bad, mean: {u: -1}, median: bad, twice: {u: -2}, high: {u: false}}
-  - {x: 12, mean: {u: -1}, median: bad, high: true}
+  - {x: 7, median: not_ready, twice: {u: -2}, high: {u: false}}
+  - {x: 7, median: not_ready, twice: {u: -2}, high: {u: false}}
+  - {x: 7, median: 7, twice: 14, high: {u: false}}
+  - {x: bad, median: bad, twice: {u: -2}, high: {u: false}}
+  - {x: 12, median: bad, twice: {u: -2}, high: true}

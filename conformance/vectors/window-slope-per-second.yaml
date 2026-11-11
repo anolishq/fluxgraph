@@ -1,7 +1,7 @@
 # Appendix A: a slope is per second, not per tick.
 rules: [A.window]
 period: 2s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: w, type: window, in: {x: x}, settings: {window: 6s}, out: {slope: slope, mean: mean}}
 calls:

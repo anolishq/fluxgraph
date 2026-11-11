@@ -2,7 +2,7 @@
 # then not_ready, then uncertain, then good.
 rules: [7.1.1, 3.3]
 period: 1s
-inputs: {x: {}, y: {}}
+inputs: {x: {max_age: none}, y: {max_age: none}}
 blocks:
   - {id: f, type: formula, in: {x: x, y: y}, settings: {expr: "x + y"}, out: {y: sum}}
 calls:

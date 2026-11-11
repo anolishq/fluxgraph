@@ -1,9 +1,9 @@
-# 7.6.2: true when the input has not been true for longer than the time. The
-# clock starts at the first tick. An unusable input counts as not true, and
-# the output is uncertain, or the output takes the input's state.
+# 7.6.2: true when the input has not been true for longer than the time.
+# The output is good when every tick it rests on had a good input: the
+# ticks since the clock was set, or the last `time` of them.
 rules: [7.6.2, A.since_true]
 period: 1s
-inputs: {x: {type: boolean}}
+inputs: {x: {type: boolean, max_age: none}}
 blocks:
   - {id: a, type: since_true, in: {x: x}, settings: {time: 2s, on_bad: assume_false}, out: {y: a}}
   - {id: u, type: since_true, in: {x: x}, settings: {time: 2s, on_bad: unknown}, out: {y: u}}
@@ -16,6 +16,9 @@ calls:
   - {x: bad, a: {u: false}, u: bad}
   - {x: bad, a: {u: false}, u: bad}
   - {x: bad, a: {u: true}, u: bad}
-  - {x: false, a: true, u: true}
-  - {x: {v: true, state: uncertain}, a: {u: false}, u: {u: false}}
+  - {x: false, a: {u: true}, u: {u: true}}       # tick 8 rests on ticks 6 and 7
+  - {x: {v: true, state: uncertain}, a: {u: false}, u: {u: false}}   # clock set at tick 9, in doubt
   - {x: not_ready, a: {u: false}, u: not_ready}
+  - {x: false, a: {u: false}, u: {u: false}}
+  - {x: false, a: {u: true}, u: {u: true}}       # tick 12 rests on tick 10
+  - {x: false, a: true, u: true}                 # tick 13 rests on 11 and 12

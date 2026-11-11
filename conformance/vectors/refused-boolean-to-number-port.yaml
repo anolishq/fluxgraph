@@ -1,7 +1,7 @@
 # 3.5, 9.4: refused: a boolean signal connected to a number port.
 rules: [3.5, 9.4]
 period: 1s
-inputs: {b: {type: boolean}}
+inputs: {b: {type: boolean, max_age: none}}
 blocks:
   - {id: w, type: window, in: {x: b}, settings: {window: 2s}}
 expect: compile_error

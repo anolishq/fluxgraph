@@ -1,0 +1,9 @@
+# 6.7: refused: a max_catch_up of zero.
+rules: [6.7]
+period: 1s
+max_catch_up: 0
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}}
+expect: compile_error
+error_mentions: [max_catch_up]

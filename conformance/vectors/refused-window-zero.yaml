@@ -1,7 +1,7 @@
 # A: refused: a window shorter than one period.
 rules: [A]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: w, type: window, in: {x: x}, settings: {window: 0s}}
 expect: compile_error

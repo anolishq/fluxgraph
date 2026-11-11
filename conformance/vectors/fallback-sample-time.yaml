@@ -1,0 +1,13 @@
+# 3.7, 7.10: a value a fallback puts in carries the time of the tick. x is
+# written once, as 0; 1 / x is bad on every tick and the fallback stands in:
+# a new sample each time.
+rules: [3.7, 7.10]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "1 / x"}, fallback: {y: 0}}
+  - {id: w, type: window, in: {x: f.y}, settings: {window: 3s, min_good: 0.3, only_new: true}, out: {count: count}}
+calls:
+  - {x: 0, count: 1}
+  - {count: 2}
+  - {count: 3}

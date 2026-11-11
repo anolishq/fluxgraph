@@ -1,7 +1,7 @@
 # 7.7.1, 7.7.2: the addition and missed both scale with the period.
 rules: [7.7.1, 7.7.2]
 period: 500ms
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: i, type: integrate, in: {x: x}, out: {y: total, missed: missed}}
 calls:

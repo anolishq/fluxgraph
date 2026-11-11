@@ -3,7 +3,7 @@
 # it. When nothing decides, the worst state.
 rules: [7.1.2]
 period: 1s
-inputs: {a: {type: boolean}, b: {type: boolean}}
+inputs: {a: {type: boolean, max_age: none}, b: {type: boolean, max_age: none}}
 blocks:
   - {id: o, type: formula, in: {a: a, b: b}, settings: {expr: "a or b"}, out: {y: either}}
   - {id: n, type: formula, in: {a: a, b: b}, settings: {expr: "a and b"}, out: {y: both}}

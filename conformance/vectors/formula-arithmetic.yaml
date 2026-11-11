@@ -1,7 +1,7 @@
 # Appendix A: numbers, precedence, grouping from the left, and the functions.
 rules: [A.formula]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: p, type: formula, in: {x: x}, settings: {expr: "-x + 2 * 3 - 8 / 4 / 2"}, out: {y: p}}
   - {id: q, type: formula, in: {x: x}, settings: {expr: "pow(x + 1, 3) + sqrt(16) + abs(0 - 3) + min(x, 5) + 2 * max(x, 5)"}, out: {y: q}}

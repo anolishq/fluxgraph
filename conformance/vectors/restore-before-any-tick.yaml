@@ -1,0 +1,13 @@
+# 8.3: restoring a state saved before any tick had run is a reset, not a gap.
+rules: [8.3]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: i, type: integrate, in: {x: x}, out: {y: total}}
+calls:
+  - {$save: start}
+  - {x: 1, total: 1}
+  - {x: 1, total: 2}
+  - {$restore: start}
+  - {now: 0.5, x: 1, total: 1}     # tick 0 again, and no doubt
+  - {now: 1.5, total: 2}

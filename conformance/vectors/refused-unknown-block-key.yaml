@@ -1,7 +1,7 @@
 # 9.4: refused: an unknown key in a block.
 rules: [9.4]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}, outs: {y: y}}
 expect: compile_error

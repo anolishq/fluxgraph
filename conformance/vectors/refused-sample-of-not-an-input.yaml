@@ -1,0 +1,8 @@
+# A.formula: refused: sample_of naming something that is not a signal input.
+rules: [A.formula]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x, k: 2}, settings: {expr: "x + k", sample_of: k}}
+expect: compile_error
+error_mentions: [sample_of]

@@ -2,7 +2,7 @@
 # is good on every tick.
 rules: [4.7]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: f, type: formula, in: {x: x, k: 2.5}, settings: {expr: "x + k"}, out: {y: y}}
   - {id: g, type: formula, in: {x: x, flag: true}, settings: {expr: "when(flag, x, 0 - x)"}, out: {y: z}}

@@ -1,21 +1,24 @@
-# 7.6.3, 4.8: false until set is first true, then good and true whatever set
-# does. A usable, true reset clears it and wins over set. reset need not be
-# connected.
+# 7.6.3, 4.8: false until set is first usable and true. It is good while it
+# is sure: an unusable or uncertain set, while it is not set, leaves it
+# unsure until a good set or a good reset.
 rules: [7.6.3, 4.8]
 period: 1s
-inputs: {s: {type: boolean}, r: {type: boolean}}
+inputs: {s: {type: boolean, max_age: none}, r: {type: boolean, max_age: none}}
 blocks:
   - {id: l, type: latch, in: {set: s, reset: r}, out: {y: l}}
   - {id: m, type: latch, in: {set: s}, out: {y: m}}
 calls:
   - {s: false, r: false, l: false, m: false}
+  - {s: {v: false, state: uncertain}, l: {u: false}, m: {u: false}}   # not set, and set not good: unsure
+  - {s: false, l: {u: false}, m: {u: false}}
   - {s: bad, l: bad, m: bad}
-  - {s: {v: false, state: uncertain}, l: {u: false}, m: {u: false}}
+  - {s: false, l: {u: false}, m: {u: false}}                # a true may have gone by
   - {s: not_ready, l: not_ready, m: not_ready}
-  - {s: true, l: true, m: true}
+  - {s: true, l: true, m: true}                             # set by a good input: sure
   - {s: bad, l: true, m: true}
-  - {s: false, r: true, l: false, m: true}
+  - {s: false, r: true, l: false, m: true}                  # cleared by a good reset: sure
   - {s: true, r: true, l: false, m: true}                   # reset wins
   - {s: true, r: bad, l: true, m: true}                     # an unusable reset does nothing
-  - {s: false, r: {v: true, state: uncertain}, l: false, m: true}
-  - {s: {v: true, state: uncertain}, r: false, l: true, m: true}
+  - {s: false, r: {v: true, state: uncertain}, l: {u: false}, m: true}
+  - {s: {v: true, state: uncertain}, r: false, l: {u: true}, m: true}
+  - {s: true, l: true, m: true}                             # set again by a good input

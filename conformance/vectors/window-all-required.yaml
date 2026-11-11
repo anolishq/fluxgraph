@@ -3,7 +3,7 @@
 # ticks that hold none; a tick before the start counts as not_ready.
 rules: [7.3.2, 7.3.3, 7.3.6]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: w, type: window, in: {x: x}, settings: {window: 3s}, out: {mean: mean, count: count}}
 calls:

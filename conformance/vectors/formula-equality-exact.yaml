@@ -2,7 +2,7 @@
 # exactly 0.3 in binary, and a comparison with a tolerance would call it equal.
 rules: [7.1.6]
 period: 1s
-inputs: {x: {}, y: {}, b: {type: boolean}}
+inputs: {x: {max_age: none}, y: {max_age: none}, b: {type: boolean, max_age: none}}
 blocks:
   - {id: eq, type: formula, in: {x: x, y: y}, settings: {expr: "x * 3 == y"}, out: {y: eq}}
   - {id: ne, type: formula, in: {x: x, y: y}, settings: {expr: "x * 3 != y"}, out: {y: ne}}

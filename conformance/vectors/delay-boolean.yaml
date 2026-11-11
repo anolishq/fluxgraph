@@ -1,7 +1,7 @@
 # Appendix A: a delay's type is its input's.
 rules: [A.delay, 3.5]
 period: 1s
-inputs: {b: {type: boolean}}
+inputs: {b: {type: boolean, max_age: none}}
 blocks:
   - {id: d, type: delay, in: {x: b}, settings: {initial: false}}
   - {id: l, type: latch, in: {set: d.y}, out: {y: lit}}

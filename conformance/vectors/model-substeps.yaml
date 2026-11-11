@@ -1,0 +1,11 @@
+# 7.8.7: with substeps of 2 the state is stepped twice per tick, each of
+# half a period. tau is 1 s: over 2.5 s the factor is 0.6484375.
+rules: [7.8.7]
+period: 5s
+inputs: {p: {max_age: none}, amb: {max_age: none}}
+blocks:
+  - {id: m, type: thermal_mass, in: {power: p, ambient: amb}, settings: {thermal_mass: 1, heat_transfer: 1, initial: 16, substeps: 2}, out: {temp: temp}}
+calls:
+  - {p: 0, amb: 0, temp: 16}
+  - {temp: 6.727539062500004}
+  - {temp: 2.828736364841465}

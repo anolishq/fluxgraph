@@ -2,7 +2,7 @@
 # whatever order they are declared in.
 rules: [5.1]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: b, type: formula, in: {p: a.y}, settings: {expr: "p + 1"}, out: {y: y}}
   - {id: a, type: formula, in: {x: x}, settings: {expr: "x * 2"}}

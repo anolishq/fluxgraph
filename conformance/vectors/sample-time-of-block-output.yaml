@@ -1,0 +1,12 @@
+# 3.7: a block output other than a formula's or a delay's carries the time
+# of the tick, so it is a new sample on every tick, though x is written once.
+rules: [3.7]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: lowpass, in: {x: x}, settings: {tau: 2s}}
+  - {id: w, type: window, in: {x: f.y}, settings: {window: 3s, min_good: 0.3, only_new: true}, out: {count: count}}
+calls:
+  - {x: 4, count: 1}
+  - {count: 2}
+  - {count: 3}

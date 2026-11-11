@@ -1,7 +1,7 @@
 # Appendix A: the statistics of a window of four ticks.
 rules: [A.window, 7.3.1]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - id: w
     type: window

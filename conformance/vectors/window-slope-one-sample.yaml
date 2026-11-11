@@ -2,7 +2,7 @@
 # other statistics report.
 rules: [7.3.5]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: w, type: window, in: {x: x}, settings: {window: 4s, min_good: 0.25}, out: {mean: mean, slope: slope}}
 calls:

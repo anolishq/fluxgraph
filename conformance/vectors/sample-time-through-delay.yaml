@@ -1,0 +1,15 @@
+# 3.7: a delay's output carries the sample time of what it gives. The
+# window takes only new samples: one for the write at 0 s and one for the
+# write at 3 s, each a tick late, and none for the ticks the value stood.
+rules: [3.7, 7.3.7, A.delay]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: d, type: delay, in: {x: x}}
+  - {id: w, type: window, in: {x: d.y}, settings: {window: 3s, min_good: 0.3, only_new: true}, out: {mean: mean, count: count}}
+calls:
+  - {x: 4, mean: not_ready, count: 0}
+  - {mean: {u: 4}, count: 1}       # two ticks of three have run
+  - {mean: 4, count: 1}
+  - {x: 8, mean: 4, count: 1}
+  - {mean: 8, count: 1}

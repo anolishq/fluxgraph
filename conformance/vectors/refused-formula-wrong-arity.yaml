@@ -1,7 +1,7 @@
 # Appendix A: refused: a function with the wrong number of arguments.
 rules: [A.formula]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: f, type: formula, in: {x: x}, settings: {expr: "min(x)"}}
 expect: compile_error

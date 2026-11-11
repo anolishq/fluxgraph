@@ -2,7 +2,7 @@
 # A condition that is not usable gives its own state.
 rules: [7.1.3]
 period: 1s
-inputs: {c: {type: boolean}, a: {}, b: {}}
+inputs: {c: {type: boolean, max_age: none}, a: {max_age: none}, b: {max_age: none}}
 blocks:
   - {id: f, type: formula, in: {c: c, a: a, b: b}, settings: {expr: "when(c, a, b)"}, out: {y: y}}
 calls:

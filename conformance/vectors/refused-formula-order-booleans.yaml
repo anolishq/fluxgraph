@@ -1,7 +1,7 @@
 # Appendix A: refused: < between booleans.
 rules: [A.formula]
 period: 1s
-inputs: {b: {type: boolean}, c: {type: boolean}}
+inputs: {b: {type: boolean, max_age: none}, c: {type: boolean, max_age: none}}
 blocks:
   - {id: f, type: formula, in: {b: b, c: c}, settings: {expr: "b < c"}}
 expect: compile_error

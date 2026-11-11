@@ -1,7 +1,7 @@
 # Appendix A: refused: a number starting with a point.
 rules: [A.formula]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: f, type: formula, in: {x: x}, settings: {expr: "x + .5"}}
 expect: compile_error

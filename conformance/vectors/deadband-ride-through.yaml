@@ -1,9 +1,9 @@
-# 7.4.2: with an unusable input a holder gives what it holds, uncertain,
-# while the last usable input was no more than ride_through ago. After that,
-# and when it holds nothing, the input's state.
-rules: [7.4.2]
+# 7.4.3, 7.4.4: with an unusable input a deadband gives what it holds,
+# uncertain, while the last usable input was no more than ride_through ago.
+# Past that it forgets.
+rules: [7.4.3, 7.4.4]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: d, type: deadband, in: {x: x}, settings: {step: 1, ride_through: 2s}, out: {y: y}}
 calls:
@@ -11,6 +11,9 @@ calls:
   - {x: 5, y: 5}
   - {x: bad, y: {u: 5}}
   - {x: not_ready, y: {u: 5}}       # 2 s ago
-  - {x: bad, y: bad}                # 3 s ago
+  - {x: 5.5, y: 5}                  # back within ride_through: still holding 5
+  - {x: bad, y: {u: 5}}
+  - {x: bad, y: {u: 5}}
+  - {x: bad, y: bad}                # 3 s ago: forgotten
   - {x: not_ready, y: not_ready}
-  - {x: 5.5, y: 5}
+  - {x: 5.5, y: 5.5}                # a first input

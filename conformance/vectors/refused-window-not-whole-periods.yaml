@@ -1,7 +1,7 @@
 # 6.2: refused: a counted length of time that is not a whole number of periods.
 rules: [6.2]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: w, type: window, in: {x: x}, settings: {window: 2500ms}}
 expect: compile_error

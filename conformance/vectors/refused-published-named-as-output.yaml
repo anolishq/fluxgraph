@@ -1,0 +1,9 @@
+# 9.2: refused: a published signal with the name of another block's output.
+rules: [9.2]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}}
+  - {id: g, type: formula, in: {x: x}, settings: {expr: "x + 2"}, out: {y: f.y}}
+expect: compile_error
+error_mentions: [f.y]

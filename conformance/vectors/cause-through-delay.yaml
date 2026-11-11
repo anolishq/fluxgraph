@@ -1,0 +1,19 @@
+# 3.8, 7.4.7, 7.4.8: an uncertain value carries the tick of its cause, and a
+# delay gives it with the value. x is uncertain at tick 0; the delay gives
+# it at tick 2; the low-pass counts settle, 5 ticks, from tick 0, and its
+# own output carries that cause on to the next, which counts from tick 0
+# too. a = 0.5.
+rules: [3.8, 7.4.7, 7.4.8, A.delay]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: d, type: delay, in: {x: x}, settings: {ticks: 2, initial: 0}}
+  - {id: f, type: lowpass, in: {x: d.y}, settings: {tau: 1.4426950408889634s, settle: 5s}, out: {y: y}}
+  - {id: g, type: lowpass, in: {x: f.y}, settings: {tau: 1.4426950408889634s, settle: 5s}, out: {y: z}}
+calls:
+  - {x: {v: 8, state: uncertain}, y: 0, z: 0}
+  - {x: 8, y: 0, z: 0}
+  - {x: 8, y: {u: 4}, z: {u: 2}}
+  - {x: 8, y: {u: 6}, z: {u: 4}}
+  - {x: 8, y: {u: 7}, z: {u: 5.5}}
+  - {x: 8, y: 7.5, z: 6.5}          # 5 ticks from tick 0, for both

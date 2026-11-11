@@ -1,7 +1,7 @@
 # 9.4: refused: a missing required setting.
 rules: [9.4]
 period: 1s
-inputs: {x: {type: boolean}}
+inputs: {x: {type: boolean, max_age: none}}
 blocks:
   - {id: h, type: held_for, in: {x: x}, settings: {time: 2s}}
 expect: compile_error

@@ -1,7 +1,7 @@
 # 9.3: refused: a length of time without a unit.
 rules: [9.3]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: w, type: window, in: {x: x}, settings: {window: 2}}
 expect: compile_error

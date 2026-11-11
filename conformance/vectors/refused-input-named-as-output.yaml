@@ -1,0 +1,8 @@
+# 9.2: refused: an input with the name of a block's output.
+rules: [9.2]
+period: 1s
+inputs: {f.y: {max_age: none}, x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}}
+expect: compile_error
+error_mentions: [f.y]

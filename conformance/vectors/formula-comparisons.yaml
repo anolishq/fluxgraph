@@ -1,7 +1,7 @@
 # Appendix A: the six comparisons.
 rules: [A.formula]
 period: 1s
-inputs: {x: {}, y: {}}
+inputs: {x: {max_age: none}, y: {max_age: none}}
 blocks:
   - {id: lt, type: formula, in: {x: x, y: y}, settings: {expr: "x < y"}, out: {y: lt}}
   - {id: le, type: formula, in: {x: x, y: y}, settings: {expr: "x <= y"}, out: {y: le}}

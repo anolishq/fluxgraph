@@ -1,7 +1,7 @@
 # 9.1: refused: a signal that is neither an input nor a block's output.
 rules: [9.1]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: f, type: formula, in: {x: pressure}, settings: {expr: "x + 1"}}
 expect: compile_error

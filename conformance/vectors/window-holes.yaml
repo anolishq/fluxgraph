@@ -3,7 +3,7 @@
 # own tick.
 rules: [7.3.1, 7.3.2, 7.3.3, 7.3.4, 7.3.6]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: w, type: window, in: {x: x}, settings: {window: 4s, min_good: 0.5}, out: {mean: mean, slope: slope, count: count}}
 calls:

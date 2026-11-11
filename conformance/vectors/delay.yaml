@@ -3,7 +3,7 @@
 # not_ready without one.
 rules: [A.delay, 4.4]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: d, type: delay, in: {x: x}, settings: {ticks: 2}, out: {y: d}}
   - {id: e, type: delay, in: {x: x}, settings: {ticks: 2, initial: 9}, out: {y: e}}

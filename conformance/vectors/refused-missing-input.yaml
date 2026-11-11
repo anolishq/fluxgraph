@@ -1,7 +1,7 @@
 # 9.4: refused: a required input left unconnected.
 rules: [9.4]
 period: 1s
-inputs: {x: {type: boolean}}
+inputs: {x: {type: boolean, max_age: none}}
 blocks:
   - {id: l, type: latch, in: {reset: x}}
 expect: compile_error

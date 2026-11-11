@@ -2,7 +2,7 @@
 # hold_limit, and the output is uncertain. The time can run out meanwhile.
 rules: [7.6.1]
 period: 1s
-inputs: {x: {type: boolean}}
+inputs: {x: {type: boolean, max_age: none}}
 blocks:
   - {id: h3, type: held_for, in: {x: x}, settings: {time: 3s, on_bad: hold, hold_limit: 2s}, out: {y: a}}
   - {id: h2, type: held_for, in: {x: x}, settings: {time: 2s, on_bad: hold, hold_limit: 3s}, out: {y: b}}

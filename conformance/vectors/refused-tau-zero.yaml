@@ -1,7 +1,7 @@
 # A: refused: a time constant of zero.
 rules: [A]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: f, type: lowpass, in: {x: x}, settings: {tau: 0s}}
 expect: compile_error

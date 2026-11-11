@@ -1,0 +1,18 @@
+# 7.9.3: with use_uncertain an uncertain measurement is considered. Tick 0
+# does not predict: innovation 2, spread 2, gain 0.5.
+rules: [7.9.3]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: state_space, A: [[1]], B: [0], C: [1]}
+      q: {x0: 0}
+      p0: {x0: 1}
+      measure: {z: {of: x0, r: 1}}
+      use_uncertain: true
+    out: {x0: x, sigma_x0: sigma}
+calls:
+  - {u: 0, z: {v: 2, state: uncertain}, x: 1, sigma: 0.7071067811865476}

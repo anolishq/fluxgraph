@@ -1,7 +1,7 @@
 # Appendix A: refused: a name that is not an input.
 rules: [A.formula]
 period: 1s
-inputs: {x: {}}
+inputs: {x: {max_age: none}}
 blocks:
   - {id: f, type: formula, in: {x: x}, settings: {expr: "x + offset"}}
 expect: compile_error

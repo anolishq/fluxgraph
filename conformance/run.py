@@ -11,6 +11,7 @@ A vector is a YAML file:
 
   rules: [7.2.2]             the rules of the proposal it tests
   period: 1s
+  max_catch_up: 3            optional, as in section 9
   inputs: {x: {max_age: 5s}} as in section 9 of the proposal
   blocks: [...]              as in section 9 of the proposal
   calls:                     one row per call the host makes to tick(now)
@@ -87,7 +88,7 @@ def differs(have, want):
 def run(path):
     """-> (calls, comparisons, list of differences)."""
     doc = yaml.safe_load(path.read_text())
-    graph = {k: doc[k] for k in ("period", "inputs", "blocks") if k in doc}
+    graph = {k: doc[k] for k in ("period", "max_catch_up", "inputs", "blocks") if k in doc}
     for key in doc.get("graph_extra", {}):  # a vector may add a deliberately unknown key
         graph[key] = doc["graph_extra"][key]
 

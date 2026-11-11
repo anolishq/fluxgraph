@@ -1,7 +1,7 @@
 # A, 7.6.1: refused: on_bad: hold without hold_limit.
 rules: [A, 7.6.1]
 period: 1s
-inputs: {x: {type: boolean}}
+inputs: {x: {type: boolean, max_age: none}}
 blocks:
   - {id: h, type: held_for, in: {x: x}, settings: {time: 2s, on_bad: hold}}
 expect: compile_error
