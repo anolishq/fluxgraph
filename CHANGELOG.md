@@ -35,8 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type, so a malformed file loaded as an empty graph or with action-less rules.
   These inputs loaded before and now fail with a path-qualified error:
   - a top-level `signals`, `models`, `edges` or `rules` key that is present but
-    not an array (JSON) / sequence (YAML) or null; a null section, such as a
-    bare `rules:`, loads as empty, as before
+    neither an array (JSON) / sequence (YAML) nor null; a null section, such as
+    a bare `rules:`, loads as empty, as before
   - a JSON root that is not an object (an array, a scalar, `null`)
   - a YAML root that is not a map, including a null document: `~`, `null`, a
     bare `---`, or a lone `...` (yaml-cpp reads each as one document with null

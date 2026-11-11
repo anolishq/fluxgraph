@@ -289,11 +289,14 @@ RuleSpec parse_rule(const YAML::Node &node, size_t index) {
     return spec;
 }
 
-// Returns root[key] (an invalid node when absent). A key with no value (`rules:`) or
-// `~` / `null` is a null node, read as an empty section. Throws when present, not null
-// and not a sequence.
+// Returns root[key] (an invalid node when absent). A key with no value (`rules:`),
+// `~`, `null` or an explicitly tagged `!!null` is read as an empty section; yaml-cpp
+// reports the tagged form as a scalar. Throws when present, not null and not a sequence.
 YAML::Node optional_sequence(const YAML::Node &root, const char *key) {
     const YAML::Node node = root[key];
+    if (node && node.IsScalar() && node.Tag() == "tag:yaml.org,2002:null") {
+        return YAML::Node(YAML::NodeType::Null);
+    }
     if (node && !node.IsNull() && !node.IsSequence()) {
         throw std::runtime_error(std::string("YAML parse error at /") + key + ": Expected sequence");
     }

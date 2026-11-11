@@ -360,6 +360,11 @@ TEST(YamlLoaderTest, ReadsNullSectionAsEmpty) {
     EXPECT_TRUE(spec.models.empty());
     EXPECT_TRUE(spec.edges.empty());
     EXPECT_TRUE(spec.rules.empty());
+
+    // yaml-cpp reports an explicitly tagged null as a scalar.
+    const auto tagged = load_yaml_string("signals: !!null\nrules: !!null ''\n");
+    EXPECT_TRUE(tagged.signals.empty());
+    EXPECT_TRUE(tagged.rules.empty());
 }
 
 // A rule's actions are required: a key with no value is not read as empty.
