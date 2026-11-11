@@ -1,0 +1,11 @@
+period_ms: 2500
+blocks:
+- id: b
+  type: since_true
+  in:
+    x: in/dev/x
+  params:
+    longer_than_s: 30
+  publish:
+    y:
+      signal: out/y

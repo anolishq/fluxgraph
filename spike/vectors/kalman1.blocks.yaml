@@ -1,0 +1,16 @@
+period_ms: 2500
+blocks:
+- id: b
+  type: kalman1
+  in:
+    z: in/dev/z
+    steady: in/dev/steady
+  params:
+    tau_s: 600
+    q: 1.0e-06
+    r: 0.0025
+  publish:
+    x:
+      signal: out/x
+    sigma:
+      signal: out/sigma

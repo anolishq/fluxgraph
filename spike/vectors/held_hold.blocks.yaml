@@ -1,0 +1,12 @@
+period_ms: 2500
+blocks:
+- id: b
+  type: held_for
+  in:
+    x: in/dev/x
+  params:
+    seconds: 50
+    on_bad: hold
+  publish:
+    y:
+      signal: out/y

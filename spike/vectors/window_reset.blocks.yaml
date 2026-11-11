@@ -1,0 +1,16 @@
+period_ms: 2500
+blocks:
+- id: b
+  type: window_stats
+  in:
+    x: in/dev/x
+  params:
+    window: 25s
+    on_bad: reset
+  publish:
+    mean:
+      signal: out/mean
+    slope_per_min:
+      signal: out/slope_per_min
+    spread:
+      signal: out/spread

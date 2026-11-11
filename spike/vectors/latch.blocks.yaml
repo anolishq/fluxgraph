@@ -1,0 +1,10 @@
+period_ms: 2500
+blocks:
+- id: b
+  type: latch
+  in:
+    set: in/dev/set
+  params: {}
+  publish:
+    y:
+      signal: out/y

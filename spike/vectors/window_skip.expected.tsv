@@ -1,0 +1,181 @@
+tick	signal	state	value
+0	out/mean	not_ready	
+0	out/slope_per_min	not_ready	
+0	out/spread	not_ready	
+1	out/mean	not_ready	
+1	out/slope_per_min	not_ready	
+1	out/spread	not_ready	
+2	out/mean	not_ready	
+2	out/slope_per_min	not_ready	
+2	out/spread	not_ready	
+3	out/mean	not_ready	
+3	out/slope_per_min	not_ready	
+3	out/spread	not_ready	
+4	out/mean	not_ready	
+4	out/slope_per_min	not_ready	
+4	out/spread	not_ready	
+5	out/mean	not_ready	
+5	out/slope_per_min	not_ready	
+5	out/spread	not_ready	
+6	out/mean	not_ready	
+6	out/slope_per_min	not_ready	
+6	out/spread	not_ready	
+7	out/mean	not_ready	
+7	out/slope_per_min	not_ready	
+7	out/spread	not_ready	
+8	out/mean	not_ready	
+8	out/slope_per_min	not_ready	
+8	out/spread	not_ready	
+9	out/mean	good	20.45
+9	out/slope_per_min	good	2.399999999999998
+9	out/spread	good	0.8999999999999986
+10	out/mean	good	20.55
+10	out/slope_per_min	good	2.399999999999998
+10	out/spread	good	0.8999999999999986
+11	out/mean	good	20.65
+11	out/slope_per_min	good	2.400000000000002
+11	out/spread	good	0.9000000000000021
+12	out/mean	good	18.81
+12	out/slope_per_min	good	-22.996363636363636
+12	out/spread	good	19.3
+13	out/mean	good	18.91
+13	out/slope_per_min	good	-17.352727272727268
+13	out/spread	good	19.5
+14	out/mean	good	19.009999999999998
+14	out/slope_per_min	good	-11.709090909090914
+14	out/spread	good	19.599999999999998
+15	out/mean	good	19.11
+15	out/slope_per_min	good	-6.065454545454547
+15	out/spread	good	19.7
+16	out/mean	good	19.21
+16	out/slope_per_min	good	-0.421818181818181
+16	out/spread	good	19.8
+17	out/mean	good	19.31
+17	out/slope_per_min	good	5.221818181818183
+17	out/spread	good	19.9
+18	out/mean	good	19.41
+18	out/slope_per_min	good	10.865454545454547
+18	out/spread	good	20.0
+19	out/mean	good	19.509999999999998
+19	out/slope_per_min	good	16.509090909090908
+19	out/spread	good	20.099999999999998
+20	out/mean	good	19.509999999999998
+20	out/slope_per_min	good	16.509090909090908
+20	out/spread	good	20.099999999999998
+21	out/mean	good	19.619999999999997
+21	out/slope_per_min	good	20.54025974025974
+21	out/spread	good	20.3
+22	out/mean	good	19.73
+22	out/slope_per_min	good	24.261338661338662
+22	out/spread	good	20.4
+23	out/mean	good	21.78
+23	out/slope_per_min	good	2.400000000000001
+23	out/spread	good	1.0
+24	out/mean	good	21.89
+24	out/slope_per_min	good	2.3999999999999995
+24	out/spread	good	1.0
+25	out/mean	good	22.0
+25	out/slope_per_min	good	2.399999999999998
+25	out/spread	good	1.0
+26	out/mean	good	22.11
+26	out/slope_per_min	good	2.4
+26	out/spread	good	1.0
+27	out/mean	good	22.22
+27	out/slope_per_min	good	2.400000000000001
+27	out/spread	good	1.0
+28	out/mean	good	22.330000000000002
+28	out/slope_per_min	good	2.4000000000000004
+28	out/spread	good	1.0
+29	out/mean	good	22.44
+29	out/slope_per_min	good	2.4
+29	out/spread	good	1.0
+30	out/mean	good	22.44
+30	out/slope_per_min	good	2.4
+30	out/spread	good	1.0
+31	out/mean	good	22.44
+31	out/slope_per_min	good	2.4
+31	out/spread	good	1.0
+32	out/mean	good	22.44
+32	out/slope_per_min	good	2.4
+32	out/spread	good	1.0
+33	out/mean	good	22.44
+33	out/slope_per_min	good	2.4
+33	out/spread	good	1.0
+34	out/mean	good	22.44
+34	out/slope_per_min	good	2.4
+34	out/spread	good	1.0
+35	out/mean	good	22.44
+35	out/slope_per_min	good	2.4
+35	out/spread	good	1.0
+36	out/mean	good	22.61
+36	out/slope_per_min	good	2.4000000000000012
+36	out/spread	good	1.5
+37	out/mean	good	22.77
+37	out/slope_per_min	good	2.4000000000000004
+37	out/spread	good	1.5
+38	out/mean	good	22.93
+38	out/slope_per_min	good	2.4000000000000012
+38	out/spread	good	1.5
+39	out/mean	good	23.09
+39	out/slope_per_min	good	2.4000000000000004
+39	out/spread	good	1.5
+40	out/mean	good	23.25
+40	out/slope_per_min	good	2.3999999999999995
+40	out/spread	good	1.5
+41	out/mean	good	23.41
+41	out/slope_per_min	good	2.4000000000000004
+41	out/spread	good	1.5
+42	out/mean	good	23.57
+42	out/slope_per_min	good	2.4000000000000012
+42	out/spread	good	1.5
+43	out/mean	good	23.73
+43	out/slope_per_min	good	2.4000000000000004
+43	out/spread	good	1.5
+44	out/mean	good	23.73
+44	out/slope_per_min	good	2.4000000000000004
+44	out/spread	good	1.5
+45	out/mean	good	23.73
+45	out/slope_per_min	good	2.4000000000000004
+45	out/spread	good	1.5
+46	out/mean	good	23.73
+46	out/slope_per_min	good	2.4000000000000004
+46	out/spread	good	1.5
+47	out/mean	good	23.919999999999998
+47	out/slope_per_min	good	2.4000000000000012
+47	out/spread	good	1.8000000000000007
+48	out/mean	good	24.11
+48	out/slope_per_min	good	2.4
+48	out/spread	good	1.1999999999999993
+49	out/mean	good	24.240000000000002
+49	out/slope_per_min	good	2.399999999999999
+49	out/spread	good	1.1999999999999993
+50	out/mean	good	24.369999999999997
+50	out/slope_per_min	good	2.399999999999999
+50	out/spread	good	1.1999999999999993
+51	out/mean	good	24.5
+51	out/slope_per_min	good	2.4000000000000012
+51	out/spread	good	1.2000000000000028
+52	out/mean	good	24.630000000000003
+52	out/slope_per_min	good	2.399999999999999
+52	out/spread	good	1.1999999999999993
+53	out/mean	good	24.759999999999998
+53	out/slope_per_min	good	2.3999999999999995
+53	out/spread	good	1.1999999999999993
+54	out/mean	good	24.89
+54	out/slope_per_min	good	2.3999999999999995
+54	out/spread	good	1.1999999999999993
+55	out/mean	good	25.02
+55	out/slope_per_min	good	2.399999999999999
+55	out/spread	good	1.1999999999999993
+56	out/mean	good	25.15
+56	out/slope_per_min	good	2.400000000000002
+56	out/spread	good	0.9000000000000021
+57	out/mean	good	25.25
+57	out/slope_per_min	good	2.4000000000000004
+57	out/spread	good	0.8999999999999986
+58	out/mean	good	25.35
+58	out/slope_per_min	good	2.400000000000002
+58	out/spread	good	0.9000000000000021
+59	out/mean	good	25.45
+59	out/slope_per_min	good	2.399999999999998
+59	out/spread	good	0.8999999999999986

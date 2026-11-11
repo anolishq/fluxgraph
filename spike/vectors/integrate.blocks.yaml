@@ -1,0 +1,12 @@
+period_ms: 2500
+blocks:
+- id: b
+  type: integrate
+  in:
+    x: in/dev/x
+  params:
+    per: 1h
+    on_bad: skip
+  publish:
+    y:
+      signal: out/y

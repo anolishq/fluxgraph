@@ -1,0 +1,11 @@
+period_ms: 2500
+blocks:
+- id: b
+  type: median
+  in:
+    x: in/dev/x
+  params:
+    samples: 3
+  publish:
+    y:
+      signal: out/y
