@@ -1,0 +1,9 @@
+# 9.3: an unknown key at the top of a graph is refused.
+rules: [9.3]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: a, type: formula, in: {x: x}, settings: {expr: x + 1}, out: {y: y}}
+graph_extra: {blokcs: []}
+expect: compile_error
+error_mentions: [blokcs]

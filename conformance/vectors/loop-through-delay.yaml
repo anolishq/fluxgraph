@@ -1,0 +1,11 @@
+# 5.3: a loop that passes through a delay is accepted. This one counts.
+rules: [5.3, 4.2]
+period: 1s
+blocks:
+  - {id: prev, type: delay, in: {x: n}, settings: {initial: 0}}
+  - {id: add, type: formula, in: {p: prev.y}, settings: {expr: p + 1}, out: {y: n}}
+ticks:
+  - {n: 1}
+  - {n: 2}
+  - {n: 3}
+  - {n: 4}

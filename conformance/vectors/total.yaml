@@ -1,0 +1,13 @@
+# 7.4: a total adds its input times the period where the input is usable, and
+# counts the time where it is not. Both outputs are always good.
+rules: [7.4]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: t, type: total, in: {x: x}, out: {y: sum, missed: missed}}
+ticks:
+  - {x: 2, sum: 2, missed: 0}
+  - {x: 3, sum: 5, missed: 0}
+  - {x: bad, sum: 5, missed: 1}
+  - {x: not_ready, sum: 5, missed: 2}
+  - {x: 1, sum: 6, missed: 2}

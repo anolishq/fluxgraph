@@ -1,0 +1,13 @@
+# 7.3.3: false until the input is first true. An unusable input does not set it.
+rules: [7.3.3]
+period: 1s
+inputs: {s: {}}
+blocks:
+  - {id: l, type: latch, in: {set: s}, out: {y: y}}
+ticks:
+  - {s: 0, y: false}
+  - {s: bad, y: false}
+  - {s: not_ready, y: false}
+  - {s: 1, y: true}
+  - {s: 0, y: true}
+  - {s: bad, y: true}

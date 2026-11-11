@@ -1,0 +1,18 @@
+# 7.3.1: true once the input has been true for longer than 3 s. With reset, an
+# unusable input stops the timer and the output takes the input's state.
+rules: [7.3.1]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: h, type: held_for, in: {x: x}, settings: {time: 3s, on_bad: reset}, out: {y: y}}
+ticks:
+  - {x: 0, y: false}
+  - {x: 1, y: false}                # true for 0 s
+  - {x: 1, y: false}
+  - {x: 1, y: false}
+  - {x: 1, y: false}                # 3 s: not longer than 3 s
+  - {x: 1, y: true}
+  - {x: bad, y: bad}
+  - {x: 1, y: false}                # the timer starts again
+  - {x: 1, y: false}
+  - {x: 0, y: false}

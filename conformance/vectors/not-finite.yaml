@@ -1,0 +1,12 @@
+# 7.1.4: a division by zero is bad. 7.7: an input that is not finite is unusable.
+rules: [7.1.4, 7.7]
+period: 1s
+inputs: {a: {}, b: {}}
+blocks:
+  - {id: q, type: formula, in: {a: a, b: b}, settings: {expr: a / b}, out: {y: y}}
+ticks:
+  - {a: 6, b: 3, y: 2}
+  - {a: 1, b: 0, y: bad}
+  - {a: .inf, b: 1, y: bad}
+  - {a: .nan, b: 1, y: bad}
+  - {a: 8, b: 4, y: 2}

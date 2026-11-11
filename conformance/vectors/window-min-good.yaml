@@ -1,0 +1,22 @@
+# 7.2.2: with min_good 0.75, three usable samples of four are enough, during
+# warm-up and across a gap. The statistics are of the usable samples only.
+rules: [7.2.2, 7.2.3]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - id: w
+    type: window
+    in: {x: x}
+    settings: {window: 4s, min_good: 0.75}
+    out: {mean: mean, median: median, spread: spread, slope: slope}
+ticks:
+  - {x: 1, mean: not_ready}
+  - {x: 2, mean: not_ready}
+  - {x: 3, mean: 2, median: 2, spread: 2, slope: 1}
+  - {x: 4, mean: 2.5, median: 2.5, spread: 3, slope: 1}
+  - {x: 5, mean: 3.5, median: 3.5, spread: 3, slope: 1}
+  - {x: bad, mean: 4, median: 4, spread: 2, slope: 1}                  # 3, 4, 5
+  - {x: 7, mean: 5.333333333333333, median: 5, spread: 3, slope: 1}    # 4, 5, 7
+  - {x: bad, mean: bad, median: bad, spread: bad, slope: bad}          # 5, 7: two of four
+  - {x: 9, mean: bad}                                                  # 7, 9
+  - {x: 10, mean: 8.666666666666666, median: 9, spread: 3, slope: 1}   # 7, 9, 10

@@ -1,0 +1,12 @@
+# all_good is true when every input is usable, and is always good itself.
+rules: [7.7]
+period: 1s
+inputs: {a: {}, b: {}}
+blocks:
+  - {id: g, type: all_good, in: {a: a, b: b}, out: {y: y}}
+ticks:
+  - {a: 1, y: false}                # b has never been written
+  - {a: 1, b: 2, y: true}
+  - {a: bad, b: 2, y: false}
+  - {a: 1, b: not_ready, y: false}
+  - {a: 0, b: 0, y: true}           # a value of zero is still usable

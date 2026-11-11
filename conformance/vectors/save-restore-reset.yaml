@@ -1,0 +1,15 @@
+# 8: a graph's state can be saved and put back, and a reset returns it to the start.
+rules: [8.1, 8.2, 8.3]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: t, type: total, in: {x: x}, out: {y: sum}}
+ticks:
+  - {x: 2, sum: 2}
+  - {x: 3, sum: 5}
+  - {$save: here}
+  - {x: 4, sum: 9}
+  - {$restore: here}
+  - {x: 1, sum: 6}
+  - {$reset: true}
+  - {x: 1, sum: 1}

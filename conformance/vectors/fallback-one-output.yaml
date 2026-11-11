@@ -1,0 +1,10 @@
+# 7.6: a fallback applies to the output it names and to no other.
+rules: [7.6]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 2s}, fallback: {mean: 0}, out: {mean: mean, spread: spread}}
+ticks:
+  - {x: 1, mean: 0, spread: not_ready}
+  - {x: 3, mean: 2, spread: 2}
+  - {x: bad, mean: 0, spread: bad}

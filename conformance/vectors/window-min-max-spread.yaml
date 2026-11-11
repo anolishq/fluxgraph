@@ -1,0 +1,13 @@
+# 7.2: minimum, maximum and spread of the usable samples, on data that does
+# not only rise.
+rules: [7.2.1]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 3s}, out: {min: low, max: high, spread: spread}}
+ticks:
+  - {x: 3, low: not_ready, high: not_ready, spread: not_ready}
+  - {x: 1, low: not_ready}
+  - {x: 2, low: 1, high: 3, spread: 2}     # 3, 1, 2
+  - {x: 5, low: 1, high: 5, spread: 4}     # 1, 2, 5
+  - {x: 0, low: 0, high: 5, spread: 5}     # 2, 5, 0

@@ -1,0 +1,16 @@
+# 7.2.3: when the window is short of usable samples, its output takes the
+# worst state among the samples that were not usable.
+rules: [7.2.3]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 3s}, out: {mean: mean}}
+ticks:
+  - {x: 1, mean: not_ready}
+  - {x: 2, mean: not_ready}
+  - {x: 3, mean: 2}
+  - {x: not_ready, mean: not_ready}
+  - {x: bad, mean: bad}             # not_ready and bad both in the window
+  - {x: 6, mean: bad}
+  - {x: 7, mean: bad}               # bad, 6, 7
+  - {x: 8, mean: 7}

@@ -1,0 +1,12 @@
+# 5.1: a block is evaluated after every block whose output it reads, whatever
+# order the file lists them in. Nothing lags a tick.
+rules: [5.1, 5.4]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: c, type: formula, in: {b: b_out}, settings: {expr: b + 1}, out: {y: c_out}}
+  - {id: b, type: formula, in: {a: a_out}, settings: {expr: a + 1}, out: {y: b_out}}
+  - {id: a, type: formula, in: {x: x}, settings: {expr: x + 1}, out: {y: a_out}}
+ticks:
+  - {x: 1, c_out: 4}
+  - {x: 5, c_out: 8}

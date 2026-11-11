@@ -1,0 +1,16 @@
+# 7.3.1: with hold, an unusable input leaves the timer running, and it can run
+# out while the input is still unusable.
+rules: [7.3.1]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: h, type: held_for, in: {x: x}, settings: {time: 3s, on_bad: hold}, out: {y: y}}
+ticks:
+  - {x: 1, y: false}
+  - {x: 1, y: false}
+  - {x: bad, y: false}              # 2 s
+  - {x: bad, y: false}              # 3 s
+  - {x: bad, y: true}               # 4 s
+  - {x: 0, y: false}
+  - {x: bad, y: bad}                # the timer is not running
+  - {x: not_ready, y: not_ready}

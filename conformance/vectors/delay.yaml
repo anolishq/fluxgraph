@@ -1,0 +1,16 @@
+# 4.2: a delay gives its input from an earlier tick, state included, and is
+# not_ready until then when it has no initial value.
+rules: [4.2]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: d, type: delay, in: {x: x}, settings: {ticks: 2}, out: {y: y}}
+ticks:
+  - {x: 1, y: not_ready}
+  - {x: 2, y: not_ready}
+  - {x: 3, y: 1}
+  - {x: 4, y: 2}
+  - {x: bad, y: 3}
+  - {x: 6, y: 4}
+  - {x: 7, y: bad}
+  - {x: 8, y: 6}

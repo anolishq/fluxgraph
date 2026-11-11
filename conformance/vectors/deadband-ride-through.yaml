@@ -1,0 +1,14 @@
+# 7.2.6: a holder reports through an unusable stretch for as long as
+# ride_through allows, and only if it has something to report.
+rules: [7.2.6]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: d, type: deadband, in: {x: x}, settings: {step: 0.5, ride_through: 2s}, out: {y: y}}
+ticks:
+  - {x: not_ready, y: not_ready}    # nothing held yet
+  - {x: 10, y: 10}
+  - {x: bad, y: 10}                 # 1 s since a usable sample
+  - {x: bad, y: 10}                 # 2 s
+  - {x: bad, y: bad}                # 3 s
+  - {x: 12, y: 12}

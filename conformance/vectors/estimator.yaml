@@ -1,0 +1,24 @@
+# 7.5: not_ready until the first usable measurement; then good. Without a
+# measurement it predicts and its uncertainty grows; without the model input
+# it keeps its estimate and its uncertainty grows.
+#
+# tau 2 s at a 1 s period gives a = 0.5. q = 0.75, r = 1.
+#   tick 1: x = 10, var = r = 1
+#   tick 2: predict x = 15, var = 0.25 + 0.75 = 1;  k = 1/2;  x = 16, var = 0.5
+#   tick 3: predict x = 18, var = 0.125 + 0.75 = 0.875;  no correction
+#   tick 4: no model: var = 1.625;  k = 1.625/2.625;  x = 18 + k, var = 1.625(1 - k)
+rules: [7.5.1, 7.5.2, 7.5.3]
+period: 1s
+inputs: {z: {}, m: {}}
+blocks:
+  - id: k
+    type: kalman1
+    in: {z: z, model: m}
+    settings: {tau: 2s, q: 0.75, r: 1}
+    out: {x: x, sigma: sigma}
+ticks:
+  - {z: not_ready, m: 20, x: not_ready, sigma: not_ready}
+  - {z: 10, m: 20, x: 10, sigma: 1}
+  - {z: 17, m: 20, x: 16, sigma: 0.7071067811865476}
+  - {z: bad, m: 20, x: 18, sigma: 0.9354143466934853}
+  - {z: 19, m: bad, x: 18.61904761904762, sigma: 0.7867957924694432}

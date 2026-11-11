@@ -1,0 +1,11 @@
+# 7.6: a named value in place of an output that is not good. It is good.
+rules: [7.6]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: d, type: deadband, in: {x: x}, settings: {step: 0.5}, fallback: {y: 25}, out: {y: y}}
+ticks:
+  - {x: not_ready, y: 25}
+  - {x: 10, y: 10}
+  - {x: bad, y: 25}
+  - {x: 10.2, y: 10}

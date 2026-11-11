@@ -1,0 +1,11 @@
+# 7.2.4: a slope needs two samples at different times. With one it is bad,
+# while the other statistics of that one sample are good.
+rules: [7.2.4, 7.2.2]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 2s, min_good: 0.5}, out: {mean: mean, slope: slope}}
+ticks:
+  - {x: 4, mean: 4, slope: bad}
+  - {x: 6, mean: 5, slope: 2}
+  - {x: bad, mean: 6, slope: bad}

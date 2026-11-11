@@ -1,0 +1,15 @@
+# 6.4, 7.7: an input sampled longer ago than its maximum age is unusable.
+rules: [6.4, 7.7]
+period: 1s
+inputs: {x: {max_age: 2s}}
+blocks:
+  - {id: g, type: formula, in: {x: x}, settings: {expr: x + 0}, out: {y: y}}
+ticks:
+  - {x: 4, y: 4}
+  - {y: 4}                        # 1 s old
+  - {y: 4}                        # 2 s old: not longer than the maximum
+  - {y: bad}                      # 3 s old
+  - {x: {v: 9, age: 3s}, y: bad}  # written now, sampled 3 s ago
+  - {x: {v: 9, age: 1s}, y: 9}
+  - {y: 9}                        # 2 s old
+  - {y: bad}

@@ -1,0 +1,17 @@
+# 7.2.5: a holder keeps its output until the input has moved by the step. With
+# ride_through left at zero it stops being good on the same tick as its input,
+# and it keeps what it held.
+rules: [7.2.5, 7.2.6]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - {id: d, type: deadband, in: {x: x}, settings: {step: 0.5}, out: {y: y}}
+ticks:
+  - {x: 10, y: 10}
+  - {x: 10.3, y: 10}
+  - {x: 10.5, y: 10.5}
+  - {x: 10.2, y: 10.5}
+  - {x: bad, y: bad}
+  - {x: 10.1, y: 10.5}              # moved 0.4 from what it held
+  - {x: 9.9, y: 9.9}
+  - {x: not_ready, y: not_ready}

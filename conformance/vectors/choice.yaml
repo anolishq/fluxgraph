@@ -1,0 +1,13 @@
+# 7.1.3: a choice takes the condition's state if that is not good, else the
+# chosen branch. The other branch is not looked at.
+rules: [7.1.3]
+period: 1s
+inputs: {c: {}, a: {}, b: {}}
+blocks:
+  - {id: w, type: formula, in: {c: c, a: a, b: b}, settings: {expr: "when(c, a, b)"}, out: {y: y}}
+ticks:
+  - {c: 1, a: 5, b: bad, y: 5}
+  - {c: 0, a: 5, b: bad, y: bad}
+  - {c: bad, a: 5, b: 6, y: bad}
+  - {c: not_ready, a: 5, b: 6, y: not_ready}
+  - {c: 0, a: bad, b: 7, y: 7}

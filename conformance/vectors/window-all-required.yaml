@@ -1,0 +1,22 @@
+# 7.2: a window is the usable samples of the last four ticks. With min_good
+# left at 1, one unusable sample makes it not good until it has left the window.
+rules: [7.2.1, 7.2.2, 7.2.3]
+period: 1s
+inputs: {x: {}}
+blocks:
+  - id: w
+    type: window
+    in: {x: x}
+    settings: {window: 4s}
+    out: {mean: mean, median: median, spread: spread, slope: slope}
+ticks:
+  - {x: 1, mean: not_ready, median: not_ready, spread: not_ready, slope: not_ready}
+  - {x: 2, mean: not_ready}
+  - {x: 3, mean: not_ready}
+  - {x: 4, mean: 2.5, median: 2.5, spread: 3, slope: 1}
+  - {x: 5, mean: 3.5, median: 3.5, spread: 3, slope: 1}
+  - {x: bad, mean: bad, median: bad, spread: bad, slope: bad}
+  - {x: 7, mean: bad}
+  - {x: 8, mean: bad}
+  - {x: 9, mean: bad}
+  - {x: 10, mean: 8.5, median: 8.5, spread: 3, slope: 1}
