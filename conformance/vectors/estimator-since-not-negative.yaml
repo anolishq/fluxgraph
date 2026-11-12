@@ -11,7 +11,8 @@ blocks:
       model: {type: state_space, A: [[1]], B: [0], C: [1]}
       q: {x0: 0}
       p0: {x0: 1}
-      measure: {z: {of: x0, r: 1}}
+      measure: {z: {of: y, r: 1}}
+      consistency: none
     out: {x0: x, since_z: since}
 calls:
   - {now: 0, u: 0, x: 0, since: not_ready}

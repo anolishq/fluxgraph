@@ -442,7 +442,8 @@ def test_sample_after_tick():
                     "model": {"type": "state_space", "A": [[1]], "B": [0], "C": [1]},
                     "q": {"x0": 1},
                     "p0": {"x0": 4},
-                    "measure": {"z": {"of": "x0", "r": 1}},
+                    "measure": {"z": {"of": "y", "r": 1}},
+                    "consistency": "none",
                 },
                 "out": {"since_z": "since"},
             }
@@ -1966,21 +1967,25 @@ def test_round_three():
     est = {
         "id": "est",
         "type": "estimator",
-        "in": {"u": 0, "z": "plant.y"},
+        "in": {"u": "plant.y", "z": "zz"},
         "settings": {
             "model": {"type": "state_space", "A": [[1]], "B": [0], "C": [1]},
             "q": {"x0": 1},
             "p0": {"x0": 4},
-            "measure": {"z": {"of": "x0", "r": 1}},
+            "measure": {"z": {"of": "y", "r": 1}},
+            "consistency": "none",
         },
     }
-    refused("loop: a model block and an estimator", {"period": "1s", "blocks": [plant("3s", "est.x0"), est]})
+    refused(
+        "loop: a model block and an estimator",
+        {"period": "1s", "inputs": {"zz": {"max_age": "none"}}, "blocks": [plant("3s", "est.x0"), est]},
+    )
     # off the loop it is accepted, and so is an estimator on a loop with
     # no model block
-    Engine({"period": "1s", "blocks": [plant("3s", 1), est]})
-    est2 = dict(est, **{"in": {"u": 0, "z": "d.y"}})
+    Engine({"period": "1s", "inputs": {"zz": {"max_age": "none"}}, "blocks": [plant("3s", 1), est]})
+    est2 = dict(est, **{"in": {"u": "d.y", "z": "zz"}})
     d = {"id": "d", "type": "delay", "in": {"x": "est.x0"}, "settings": {"initial": 0}}
-    Engine({"period": "1s", "blocks": [est2, d]})
+    Engine({"period": "1s", "inputs": {"zz": {"max_age": "none"}}, "blocks": [est2, d]})
 
     # a low-pass on a loop that has settled has no doubt. The setpoint is
     # uncertain at tick 1: the loop's doubt. The plant is uncertain on
@@ -2611,15 +2616,22 @@ def test_gap_round_two():
             "model": {"type": "state_space", "A": [[1]], "B": [0], "C": [1]},
             "q": {"x0": 1},
             "p0": {"x0": 4},
-            "measure": {"z": {"of": "x0", "r": 1}},
+            "measure": {"z": {"of": "y", "r": 1}},
+            "consistency": "none",
         },
     }
-    # round three: by p0 at every gap, none passed over among them
-    for label, away, variance in (("none", (0,), 9.0), ("one", (2 * S,), 9.0), ("unknown", (), 9.0)):
+    # amendment 5, rule 7.9.9: at a rebase the variance grows by p0,
+    # whatever its length; told n, it predicts n times more first (1 each);
+    # then the tick's own predict. With none passed over the tick is good.
+    for label, away, variance, state in (
+        ("none", (0,), 4 + 4 + 1.0, "good"),
+        ("one", (2 * S,), 4 + 1 + 4 + 1.0, "uncertain"),
+        ("unknown", (), 4 + 4 + 1.0, "uncertain"),
+    ):
         e = one_block(est)
         check("g2 est %s 0" % label, put(e, 0)["sigma_x0"], ("good", 2.0))
         e.rebase(*away)
-        check("g2 est %s" % label, put(e, 0)["sigma_x0"], ("good", math.sqrt(variance)))
+        check("g2 est %s" % label, put(e, 0)["sigma_x0"], (state, math.sqrt(variance)))
 
     # a total with max_missed is bad after a gap of no known length, until
     # a reset; nothing is added to `missed`
@@ -3208,16 +3220,23 @@ def test_models_settle_and_names():
     est = {
         "id": "b",
         "type": "estimator",
-        "in": {"u": 0, "z": 0},
+        "in": {"u": 0, "z": "zz"},
         "settings": {
             "model": {"type": "linear", "A": [[5]], "B": [[1]], "C": [[1]]},
             "q": {"x0": 1},
             "p0": {"x0": 1},
-            "measure": {"z": {"of": "x0", "r": 1}},
+            "measure": {"z": {"of": "y", "r": 1}},
+            "consistency": "none",
         },
     }
-    Engine({"period": "100s", "blocks": [est]})
-    refused("grows: an estimator's model", {"period": "200s", "blocks": [est]})
+    Engine({"period": "50s", "inputs": {"zz": {"max_age": "none"}}, "blocks": [est]})
+    refused("grows: an estimator's model", {"period": "200s", "inputs": {"zz": {"max_age": "none"}}, "blocks": [est]})
+    # its process noise grows as the square: (exp(10 T) - 1) / 10 is more
+    # than a double holds at 100 s, where Ad, exp(500), is not
+    refused(
+        "grows: an estimator's process noise",
+        {"period": "100s", "inputs": {"zz": {"max_age": "none"}}, "blocks": [est]},
+    )
     # round three: the bound. The largest sum of the absolute values along
     # a row of A, times the period, may be 100,000 at most. With A of -5:
     # 20,000 s is 100,000 exactly, and is accepted; a decay of exp(-1e5) is
@@ -3266,8 +3285,8 @@ def test_models_settle_and_names():
     refused("bound: a named model", fast("100000000001ns"))
     # and an estimator's model
     est["settings"]["model"]["A"] = [[-5]]
-    Engine({"period": "20000s", "blocks": [est]})
-    refused("bound: an estimator's model", {"period": "20001s", "blocks": [est]})
+    Engine({"period": "20000s", "inputs": {"zz": {"max_age": "none"}}, "blocks": [est]})
+    refused("bound: an estimator's model", {"period": "20001s", "inputs": {"zz": {"max_age": "none"}}, "blocks": [est]})
     # the bound is tried before the size of the step: a model that is both
     # too fast and growing is refused either way
     refused("bound: and grows", grows("1000000s", a=5))
@@ -3319,9 +3338,10 @@ def test_models_settle_and_names():
     refused("motor one input", named("dc_motor", {"voltage": 0}, **mok))
 
     # an estimator: F is the model's Ad. thermal_mass, c 10, h 1: Ad is
-    # exp(-0.1). p0 4, q 1 a second, no measurement: after one predict the
-    # variance is 4 exp(-0.2) + 1. With power 30 and ambient 20 it rests
-    # at 50, and from 80 the state is 50 + 30 exp(-0.1 k) at tick k.
+    # exp(-0.1). p0 4, q 1 a second, no measurement: the process noise
+    # over a step is N = (1 - exp(-0.2)) / 0.2 (amendment 5), and after one
+    # predict the variance is 4 exp(-0.2) + N. With power 30 and ambient 20
+    # it rests at 50, and from 80 the state is 50 + 30 exp(-0.1 k) at tick k.
     est = {
         "id": "est",
         "type": "estimator",
@@ -3331,6 +3351,7 @@ def test_models_settle_and_names():
             "q": {"temp": 1},
             "p0": {"temp": 4},
             "measure": {"z": {"of": "temp", "r": 1}},
+            "consistency": "none",
         },
         "out": {"temp": "temp", "sigma_temp": "sigma"},
     }
@@ -3341,10 +3362,11 @@ def test_models_settle_and_names():
     check("est model sigma 0", o["sigma"], ("good", 2.0))
     o = e.tick(1 * S)[1]
     check("est model temp 1", o["temp"], ("good", 50 + 30 * math.exp(-0.1)))
-    check("est model sigma 1", o["sigma"], ("good", math.sqrt(4 * math.exp(-0.2) + 1)))
+    noise = (1 - math.exp(-0.2)) / 0.2
+    check("est model sigma 1", o["sigma"], ("good", math.sqrt(4 * math.exp(-0.2) + noise)))
     o = e.tick(2 * S)[1]
     check("est model temp 2", o["temp"], ("good", 50 + 30 * math.exp(-0.2)))
-    check("est model sigma 2", o["sigma"], ("good", math.sqrt((4 * math.exp(-0.2) + 1) * math.exp(-0.2) + 1)))
+    check("est model sigma 2", o["sigma"], ("good", math.sqrt((4 * math.exp(-0.2) + noise) * math.exp(-0.2) + noise)))
     est["settings"]["substeps"] = 1
     refused("est substeps is gone", g)
 
@@ -3420,6 +3442,750 @@ def test_models_large_b():
     )
 
 
+def est_engine(settings=None, model=None, ins=None, inputs=("z",), max_catch_up=100, period="1s"):
+    """One estimator, every output published under its port's name. By
+    default a random walk (state_space, A 1, B 0, C 1) with q 1, p0 4 and
+    one measurement z of its output with r 1."""
+    st = {
+        "model": model or {"type": "state_space", "A": [[1]], "B": [0], "C": [1]},
+        "q": {"x0": 1},
+        "p0": {"x0": 4},
+        "measure": {"z": {"of": "y", "r": 1}},
+        "consistency": "none",
+    }
+    st.update(settings or {})
+    st = {k: v for k, v in st.items() if v is not None}
+    blk = {"id": "b", "type": "estimator", "in": ins or {"u": 0, "z": "z"}, "settings": st}
+    g = {
+        "period": period,
+        "max_catch_up": max_catch_up,
+        "inputs": {name: {"max_age": "none"} for name in inputs},
+        "blocks": [blk],
+    }
+    e = Engine(g)
+    blk["out"] = {p: p for p in e._blocks["b"].out_ports}
+    return Engine(g)
+
+
+def est_step(e, now, **writes):
+    """Write each (state, value) given, at `now` seconds, and call."""
+    for name, (state, value) in writes.items():
+        e.write(name, state, value, now * S)
+    return e.tick(now * S)[1]
+
+
+def test_estimator_noise():
+    """Amendment 5, rule 7.9.2: N is the integral of exp(A.s).Q.exp(A'.s)
+    over the period; each closed form here is worked by hand."""
+    from impl import _noise
+
+    def same(label, got, want):
+        for i, row in enumerate(want):
+            for j, w in enumerate(row):
+                check("%s %d%d" % (label, i, j), ("good", got[i][j]), ("good", w))
+
+    exp, sin, cos = math.exp, math.sin, math.cos  # noqa
+    for T, ns_ in ((0.7, 700000000), (1.0, S), (25.0, 25 * S)):
+        # one state: q (exp(2 a T) - 1) / (2 a), and q T where a is zero
+        same("noise decay %g" % T, _noise([[-0.3]], [2.0], ns_), [[2 * (exp(-0.6 * T) - 1) / -0.6]])
+        same("noise walk %g" % T, _noise([[0.0]], [2.0], ns_), [[2 * T]])
+        # two integrators, x0' = x1: exp(A s) is [[1, s], [0, 1]], so the
+        # integrand is [[q0 + q1 s^2, q1 s], [q1 s, q1]]
+        same(
+            "noise chain %g" % T,
+            _noise([[0.0, 1.0], [0.0, 0.0]], [3.0, 5.0], ns_),
+            [[3 * T + 5 * T**3 / 3, 5 * T * T / 2], [5 * T * T / 2, 5 * T]],
+        )
+        # three, noise on the last: with e = (s^2 / 2, s, 1) it is q e e'
+        same(
+            "noise chain3 %g" % T,
+            _noise([[0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]], [0.0, 0.0, 2.0], ns_),
+            [
+                [2 * T**5 / 20, 2 * T**4 / 8, 2 * T**3 / 6],
+                [2 * T**4 / 8, 2 * T**3 / 3, 2 * T * T / 2],
+                [2 * T**3 / 6, 2 * T * T / 2, 2 * T],
+            ],
+        )
+        # a turn at w: noise on the first state alone goes round with it:
+        #   q [[cos^2, cos sin], [cos sin, sin^2]] of w s, integrated
+        w = 2.0
+        same(
+            "noise turn %g" % T,
+            _noise([[0.0, -w], [w, 0.0]], [3.0, 0.0], ns_),
+            [
+                [3 * (T / 2 + sin(2 * w * T) / (4 * w)), 3 * sin(w * T) ** 2 / (2 * w)],
+                [3 * sin(w * T) ** 2 / (2 * w), 3 * (T / 2 - sin(2 * w * T) / (4 * w))],
+            ],
+        )
+        # the same noise on both: it does not turn at all
+        same("noise turn even %g" % T, _noise([[0.0, -w], [w, 0.0]], [3.0, 3.0], ns_), [[3 * T, 0.0], [0.0, 3 * T]])
+        # two decays apart, rates 1 and 100
+        same(
+            "noise apart %g" % T,
+            _noise([[-1.0, 0.0], [0.0, -100.0]], [2.0, 4.0], ns_),
+            [[(1 - exp(-2 * T)), 0.0], [0.0, 4 * (1 - exp(-200 * T)) / 200]],
+        )
+        # a decay driving an integrator: x0' = -a x0, x1' = x0, noise on x0.
+        # exp(A s) is [[e, 0], [(1 - e) / a, 1]] with e = exp(-a s), so
+        #   N00 = q (1 - E^2) / (2 a),  N01 = q (1 - E)^2 / (2 a^2),
+        #   N11 = q (T - 2 (1 - E) / a + (1 - E^2) / (2 a)) / a^2,  E = exp(-a T)
+        a, q = 0.5, 3.0
+        E = exp(-a * T)
+        same(
+            "noise lag %g" % T,
+            _noise([[-a, 0.0], [1.0, 0.0]], [q, 0.0], ns_),
+            [
+                [q * (1 - E * E) / (2 * a), q * (1 - E) ** 2 / (2 * a * a)],
+                [q * (1 - E) ** 2 / (2 * a * a), q * (T - 2 * (1 - E) / a + (1 - E * E) / (2 * a)) / (a * a)],
+            ],
+        )
+
+    # through the engine. Two integrators, p0 2 and 3, q 3 and 5, period
+    # 2 s. After one predict P is Ad P0 Ad' + N with Ad = [[1, 2], [0, 1]]:
+    #   P00 = 2 + 3*4 + (3*2 + 5*8/3), P01 = 3*2 + 5*4/2, P11 = 3 + 5*2
+    chain = {"type": "linear", "A": [[0, 1], [0, 0]], "B": [[0], [1]], "C": [[1, 0]], "states": ["pos", "vel"]}
+    e = est_engine(
+        {"q": {"pos": 3, "vel": 5}, "p0": {"pos": 2, "vel": 3}, "measure": {"z": {"of": "y", "r": 4}}},
+        model=chain,
+        period="2s",
+    )
+    o = est_step(e, 0)
+    check("chain sigma pos 0", o["sigma_pos"], ("good", math.sqrt(2.0)))
+    o = est_step(e, 2)
+    p00, p01, p11 = 2 + 12 + 6 + 40 / 3, 6 + 10.0, 3 + 10.0
+    check("chain sigma pos 1", o["sigma_pos"], ("good", math.sqrt(p00)))
+    check("chain sigma vel 1", o["sigma_vel"], ("good", math.sqrt(p11)))
+    # a measurement of the position at tick 2 shows the covariance between
+    # the two. Predict again: P00' = p00 + 4 p01 + 4 p11 + N00 and so on.
+    q00 = p00 + 4 * p01 + 4 * p11 + 6 + 40 / 3
+    q01 = p01 + 2 * p11 + 10
+    q11 = p11 + 10
+    o = est_step(e, 4, z=("good", 7.0))
+    s_ = q00 + 4
+    check("chain innovation", o["innovation_z"], ("good", 7.0))
+    check("chain nis", o["nis_z"], ("good", 49 / s_))
+    check("chain pos", o["pos"], ("good", q00 / s_ * 7))
+    check("chain vel", o["vel"], ("good", q01 / s_ * 7))
+    check("chain sigma pos 2", o["sigma_pos"], ("good", math.sqrt(q00 - q00 * q00 / s_)))
+    check("chain sigma vel 2", o["sigma_vel"], ("good", math.sqrt(q11 - q01 * q01 / s_)))
+    # state_space is in discrete time: q times the period on the diagonal
+    e = est_engine(period="250ms")
+    est_step(e, 0)
+    check("discrete noise", e.tick(250000000)[1]["sigma_x0"], ("good", math.sqrt(4.25)))
+
+
+def test_estimator_rules():
+    """Amendment 5, rules 7.9.3 to 7.9.9, on a random walk: predict adds 1
+    to the variance, and a measurement with r 1 of a state of variance P
+    has a gain of P / (P + 1)."""
+    # --- the gate and max_refused (rule 5)
+    e = est_engine({"gate": 3, "max_refused": 1})
+    o = est_step(e, 0, z=("good", 0.0))  # P 4, s 5, used: P 0.8
+    check("gate 0 x", o["x0"], ("good", 0.0))
+    check("gate 0 nis", o["nis_z"], ("good", 0.0))
+    # tick 1: P 1.8, s 2.8, innovation 100, more than 3 sqrt(2.8): refused.
+    # Nothing changes but the count, and the tick is uncertain.
+    o = est_step(e, 1, z=("good", 100.0))
+    check("gate 1 x", o["x0"], ("uncertain", 0.0))
+    check("gate 1 sigma", o["sigma_x0"], ("uncertain", math.sqrt(1.8)))
+    check("gate 1 innovation", o["innovation_z"], ("good", 100.0))
+    check("gate 1 nis", o["nis_z"], ("good", 10000 / 2.8))
+    check("gate 1 refused", o["refused_z"], ("good", 1.0))
+    check("gate 1 since", o["since_z"], ("good", 1.0))
+    # round two: max_refused is the most a port refuses in a row. Tick 2:
+    # P 2.8, over the gate again; it would be the second in a row, one more
+    # than max_refused, so it is not refused. The variance grows by p0 to
+    # 6.8, s is 7.8, and it is used. Its nis is the one from before: s 3.8.
+    # It has given in to what it was refusing: the tick is uncertain.
+    o = est_step(e, 2, z=("good", 100.0))
+    x2 = 6.8 / 7.8 * 100
+    check("gate 2 x", o["x0"], ("uncertain", x2))
+    check("gate 2 sigma", o["sigma_x0"], ("uncertain", math.sqrt(6.8 / 7.8)))
+    check("gate 2 nis", o["nis_z"], ("good", 10000 / 3.8))
+    check("gate 2 refused", o["refused_z"], ("good", 1.0))
+    check("gate 2 since", o["since_z"], ("good", 0.0))
+    # tick 3: P 1.87..., innovation 12.8..., more than 3 sqrt(2.87...):
+    # refused, the first of a new run
+    o = est_step(e, 3, z=("good", 100.0))
+    check("gate 3 x", o["x0"], ("uncertain", x2))
+    check("gate 3 refused", o["refused_z"], ("good", 2.0))
+    # tick 4: nothing considered: good, and the run is left as it was
+    o = est_step(e, 4)
+    check("gate 4 x", o["x0"], ("good", x2))
+    check("gate 4 nis", o["nis_z"], ("not_ready", None))
+    # tick 5: P is 6.8 / 7.8 + 3; over the gate, and one more than the one
+    # refused at tick 3: used, with the variance grown by 4
+    o = est_step(e, 5, z=("good", 100.0))
+    p5 = 6.8 / 7.8 + 3 + 4
+    check("gate 5 x", o["x0"], ("uncertain", x2 + p5 / (p5 + 1) * (100 - x2)))
+    check("gate 5 refused", o["refused_z"], ("good", 2.0))
+    check("gate 5 nis", o["nis_z"], ("good", (100 - x2) ** 2 / (p5 - 4 + 1)))
+    # tick 6: within the gate now: used as any other, and good
+    o = est_step(e, 6, z=("good", 100.0))
+    check("gate 6 state", o["x0"][0], "good")
+    check("gate 6 refused", o["refused_z"], ("good", 2.0))
+    # max_refused of 0: it refuses none. The first over the gate is used,
+    # with the variance grown: P 1.8 + 4, s 6.8
+    e = est_engine({"gate": 3, "max_refused": 0})
+    est_step(e, 0, z=("good", 0.0))
+    o = est_step(e, 1, z=("good", 100.0))
+    check("gate m0 1", o["x0"], ("uncertain", 5.8 / 6.8 * 100))
+    check("gate m0 1 refused", o["refused_z"], ("good", 0.0))
+    check("gate m0 1 nis", o["nis_z"], ("good", 10000 / 2.8))
+    # max_refused of 2: two refused, the third used
+    e = est_engine({"gate": 3, "max_refused": 2})
+    est_step(e, 0, z=("good", 0.0))
+    check("gate m2 1", est_step(e, 1, z=("good", 100.0))["refused_z"], ("good", 1.0))
+    check("gate m2 2", est_step(e, 2, z=("good", 100.0))["refused_z"], ("good", 2.0))
+    o = est_step(e, 3, z=("good", 100.0))  # P 3.8 + 4, s 8.8
+    check("gate m2 3", o["x0"], ("uncertain", 7.8 / 8.8 * 100))
+    check("gate m2 3 refused", o["refused_z"], ("good", 2.0))
+    # within the gate it is used, and exactly at it too: P 4, s 5, gate 2:
+    # an innovation of 2 sqrt(5) is not more than that
+    e = est_engine({"gate": 2, "max_refused": 0})
+    check("gate edge", est_step(e, 0, z=("good", 2 * math.sqrt(5.0)))["refused_z"], ("good", 0.0))
+
+    # --- consistency (rule 6): over 2, limit 2
+    e = est_engine({"consistency": {"over": 2, "limit": 2}})
+    o = est_step(e, 0, z=("good", 0.0))  # nis 0; one kept, not yet two
+    check("cons 0", o["x0"], ("good", 0.0))
+    # tick 1: P 1.8, z 3: nis 9 / 2.8 = 3.214; kept 0 and 3.214: mean 1.607
+    o = est_step(e, 1, z=("good", 3.0))
+    x1 = 3 * 1.8 / 2.8
+    check("cons 1", o["x0"], ("good", x1))
+    # tick 2: P 1 + 1.8 / 2.8; z 6: the mean of the last two is over 2
+    p2 = 1 + 1.8 / 2.8
+    n2 = (6 - x1) ** 2 / (p2 + 1)
+    check("cons 2 mean over the limit", (9 / 2.8 + n2) / 2 > 2, True)
+    o = est_step(e, 2, z=("good", 6.0))
+    x2 = x1 + p2 / (p2 + 1) * (6 - x1)
+    check("cons 2", o["x0"], ("uncertain", x2))
+    check("cons 2 nis", o["nis_z"], ("good", n2))
+    check("cons 2 sigma", o["sigma_x0"], ("uncertain", math.sqrt(p2 / (p2 + 1))))
+    # tick 3: nothing considered: it is inconsistent while that is so
+    check("cons 3", est_step(e, 3)["x0"], ("uncertain", x2))
+    # tick 4: z = x, nis 0: kept n2 and 0, mean still over 2
+    check("cons 4 mean", n2 / 2 > 2, True)
+    check("cons 4", est_step(e, 4, z=("good", x2))["x0"], ("uncertain", x2))
+    # tick 5: nis 0 again: kept 0 and 0
+    check("cons 5", est_step(e, 5, z=("good", x2))["x0"], ("good", x2))
+    # a gap does not empty what a port keeps: 0 and 0, then one large one
+    # after a rebase: kept 0 and large
+    e.rebase(0)
+    o = est_step(e, 0, z=("good", x2 + 30))
+    check("cons gap", o["x0"][0], "uncertain")
+    # a reset does: one large one alone is not `over` of them
+    e.reset()
+    check("cons reset", est_step(e, 0, z=("good", 30.0))["x0"][0], "good")
+    # refused ones are among them: gate 3, over 1, limit 5
+    e = est_engine({"gate": 3, "max_refused": 9, "consistency": {"over": 1, "limit": 5}})
+    est_step(e, 0, z=("good", 0.0))
+    check("cons refused 1", est_step(e, 1, z=("good", 100.0))["x0"], ("uncertain", 0.0))
+    # nothing new at tick 2: no refusal at this tick, but still inconsistent
+    check("cons refused 2", est_step(e, 2)["x0"], ("uncertain", 0.0))
+    check("cons refused 3", est_step(e, 3, z=("good", 0.0))["x0"], ("good", 0.0))
+
+    # --- an uncertain measurement (rules 3 and 7): r 1, r_uncertain 4
+    e = est_engine({"measure": {"z": {"of": "y", "r": 1, "r_uncertain": 4}}})
+    o = est_step(e, 0, z=("uncertain", 5.0))  # P 4, s 8, gain 0.5
+    check("unc 0 x", o["x0"], ("uncertain", 2.5))
+    check("unc 0 sigma", o["sigma_x0"], ("uncertain", math.sqrt(2.0)))
+    check("unc 0 innovation", o["innovation_z"], ("good", 5.0))
+    check("unc 0 nis", o["nis_z"], ("good", 25 / 8))
+    # none of it lasts past its tick. Tick 1: P 3, good 2.5: s 4, gain 0.75
+    o = est_step(e, 1, z=("good", 2.5))
+    check("unc 1 x", o["x0"], ("good", 2.5))
+    check("unc 1 sigma", o["sigma_x0"], ("good", math.sqrt(0.75)))
+    # with no r_uncertain it is not considered, and the tick is good
+    e = est_engine()
+    o = est_step(e, 0, z=("uncertain", 5.0))
+    check("unc none x", o["x0"], ("good", 0.0))
+    check("unc none nis", o["nis_z"], ("not_ready", None))
+    # and its sample time is not taken: written again as good with the
+    # same time, 0 s, it is considered at tick 1
+    e.write("z", "good", 5.0, 0)
+    o = e.tick(1 * S)[1]
+    check("unc none 1", o["innovation_z"], ("good", 5.0))
+    # an uncertain one that is refused: uncertain, and counted
+    e = est_engine({"measure": {"z": {"of": "y", "r": 1, "r_uncertain": 4}}, "gate": 1, "max_refused": 3})
+    o = est_step(e, 0, z=("uncertain", 50.0))
+    check("unc refused", o["x0"], ("uncertain", 0.0))
+    check("unc refused count", o["refused_z"], ("good", 1.0))
+
+    # --- the model inputs are deferred (rules 2 and 7): x' = x + u
+    walk = {"type": "state_space", "A": [[1]], "B": [1], "C": [1]}
+    e = est_engine(model=walk, ins={"u": "u", "z": "z"}, inputs=("u", "z"))
+    check("in 0", est_step(e, 0, u=("good", 1.0))["x0"], ("good", 0.0))
+    # tick 1: the step was on a good 1. u is uncertain at tick 1 ...
+    check("in 1", est_step(e, 1, u=("uncertain", 2.0))["x0"], ("good", 1.0))
+    # ... so the step to tick 2, on that 2, makes tick 2 uncertain. u is
+    # unusable at tick 2: the step to tick 3 is on the 2 it last had
+    check("in 2", est_step(e, 2, u=("bad", None))["x0"], ("uncertain", 3.0))
+    check("in 3", est_step(e, 3, u=("good", 10.0))["x0"], ("uncertain", 5.0))
+    check("in 4", est_step(e, 4)["x0"], ("good", 15.0))
+    # an input that has never been usable: no step, the covariance is
+    # P + N, and the tick is uncertain
+    e = est_engine(model=walk, ins={"u": "u", "z": "z"}, inputs=("u", "z"))
+    est_step(e, 0)
+    o = est_step(e, 1, u=("good", 1.0))
+    check("in never x", o["x0"], ("uncertain", 0.0))
+    check("in never sigma", o["sigma_x0"], ("uncertain", math.sqrt(5.0)))
+    check("in never 2", est_step(e, 2)["x0"], ("good", 1.0))
+    # deferred, so a loop through them alone compiles: its own estimate,
+    # through a formula, as its model input
+    g = {
+        "period": "1s",
+        "inputs": {"zz": {"max_age": "none"}},
+        "blocks": [
+            {
+                "id": "b",
+                "type": "estimator",
+                "in": {"u": "f.y", "z": "zz"},
+                "settings": {
+                    "model": walk,
+                    "q": {"x0": 1},
+                    "p0": {"x0": 4},
+                    "measure": {"z": {"of": "y", "r": 1}},
+                    "consistency": "none",
+                },
+            },
+            {"id": "f", "type": "formula", "in": {"x": "b.x0"}, "settings": {"expr": "0 - x"}},
+        ],
+    }
+    Engine(g)
+
+    # --- sigma_max: of that state alone, for as long as it is so
+    e = est_engine({"sigma_max": {"x0": 2.5}})
+    check("smax 0", est_step(e, 0)["sigma_x0"], ("good", 2.0))
+    check("smax 1", est_step(e, 1)["sigma_x0"], ("good", math.sqrt(5.0)))
+    check("smax 2", est_step(e, 2)["sigma_x0"], ("good", math.sqrt(6.0)))
+    o = est_step(e, 3)
+    check("smax 3 sigma", o["sigma_x0"], ("uncertain", math.sqrt(7.0)))
+    check("smax 3 x", o["x0"], ("uncertain", 0.0))
+    o = est_step(e, 4, z=("good", 0.0))  # P 8, s 9: 8 / 9
+    check("smax 4", o["sigma_x0"], ("good", math.sqrt(8.0 / 9)))
+
+    # --- a measurement of an output that is not a state: a motor's torque,
+    # 3 times its current. p0 4 and 1, r 1: c is (3, 0), s = 9*4 + 1 = 37.
+    # The current starts at 1, so a torque of 6 has an innovation of 3.
+    # sigma_max on the speed alone: its sigma of 1 is over 0.5, and the
+    # speed's outputs are uncertain while the current's are good.
+    motor = {
+        "type": "dc_motor",
+        "resistance": 1,
+        "inductance": 1,
+        "back_emf": 1,
+        "torque_constant": 3,
+        "inertia": 1,
+        "friction": 1,
+        "initial_current": 1,
+    }
+    e = est_engine(
+        {
+            "q": {"current": 0, "speed": 0},
+            "p0": {"current": 4, "speed": 1},
+            "measure": {"z": {"of": "torque", "r": 1}},
+            "sigma_max": {"speed": 0.5},
+        },
+        model=motor,
+        ins={"voltage": 0, "load_torque": 0, "z": "z"},
+    )
+    o = est_step(e, 0, z=("good", 6.0))
+    check("torque innovation", o["innovation_z"], ("good", 3.0))
+    check("torque nis", o["nis_z"], ("good", 9 / 37))
+    check("torque current", o["current"], ("good", 1 + 12 / 37 * 3))
+    check("torque speed", o["speed"], ("uncertain", 0.0))
+    check("torque sigma current", o["sigma_current"], ("good", math.sqrt(4 - 144 / 37)))
+    check("torque sigma speed", o["sigma_speed"], ("uncertain", 1.0))
+
+    # --- at a gap (rule 9). A stall that passes over three: it predicts
+    # three times more, and once for the tick: P = 4 + 3 + 1. Uncertain at
+    # that tick and good at the next.
+    e = est_engine(max_catch_up=1)
+    check("gap 0", est_step(e, 0)["sigma_x0"], ("good", 2.0))
+    o = est_step(e, 4)
+    check("gap stall info", e.info, info(True, 4, 4 * S, skipped=3))
+    check("gap stall", o["sigma_x0"], ("uncertain", math.sqrt(8.0)))
+    check("gap stall next", est_step(e, 5)["sigma_x0"], ("good", 3.0))
+    # on the model inputs it last had: x' = x + u, u 2: three steps and one
+    e = est_engine(model=walk, ins={"u": "u", "z": "z"}, inputs=("u", "z"), max_catch_up=1)
+    est_step(e, 0, u=("good", 2.0))
+    check("gap stall inputs", est_step(e, 4)["x0"], ("uncertain", 8.0))
+    # a model in continuous time: a decay at 0.5 a second, q 3. Each
+    # predict is P -> P exp(-1) + 3 (1 - exp(-1)); from 4, twice over
+    decay = {"type": "linear", "A": [[-0.5]], "B": [[1]], "C": [[1]]}
+    f, nn = math.exp(-1.0), 3 * (1 - math.exp(-1.0))
+    e2 = est_engine({"q": {"x0": 3}}, model=decay, max_catch_up=1)
+    est_step(e2, 0)
+    check("gap stall decay", est_step(e2, 2)["sigma_x0"], ("uncertain", math.sqrt((4 * f + nn) * f + nn)))
+
+    # --- what is refused
+    def bad(label, settings=None, **kw):
+        try:
+            est_engine(settings, **kw)
+        except CompileError:
+            check("est refused " + label, True, True)
+            return
+        check("est refused " + label, "accepted", "refused")
+
+    bad("no consistency", {"consistency": None})
+    bad("consistency off", {"consistency": "off"})
+    bad("consistency false", {"consistency": False})
+    bad("consistency no limit", {"consistency": {"over": 5}})
+    bad("consistency no over", {"consistency": {"limit": 2}})
+    bad("consistency over 0", {"consistency": {"over": 0, "limit": 2}})
+    bad("consistency over 2.5", {"consistency": {"over": 2.5, "limit": 2}})
+    bad("consistency limit 0", {"consistency": {"over": 5, "limit": 0}})
+    bad("consistency unknown key", {"consistency": {"over": 5, "limit": 2, "window": 3}})
+    est_engine({"consistency": {"over": 1, "limit": 0.5}})
+    bad("gate with no max_refused", {"gate": 3})
+    bad("max_refused with no gate", {"max_refused": 3})
+    bad("max_refused below zero", {"gate": 3, "max_refused": -1})
+    bad("max_refused not whole", {"gate": 3, "max_refused": 1.5})
+    est_engine({"gate": 0, "max_refused": 0})
+    bad("use_uncertain is gone", {"use_uncertain": True})
+    bad("r_uncertain less than r", {"measure": {"z": {"of": "y", "r": 2, "r_uncertain": 1}}})
+    est_engine({"measure": {"z": {"of": "y", "r": 2, "r_uncertain": 2}}})
+    bad("of a state that is no output", {"measure": {"z": {"of": "x0", "r": 1}}})
+    bad("of nothing", {"measure": {"z": {"r": 1}}})
+    bad("r zero", {"measure": {"z": {"of": "y", "r": 0}}})
+    # a measurement of an output that reads an input directly
+    bad("of an output that reads an input", model={"type": "state_space", "A": [[1]], "B": [0], "C": [1], "D": 1})
+    lin = {"type": "linear", "A": [[0]], "B": [[1]], "C": [[1], [1]], "D": [[0], [2]], "outputs": ["clean", "fed"]}
+    est_engine({"measure": {"z": {"of": "clean", "r": 1}}}, model=lin)
+    bad("of a linear output that reads an input", {"measure": {"z": {"of": "fed", "r": 1}}}, model=lin)
+    # the model inputs are deferred and the measurements direct
+    e = est_engine()
+    check("est deferred", {p: v[2] for p, v in e._blocks["b"].in_ports.items()}, {"u": False, "z": True})
+    check("est nis port", "nis_z" in e._blocks["b"].out_ports, True)
+
+
+def test_estimator_long_gap():
+    """Amendment 5, round two, rule 7.9.9: what is specified at a gap is the
+    result of n predictions, not that they are made one by one."""
+    # a random walk: each prediction adds 1 to the variance. A stall that
+    # passes over a million ticks, and the tick that runs: 4 + 1,000,001
+    e = est_engine(max_catch_up=1)
+    est_step(e, 0)
+    o = est_step(e, 10**6 + 1)
+    check("long gap info", e.info, info(True, 10**6 + 1, (10**6 + 1) * S, skipped=10**6))
+    check("long gap walk", o["sigma_x0"], ("uncertain", math.sqrt(4 + 10**6 + 1.0)))
+    # a decay at 0.5 a second driven by u = 3, q 2, p0 4, from 0. With
+    # a = exp(-0.5): one prediction is x -> a x + 2 (1 - a) u ... the model
+    # rests at u / 0.5 = 6, and N = 2 (1 - a^2). After m predictions:
+    #   x = 6 (1 - a^m),  P = 4 a^(2m) + 2 (1 - a^(2m))
+    decay = {"type": "linear", "A": [[-0.5]], "B": [[1]], "C": [[1]]}
+    for passed in (5, 40, 999):
+        e = est_engine({"q": {"x0": 2}}, model=decay, ins={"u": "u", "z": "z"}, inputs=("u", "z"), max_catch_up=1)
+        est_step(e, 0, u=("good", 3.0))
+        o = est_step(e, passed + 1)
+        m = passed + 1
+        a = math.exp(-0.5)
+        check("long gap decay %d x" % passed, o["x0"], ("uncertain", 6 * (1 - a**m)))
+        check(
+            "long gap decay %d sigma" % passed,
+            o["sigma_x0"],
+            ("uncertain", math.sqrt(4 * a ** (2 * m) + 2 * (1 - a ** (2 * m)))),
+        )
+    # two integrators, u = 1: after m predictions of 1 s each, from rest,
+    # vel = m and pos = m^2 / 2; and with q on vel alone and p0 (2, 3):
+    #   P11 = 3 + q m,  P00 = 2 + 3 m^2 + q m^3 / 3
+    chain = {"type": "linear", "A": [[0, 1], [0, 0]], "B": [[0], [1]], "C": [[1, 0]], "states": ["pos", "vel"]}
+    for passed in (7, 499):
+        e = est_engine(
+            {"q": {"pos": 0, "vel": 5}, "p0": {"pos": 2, "vel": 3}},
+            model=chain,
+            ins={"u": "u", "z": "z"},
+            inputs=("u", "z"),
+            max_catch_up=1,
+        )
+        est_step(e, 0, u=("good", 1.0))
+        o = est_step(e, passed + 1)
+        m = passed + 1
+        check("long gap chain %d pos" % passed, o["pos"], ("uncertain", m * m / 2))
+        check("long gap chain %d vel" % passed, o["vel"], ("uncertain", float(m)))
+        check("long gap chain %d sigma vel" % passed, o["sigma_vel"], ("uncertain", math.sqrt(3 + 5.0 * m)))
+        check(
+            "long gap chain %d sigma pos" % passed,
+            o["sigma_pos"],
+            ("uncertain", math.sqrt(2 + 3.0 * m * m + 5 * m**3 / 3)),
+        )
+    # an input that has never been usable: the state stays, P + N each time
+    walk = {"type": "state_space", "A": [[1]], "B": [1], "C": [1]}
+    e = est_engine(model=walk, ins={"u": "u", "z": "z"}, inputs=("u", "z"), max_catch_up=1)
+    est_step(e, 0)
+    o = est_step(e, 100)
+    check("long gap never x", o["x0"], ("uncertain", 0.0))
+    check("long gap never sigma", o["sigma_x0"], ("uncertain", math.sqrt(4 + 100.0)))
+    # a model block across a long stall: it steps while it rides through,
+    # 3 ticks here, and no further; a million passed over cost nothing
+    mass = {
+        "id": "b",
+        "type": "thermal_mass",
+        "in": {"power": "x", "ambient": 20},
+        "settings": {"thermal_mass": 10, "heat_transfer": 1, "initial": 20, "ride_through": "3s"},
+        "out": {"temp": "temp", "doubtful": "doubtful", "elapsed": "elapsed"},
+    }
+    e = Engine({"period": "1s", "max_catch_up": 1, "inputs": {"x": {"max_age": "none"}}, "blocks": [mass]})
+    e.write("x", "good", 10.0, 0)
+    e.tick(0)
+    o = e.tick((10**6 + 1) * S)[1]
+    check("long gap model temp", o["temp"], ("uncertain", 30 - 10 * math.exp(-0.4)))
+    check("long gap model doubtful", o["doubtful"], ("good", 10.0**6))
+    check("long gap model elapsed", o["elapsed"], ("good", 10.0**6 + 2))
+
+
+def test_estimator_round_three():
+    """Amendment 5, round three."""
+    # rule 7.9.4: the covariance is updated in the form that rounding
+    # cannot bring to nothing. x' = x, q 0, p0 1e16, r 1: the estimate
+    # after n measurements is their mean, with a sigma of 1 / sqrt(n).
+    # (In the short form the variance is exactly zero after the first.)
+    e = est_engine({"q": {"x0": 0}, "p0": {"x0": 1e16}})
+    zs = [11.25, 9.5, 10.75, 8.5, 10.0, 12.25, 9.75, 7.0]
+    for k, z in enumerate(zs):
+        o = est_step(e, k, z=("good", z))
+        check("joseph %d x" % k, o["x0"], ("good", sum(zs[: k + 1]) / (k + 1)))
+        check("joseph %d sigma" % k, o["sigma_x0"], ("good", (k + 1) ** -0.5))
+    # two states: with p0 very large the first measurement of the first
+    # state leaves it a variance of r and the second state untouched
+    chain = {"type": "linear", "A": [[0, 1], [0, 0]], "B": [[0], [1]], "C": [[1, 0]], "states": ["pos", "vel"]}
+    e = est_engine({"q": {"pos": 0, "vel": 0}, "p0": {"pos": 1e16, "vel": 9}}, model=chain)
+    o = est_step(e, 0, z=("good", 5.0))
+    check("joseph chain pos", o["pos"], ("good", 5.0))
+    check("joseph chain sigma pos", o["sigma_pos"], ("good", 1.0))
+    check("joseph chain sigma vel", o["sigma_vel"], ("good", 3.0))
+    # tick 1: Ad = [[1, 1], [0, 1]]: P = [[1 + 9, 9], [9, 9]]; a measurement
+    # of 7: innovation 2, s 11: pos = 5 + 20/11, vel = 18/11;
+    # P00 = 10 - 100/11, P11 = 9 - 81/11
+    o = est_step(e, 1, z=("good", 7.0))
+    check("joseph chain pos 1", o["pos"], ("good", 5 + 20 / 11))
+    check("joseph chain vel 1", o["vel"], ("good", 18 / 11))
+    check("joseph chain sigma pos 1", o["sigma_pos"], ("good", math.sqrt(10 - 100 / 11)))
+    check("joseph chain sigma vel 1", o["sigma_vel"], ("good", math.sqrt(9 - 81 / 11)))
+
+    # rule 7.9.7: after a gap of no known length it is uncertain until a
+    # measurement has been used
+    e = est_engine()
+    check("lost 0", est_step(e, 0, z=("good", 5.0))["x0"], ("good", 4.0))
+    saved = e.save()
+    e.restore(saved)
+    check("lost 1", est_step(e, 0)["x0"], ("uncertain", 4.0))  # the gap's tick
+    check("lost 2", est_step(e, 1)["x0"], ("uncertain", 4.0))  # nothing written
+    check("lost 3", est_step(e, 2)["x0"], ("uncertain", 4.0))
+    # tick 4: P = 0.8 + 1 + 4 + 3 = 8.8; a measurement of 4 is used: good
+    o = est_step(e, 3, z=("good", 4.0))
+    check("lost 4", o["x0"], ("good", 4.0))
+    check("lost 4 sigma", o["sigma_x0"], ("good", math.sqrt(8.8 / 9.8)))
+    check("lost 5", est_step(e, 4)["x0"], ("good", 4.0))
+    # it is part of what a save holds
+    e = est_engine()
+    est_step(e, 0, z=("good", 5.0))
+    e.rebase()
+    est_step(e, 0)
+    saved = e.save()
+    e.reset()
+    e.restore(saved)
+    e.rebase(1 * S)  # a length this time: but none has been used since the first
+    check("lost saved", est_step(e, 0)["x0"][0], "uncertain")
+    # a measurement that is refused does not end it; one taken by rule 5 does
+    e = est_engine({"gate": 3, "max_refused": 1})
+    est_step(e, 0, z=("good", 0.0))
+    e.rebase()
+    check("lost refused", est_step(e, 0, z=("good", 100.0))["x0"][0], "uncertain")  # refused
+    check("lost given in", est_step(e, 1, z=("good", 100.0))["x0"][0], "uncertain")  # used by rule 5
+    # (P was 0.8 + 4 + 1 + 1 + 4 = 10.8 as it gave in: the estimate is at
+    # 10.8 / 11.8 of 100; a measurement there is within the gate)
+    check("lost after", est_step(e, 2, z=("good", 10.8 / 11.8 * 100))["x0"], ("good", 10.8 / 11.8 * 100))
+    # refused at the gap's tick, and nothing written after: still lost
+    e = est_engine({"gate": 3, "max_refused": 5})
+    est_step(e, 0, z=("good", 0.0))
+    e.rebase()
+    check("lost, refused", est_step(e, 0, z=("good", 100.0))["refused_z"], ("good", 1.0))
+    check("lost, refused, next", est_step(e, 1)["x0"], ("uncertain", 0.0))
+    # a gap of known length, and a stall, do not start it
+    e = est_engine(max_catch_up=1)
+    est_step(e, 0, z=("good", 5.0))
+    check("lost stall", est_step(e, 5)["x0"][0], "uncertain")
+    check("lost stall next", est_step(e, 6)["x0"][0], "good")
+    e.rebase(3 * S)
+    check("lost known", est_step(e, 0)["x0"][0], "uncertain")
+    check("lost known next", est_step(e, 1)["x0"][0], "good")
+
+    # rule 7.9.3: where a measurement may be read from
+    def reads(z, blocks=(), inputs=("m", "n")):
+        est = {
+            "id": "est",
+            "type": "estimator",
+            "in": {"u": 0, "z": z},
+            "settings": {
+                "model": {"type": "state_space", "A": [[1]], "B": [0], "C": [1]},
+                "q": {"x0": 1},
+                "p0": {"x0": 4},
+                "measure": {"z": {"of": "y", "r": 1}},
+                "consistency": "none",
+            },
+            "out": {"x0": "x", "nis_z": "nis"},
+        }
+        return {
+            "period": "1s",
+            "inputs": {name: {"max_age": "none"} for name in inputs},
+            "blocks": [est] + list(blocks),
+        }
+
+    def formula(bid, expr, ins, **settings):
+        return {"id": bid, "type": "formula", "in": ins, "settings": dict(settings, expr=expr)}
+
+    delay = {"id": "d", "type": "delay", "in": {"x": "m"}}
+    Engine(reads("m"))
+    Engine(reads("d.y", [delay]))
+    Engine(reads("f.y", [formula("f", "a * 2", {"a": "m"})]))  # one signal input: its time
+    Engine(reads("f.y", [formula("f", "a + b", {"a": "m", "b": "n"}, sample_of="b")]))
+    Engine(reads("f.y", [formula("f", "a + b", {"a": "m", "b": 3})]))  # one signal and a constant
+    # through any number of those
+    chain = [
+        formula("f", "a * 2", {"a": "m"}),
+        {"id": "d", "type": "delay", "in": {"x": "f.y"}, "settings": {"ticks": 2}},
+        formula("g", "a + b", {"a": "d.y", "b": "n"}, sample_of="a"),
+    ]
+    Engine(reads("g.y", chain))
+    # a formula of two signals with no sample_of gives the time of the tick
+    refused("measure: formula of two", reads("f.y", [formula("f", "a + b", {"a": "m", "b": "n"})]))
+    refused("measure: formula of constants", reads("f.y", [formula("f", "a + 1", {"a": 2})]))
+    # ... also further up the chain
+    chain[0] = formula("f", "a + b", {"a": "m", "b": "n"})
+    refused("measure: formula of two, up the chain", reads("g.y", chain))
+    # any other block gives the time of the tick
+    lp = {"id": "lp", "type": "lowpass", "in": {"x": "m"}, "settings": {"tau": "1s"}}
+    refused("measure: a low-pass", reads("lp.y", [lp]))
+    win = {"id": "w", "type": "window", "in": {"x": "m"}, "settings": {"window": "2s"}}
+    refused("measure: a window", reads("w.mean", [win]))
+    mass = {"id": "p", "type": "first_order_process", "in": {"u": "m"}, "settings": {"tau": "1s"}}
+    refused("measure: a model block", reads("p.y", [mass]))
+    refused("measure: a delay of a model block", reads("d.y", [mass, dict(delay, **{"in": {"x": "p.y"}})]))
+    # the sample_of input has to lead to an input too
+    refused(
+        "measure: sample_of a low-pass",
+        reads("f.y", [lp, formula("f", "a + b", {"a": "m", "b": "lp.y"}, sample_of="b")]),
+    )
+    # its own estimate, by a delay: an estimator's outputs have the time of the tick
+    own = {"id": "d", "type": "delay", "in": {"x": "est.x0"}, "settings": {"initial": 0}}
+    refused("measure: its own estimate", reads("d.y", [own]))
+    # a delay that reads itself through a formula never comes from an input
+    loop = [
+        {"id": "d", "type": "delay", "in": {"x": "f.y"}, "settings": {"initial": 0}},
+        formula("f", "a + 1", {"a": "d.y"}),
+    ]
+    refused("measure: a loop of a delay and a formula", reads("d.y", loop))
+    # round four: a constant is refused: it is not a sample of anything
+    refused("measure: a constant", reads(3))
+    # a measurement by a formula is a new sample only when its input is:
+    # written once, it is considered once
+    e = Engine(reads("f.y", [formula("f", "a * 2", {"a": "m"})]))
+    e.write("m", "good", 2.5, 0)
+    check("measure: by a formula 0", e.tick(0)[1]["x"], ("good", 4.0))
+    check("measure: by a formula 1", e.tick(1 * S)[1]["nis"], ("not_ready", None))
+
+
+def test_fallback_sample_time():
+    """Amendment 5, round four, rule 3.7: a value a fallback puts in
+    carries no sample time: it is not a sample of anything."""
+    # an estimator of x' = x, q 0, p0 4, measuring a formula of an input
+    # with a fallback of 7, r 1 and r_uncertain 4. While the input is
+    # unusable the fallback's 7 is never considered: nothing moves.
+    f = {"id": "f", "type": "formula", "in": {"a": "m"}, "settings": {"expr": "a * 1"}, "fallback": {"y": 7}}
+    est = {
+        "id": "est",
+        "type": "estimator",
+        "in": {"u": 0, "z": "f.y"},
+        "settings": {
+            "model": {"type": "state_space", "A": [[1]], "B": [0], "C": [1]},
+            "q": {"x0": 0},
+            "p0": {"x0": 4},
+            "measure": {"z": {"of": "y", "r": 1, "r_uncertain": 4}},
+            "consistency": "none",
+        },
+        "out": {"x0": "x", "nis_z": "nis", "sigma_x0": "sigma"},
+    }
+    e = Engine({"period": "1s", "inputs": {"m": {"max_age": "none"}}, "blocks": [est, f]})
+    for k in range(6):
+        o = e.tick(k * S)[1]
+        check("fb est %d nis" % k, o["nis"], ("not_ready", None))
+        check("fb est %d x" % k, o["x"], ("good", 0.0))
+        check("fb est %d sigma" % k, o["sigma"], ("good", 2.0))
+    # the input comes back at tick 6 with a 3: one measurement, P 4, s 5
+    e.write("m", "good", 3.0, 6 * S)
+    o = e.tick(6 * S)[1]
+    check("fb est 6 nis", o["nis"], ("good", 9 / 5))
+    check("fb est 6 x", o["x"], ("good", 2.4))
+    check("fb est 6 sigma", o["sigma"], ("good", math.sqrt(0.8)))
+
+    # a window with only_new: the fallback's value is no new sample
+    g = {
+        "period": "1s",
+        "inputs": {"m": {"max_age": "2s"}},
+        "blocks": [
+            f,
+            {
+                "id": "w",
+                "type": "window",
+                "in": {"x": "f.y"},
+                "settings": {"window": "4s", "min_good": 0.25, "only_new": True},
+                "out": {"count": "count", "mean": "mean"},
+            },
+            {
+                "id": "plain",
+                "type": "window",
+                "in": {"x": "f.y"},
+                "settings": {"window": "4s", "min_good": 0.25},
+                "out": {"count": "plain_count", "mean": "plain_mean"},
+            },
+        ],
+    }
+    e = Engine(g)
+    e.write("m", "good", 1.0, 0)
+    o = e.tick(0)[1]
+    check("fb window 0", o["count"], ("good", 1.0))
+    # ticks 1 and 2: the 1 still stands; not new. Ticks 3 and 4: it is too
+    # old, and the formula gives its fallback, uncertain: for the window
+    # with only_new that holds no sample; a window without takes it.
+    for k in (1, 2):
+        e.tick(k * S)
+    o = e.tick(3 * S)[1]
+    check("fb window 3 count", o["count"], ("good", 1.0))
+    check("fb window 3 plain count", o["plain_count"], ("good", 4.0))
+    o = e.tick(4 * S)[1]
+    # the window is ticks 1 to 4: none of them holds a new sample
+    check("fb window 4 count", o["count"], ("good", 0.0))
+    check("fb window 4 mean", o["mean"], ("not_ready", None))
+    check("fb window 4 plain count", o["plain_count"], ("good", 4.0))
+    # the plain one: 1, 1 (good) and 7, 7 (uncertain): two good are enough
+    check("fb window 4 plain mean", o["plain_mean"], ("good", 1.0))
+
+    # a delay passes a fallback's value on as it took it: with no time
+    g = {
+        "period": "1s",
+        "inputs": {"m": {"max_age": "none"}},
+        "blocks": [
+            f,
+            {"id": "d", "type": "delay", "in": {"x": "f.y"}},
+            {
+                "id": "w",
+                "type": "window",
+                "in": {"x": "d.y"},
+                "settings": {"window": "2s", "min_good": 0.5, "only_new": True},
+                "out": {"count": "count"},
+            },
+        ],
+    }
+    e = Engine(g)
+    e.tick(0)
+    check("fb delay 1", e.tick(1 * S)[1]["count"], ("good", 0.0))
+    e.write("m", "good", 2.0, 2 * S)
+    e.tick(2 * S)
+    check("fb delay 3", e.tick(3 * S)[1]["count"], ("good", 1.0))
+
+
 def test_estimator():
     g = {
         "period": "1s",
@@ -3433,8 +4199,10 @@ def test_estimator():
                     "model": {"type": "state_space", "A": [[1]], "B": [0], "C": [1]},
                     "q": {"x0": 1},
                     "p0": {"x0": 4},
-                    "measure": {"z": {"of": "x0", "r": 1}},
+                    "measure": {"z": {"of": "y", "r": 1}},
+                    "consistency": "none",
                     "gate": 3,
+                    "max_refused": 5,
                 },
                 "out": {
                     "x0": "x",
@@ -3464,8 +4232,9 @@ def test_estimator():
     # tick 2: P = 2.8, s = 3.8, innovation 96 > 3 sqrt(3.8): refused
     e.write("z", "good", 100.0, ns(2.0))
     o = e.tick(ns(2.0))[1]
-    check("est x 2", o["x"], ("good", 4.0))
-    check("est sigma 2", o["sigma"], ("good", math.sqrt(2.8)))
+    # a refused measurement makes its tick uncertain (rule 7.9.7)
+    check("est x 2", o["x"], ("uncertain", 4.0))
+    check("est sigma 2", o["sigma"], ("uncertain", math.sqrt(2.8)))
     check("est innov 2", o["innov"], ("good", 96.0))
     check("est refused 2", o["refused"], ("good", 1.0))
     check("est since 2", o["since"], ("good", 2.0))
@@ -3476,7 +4245,7 @@ def test_estimator():
     check("est x 3", o["x"], ("good", 4.0 + gain))
     check("est sigma 3", o["sigma"], ("good", math.sqrt(3.8 - gain * 3.8)))
     check("est since 3", o["since"], ("good", 0.0))
-    # an uncertain measurement is not considered unless asked for
+    # an uncertain measurement is not considered: the port gives no r_uncertain
     e.write("z", "uncertain", 9.0, ns(4.0))
     o = e.tick(ns(4.0))[1]
     check("est innov 4", o["innov"], ("not_ready", None))
@@ -3487,8 +4256,9 @@ def test_estimator():
     p4 = 3.8 - gain * 3.8 + 1
     e.rebase()
     o = e.tick(1 * S)[1]
-    check("est rb x", o["x"], ("good", 4.0 + gain))
-    check("est rb sigma", o["sigma"], ("good", math.sqrt(p4 + 4 + 1)))
+    # the tick a gap of no known length runs is uncertain (rule 7.9.7)
+    check("est rb x", o["x"], ("uncertain", 4.0 + gain))
+    check("est rb sigma", o["sigma"], ("uncertain", math.sqrt(p4 + 4 + 1)))
     check("est rb innov", o["innov"], ("not_ready", None))
     check("est rb refused", o["refused"], ("good", 1.0))
     check("est rb since", o["since"], ("not_ready", None))

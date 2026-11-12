@@ -14,6 +14,7 @@ blocks:
       q: {temp: 0}
       p0: {temp: 1}
       measure: {z: {of: temp, r: 1}}
+      consistency: none
     out: {temp: temp, sigma_temp: sigma}
 calls:
   - {p: 0, amb: 0, temp: 16, sigma: 1}

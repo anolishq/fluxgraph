@@ -1,0 +1,32 @@
+# 7.9.5: a run of refusals is a port's own, of the measurements considered
+# on it. Two measurements of one state, x' = x from 0, variance 1, r 1 each,
+# gate 2, max_refused 2. Tick 0: z of 10 is refused. Tick 1: nothing new;
+# z stands and is not considered again. Tick 2: w of 10 is refused, the
+# first on its port. Tick 3: z of 10, the second on its port: refused.
+# Tick 4: w of 0.5 is used, which ends w's run and not z's. Tick 5 is
+# passed over. Tick 6: z of 10 would be the third: the variance grows
+# from 1/2 to 3/2 and it is used, with a gain of 3/5.
+rules: [7.9.5, 7.9.7]
+period: 1s
+max_catch_up: 1
+inputs: {u: {max_age: none}, z: {max_age: none}, w: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z, w: w}
+    settings:
+      model: {type: state_space, A: [[1]], B: [0], C: [1]}
+      q: {x0: 0}
+      p0: {x0: 1}
+      measure: {z: {of: y, r: 1}, w: {of: y, r: 1}}
+      consistency: none
+      gate: 2
+      max_refused: 2
+    out: {x0: x, refused_z: rz, refused_w: rw}
+calls:
+  - {now: 0, u: 0, z: 10, x: {u: 0}, rz: 1, rw: 0}
+  - {now: 1, x: 0, rz: 1, rw: 0}
+  - {now: 2, w: 10, x: {u: 0}, rz: 1, rw: 1}
+  - {now: 3, z: 10, x: {u: 0}, rz: 2, rw: 1}
+  - {now: 4, w: 0.5, x: 0.25, rz: 2, rw: 1}
+  - {now: 6, gap: true, skipped: 1, z: 10, x: {u: 6.1}, rz: 2, rw: 1}

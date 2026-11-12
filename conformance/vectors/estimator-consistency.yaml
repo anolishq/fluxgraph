@@ -1,0 +1,28 @@
+# 7.9.6, 7.9.7: with consistency over 2 and a limit of 3.5, a port is
+# inconsistent while the mean of its last two normalised innovations
+# squared is more than 3.5. x' = x from 0, variance 1, r 1, no gate.
+# Tick 0: innovation 4, spread 2: 8. One is not two, and it is good.
+# Tick 1: innovation 0: the mean of 8 and 0 is 4: uncertain. Tick 2:
+# nothing new: still 4. Tick 3: innovation 0 again: the mean is 0, good.
+# Tick 4: innovation 2.5, spread 5/4: 5. The mean of 0 and 5 is 2.5: good,
+# though one of the two is over the limit.
+rules: [7.9.6, 7.9.7, 7.9.8]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: state_space, A: [[1]], B: [0], C: [1]}
+      q: {x0: 0}
+      p0: {x0: 1}
+      measure: {z: {of: y, r: 1}}
+      consistency: {over: 2, limit: 3.5}
+    out: {x0: x, nis_z: nis}
+calls:
+  - {u: 0, z: 4, x: 2, nis: 8}
+  - {z: 2, x: {u: 2}, nis: 0}
+  - {x: {u: 2}, nis: not_ready}
+  - {z: 2, x: 2, nis: 0}
+  - {z: 4.5, x: 2.5, nis: 5}

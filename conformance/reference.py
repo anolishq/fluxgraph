@@ -659,6 +659,48 @@ def discretise(a, b, dt):
 STIFFEST = 100_000.0  # 7.8 rule 7: the most a row of A, summed, times the period, may be
 
 
+def transpose(m):
+    return [list(col) for col in zip(*m, strict=True)]
+
+
+def discretise_noise(a, q, dt):
+    """The integral of exp(A s) Q exp(A' s) over dt, Q the diagonal q: what white noise of those intensities on
+    each state has done to the covariance by the end of a step (7.9 rule 2).
+
+    Over a short step h it is a series in h, whose terms are M0 = Q and M(k+1) = A Mk + Mk A', each over
+    (k+1)!; and the step is doubled back up: N(2h) = N(h) + F N(h) F', with F = exp(A h).
+    """
+    n = len(a)
+    norm = max(sum(abs(v) for v in row) for row in a) * dt
+    doublings = max(0, math.ceil(math.log2(norm))) if norm > 0 else 0
+    h = dt / 2**doublings
+    term = [[q[i] * h if i == j else 0.0 for j in range(n)] for i in range(n)]
+    noise = [row[:] for row in term]
+    at = transpose(a)
+    for order in range(1, 40):
+        left, right = matmul(a, term), matmul(term, at)
+        term = [[(left[i][j] + right[i][j]) * h / (order + 1) for j in range(n)] for i in range(n)]
+        noise = [[noise[i][j] + term[i][j] for j in range(n)] for i in range(n)]
+    f = expm([[v * h for v in row] for row in a])
+    for _ in range(doublings):
+        carried = matmul(matmul(f, noise), transpose(f))
+        noise = [[noise[i][j] + carried[i][j] for j in range(n)] for i in range(n)]
+        f = matmul(f, f)
+    return noise
+
+
+def compose(second, first):
+    """Two steps as one: each is (F, G, N) for x' = F x + G u and P' = F P F' + N."""
+    (f2, g2, n2), (f1, g1, n1) = second, first
+    size = len(f1)
+    pushed, carried = matmul(f2, g1), matmul(matmul(f2, n1), transpose(f2))
+    return (
+        matmul(f2, f1),
+        [[pushed[i][j] + g2[i][j] for j in range(len(g1[0]))] for i in range(size)],
+        [[carried[i][j] + n2[i][j] for j in range(size)] for i in range(size)],
+    )
+
+
 class Model:
     """A linear model (4 rule 9): x' = Ad x + Bd u over one period, and y = C x + D u.
 
@@ -704,6 +746,13 @@ class Model:
         if not all(math.isfinite(v) for row in (*self.ad, *self.bd) for v in row):
             raise CompileError("the model's step over this period is not finite: it grows too fast for the period")
         self.tau = self.slowest(a, made.get("det")) if self.continuous and self.default_settle else None
+        self.a, self.period = a, period
+
+    def noise(self, q):
+        """7.9 rule 2: what process noise of intensities q adds to the covariance over one period."""
+        if self.continuous:
+            return discretise_noise(self.a, q, self.period)
+        return [[q[i] * self.period if i == j else 0.0 for j in range(len(q))] for i in range(len(q))]
 
     def build(self, p):
         raise NotImplementedError
@@ -1084,9 +1133,10 @@ class Estimator(Block):
         "q": ("map", True, None),
         "p0": ("map", True, None),
         "measure": ("map", True, None),
+        "consistency": ("any", True, None),
         "gate": ("number", False, None),
+        "max_refused": ("int", False, None),
         "sigma_max": ("map", False, None),
-        "use_uncertain": ("bool", False, False),
     }
 
     def __init__(self, *a):
@@ -1110,89 +1160,166 @@ class Estimator(Block):
 
         q, p0 = per_state("q", 0, False), per_state("p0", 0, True)
         self.limits = per_state("sigma_max", 0, False, required=False)
-        if self.s["gate"] is not None and self.s["gate"] < 0:
+        gate, most = self.s["gate"], self.s["max_refused"]
+        if gate is not None and gate < 0:
             raise CompileError("gate is not negative")
-        self.q = [float(q[name]) * self.period for name in self.names]
+        if (gate is None) != (most is None) or (most is not None and most < 0):
+            raise CompileError("max_refused is given with gate, and only then, and is not negative")
+        test = self.s["consistency"]  # rule 7: stated, or said to be none
+        if test != "none":
+            fits = isinstance(test, dict) and set(test) == {"over", "limit"}
+            fits = fits and isinstance(test["over"], int) and not isinstance(test["over"], bool) and test["over"] >= 1
+            if not fits or not is_number(test["limit"]) or test["limit"] <= 0:
+                raise CompileError("consistency is `none`, or `over`, a whole number of measurements, and `limit`")
+        self.over, self.limit = (None, None) if test == "none" else (test["over"], float(test["limit"]))
+        self.qd = self.model.noise([float(q[name]) for name in self.names])
+        if not all(math.isfinite(v) for row in self.qd for v in row):
+            raise CompileError("the model's process noise over this period is not finite")
         self.p0 = [float(p0[name]) for name in self.names]
         self.meas = {}
         for port, m in self.s["measure"].items():
-            if (
-                not isinstance(port, str)
-                or port in self.model.inputs
-                or not isinstance(m, dict)
-                or set(m) != {"of", "r"}
-            ):
-                raise CompileError(f"measure {port!r} is a port of its own, with `of` and `r`")
-            if m["of"] not in self.names or not is_number(m["r"]) or m["r"] <= 0:
-                raise CompileError(f"measure {port!r}: `of` is a state and `r` is more than zero")
-            self.meas[port] = (self.names.index(m["of"]), float(m["r"]))
+            fits = isinstance(port, str) and port not in self.model.inputs and isinstance(m, dict)
+            if not fits or not {"of", "r"} <= set(m) or set(m) - {"of", "r", "r_uncertain"}:
+                raise CompileError(f"measure {port!r} is a port of its own, with `of`, `r` and perhaps `r_uncertain`")
+            wide = m.get("r_uncertain")
+            if m["of"] not in self.model.outputs or not is_number(m["r"]) or m["r"] <= 0:
+                raise CompileError(f"measure {port!r}: `of` is an output of the model and `r` is more than zero")
+            if wide is not None and (not is_number(wide) or wide < m["r"]):
+                raise CompileError(f"measure {port!r}: `r_uncertain` is not less than `r`")
+            row = self.model.outputs.index(m["of"])
+            if any(v != 0.0 for v in self.model.d[row]):
+                raise CompileError(f"measure {port!r}: the output {m['of']!r} reads an input directly")
+            self.meas[port] = (self.model.c[row], float(m["r"]), None if wide is None else float(wide))
         if not self.meas:
             raise CompileError("measure names at least one measurement")
-        self.ports = {name: (NUMBER, True, True) for name in (*self.model.inputs, *self.meas)}
+        self.ports = {name: (NUMBER, True, False) for name in self.model.inputs}  # deferred: rule 2
+        self.ports |= {port: (NUMBER, True, True) for port in self.meas}
         self.outputs = dict.fromkeys(self.names, NUMBER)
         self.outputs |= {f"sigma_{name}": NUMBER for name in self.names}
         for port in self.meas:
-            self.outputs |= {f"innovation_{port}": NUMBER, f"refused_{port}": NUMBER, f"since_{port}": NUMBER}
+            self.outputs |= dict.fromkeys(
+                (f"innovation_{port}", f"nis_{port}", f"refused_{port}", f"since_{port}"), NUMBER
+            )
         self.x = self.model.initial()
         self.p = [[self.p0[i] if i == j else 0.0 for j in range(n)] for i in range(n)]
         self.considered = dict.fromkeys(self.meas)  # the sample time last considered, per port
         self.used_at = dict.fromkeys(self.meas)  # the sample time last used, per port
-        self.refused = dict.fromkeys(self.meas, 0)
-        self.last_u = {}
+        self.refused = dict.fromkeys(self.meas, 0)  # how many, in all
+        self.run = dict.fromkeys(self.meas, 0)  # how many in a row
+        self.recent = {
+            port: collections.deque(maxlen=self.over) for port in self.meas
+        }  # normalised innovations squared
+        self.last_u = {}  # each model input's last usable value
+        self.stepping = False  # the second phase of a tick has run: a step to the next is due
+        self.held = False  # that step is on a value that was held, or was uncertain, or is not taken
+        self.rebased = False
+        self.lost = False  # a gap of no known length has gone by, and no measurement has been used since
 
-    def _predict(self, u):
-        f = self.model.ad  # how the stepped state moves with the state it was stepped from
-        self.p = matmul(matmul(f, self.p), [list(col) for col in zip(*f, strict=True)])
-        self.x = self.model.step(self.x, u)
+    def _advance(self, times):
+        """`times` steps on the model inputs it has (rule 2): the state if it has them all, and the covariance."""
+        n = len(self.names)
+        if len(self.last_u) < len(self.model.inputs):  # some model input has never been usable: the state
+            self.p = [[self.p[i][j] + times * self.qd[i][j] for j in range(n)] for i in range(n)]  # stays, and
+            return  # its covariance is P + N for each step
+        f = [[float(i == j) for j in range(n)] for i in range(n)]
+        g = [[0.0] * len(self.model.inputs) for _ in range(n)]
+        noise = [[0.0] * n for _ in range(n)]
+        step = (self.model.ad, self.model.bd, self.qd)
+        while times:  # by doubling: after a long gap this is still few products
+            if times & 1:
+                f, g, noise = compose(step, (f, g, noise))
+            step = compose(step, step)
+            times >>= 1
+        u = [[self.last_u[name]] for name in self.model.inputs]
+        moved, pushed = matmul(f, [[v] for v in self.x]), matmul(g, u)
+        self.x = [moved[i][0] + pushed[i][0] for i in range(n)]
+        spread = matmul(matmul(f, self.p), transpose(f))
+        self.p = [[spread[i][j] + noise[i][j] for j in range(n)] for i in range(n)]
 
     def output(self, k, t, ins):
         n = len(self.names)
-        if k > 0:  # rule 2: from the tick before to this one, on the inputs as they were then
-            if len(self.last_u) == len(self.model.inputs):
-                self._predict(dict(self.last_u))
-            for i in range(n):
-                self.p[i][i] += self.q[i]
-        coasting = False
-        for name in self.model.inputs:
-            if usable(ins[name]):
-                self.last_u[name] = ins[name].v
-            else:
-                coasting = True
+        doubt = False
+        if self.stepping:  # rule 2: from the tick before to this one, on the inputs as they were then
+            self._advance(1)
+            doubt, self.stepping, self.held = self.held, False, False
         out = {}
-        for port, (i, r) in self.meas.items():  # rules 3 and 4
+        for port, (row, r, wide) in self.meas.items():  # rules 3 and 4
             z = ins[port]
-            out[f"innovation_{port}"] = Val(NOT_READY)
-            takes = z.state == GOOD or (z.state == UNCERTAIN and self.s["use_uncertain"])
-            if takes and z.at is not None and (self.considered[port] is None or z.at > self.considered[port]):
+            out[f"innovation_{port}"] = out[f"nis_{port}"] = Val(NOT_READY)
+            variance = r if z.state == GOOD else wide if z.state == UNCERTAIN else None
+            if (
+                variance is not None
+                and z.at is not None
+                and (self.considered[port] is None or z.at > self.considered[port])
+            ):
                 self.considered[port] = z.at
-                innovation, s = z.v - self.x[i], self.p[i][i] + r
+                innovation = z.v - sum(c * xi for c, xi in zip(row, self.x, strict=True))
+                reach = [sum(self.p[i][j] * row[j] for j in range(n)) for i in range(n)]  # P times the row
+                s = sum(c * v for c, v in zip(row, reach, strict=True)) + variance
                 out[f"innovation_{port}"] = Val(GOOD, innovation)
+                out[f"nis_{port}"] = Val(GOOD, innovation * innovation / s)
+                self.recent[port].append(innovation * innovation / s)
+                take = True
                 if self.s["gate"] is not None and abs(innovation) > self.s["gate"] * math.sqrt(s):
-                    self.refused[port] += 1
-                else:
-                    g = [self.p[j][i] / s for j in range(n)]
-                    row = list(self.p[i])
-                    self.x = [xj + gj * innovation for xj, gj in zip(self.x, g, strict=True)]
-                    self.p = [[self.p[a][b] - g[a] * row[b] for b in range(n)] for a in range(n)]
+                    self.run[port] += 1
+                    if self.run[port] > self.s["max_refused"]:  # too many in a row to be outliers: widen, and take it
+                        for i in range(n):
+                            self.p[i][i] += self.p0[i]
+                        reach = [sum(self.p[i][j] * row[j] for j in range(n)) for i in range(n)]
+                        s = sum(c * v for c, v in zip(row, reach, strict=True)) + variance
+                        doubt = True  # it has given in to what it was refusing, and cannot tell why
+                    else:
+                        take, doubt = False, True
+                        self.refused[port] += 1
+                if take:
+                    self.run[port] = 0
+                    gain = [v / s for v in reach]
+                    self.x = [xi + gi * innovation for xi, gi in zip(self.x, gain, strict=True)]
+                    # rule 4: (1 - g c) P (1 - g c)' + g v g', which a wide p0 beside a small r cannot round to nothing
+                    keep = [[float(a == b) - gain[a] * row[b] for b in range(n)] for a in range(n)]
+                    kept = matmul(matmul(keep, self.p), transpose(keep))
+                    self.p = [[kept[a][b] + gain[a] * variance * gain[b] for b in range(n)] for a in range(n)]
                     self.used_at[port] = z.at
+                    self.lost = False
+                    doubt = doubt or z.state == UNCERTAIN  # rule D
             out[f"refused_{port}"] = Val(GOOD, float(self.refused[port]))
             out[f"since_{port}"] = (
                 Val(NOT_READY) if self.used_at[port] is None else Val(GOOD, max(0, t - self.used_at[port]) / NS)
             )
+            if self.over is not None and len(self.recent[port]) == self.over:  # rule 7
+                doubt = doubt or sum(self.recent[port]) / self.over > self.limit
         for i, name in enumerate(self.names):  # rule 5
             sigma = math.sqrt(max(self.p[i][i], 0.0))
             wide = name in self.limits and sigma > self.limits[name]
-            state = UNCERTAIN if coasting or wide else GOOD
+            state = UNCERTAIN if doubt or wide or self.lost else GOOD
             out[name], out[f"sigma_{name}"] = Val(state, self.x[i]), Val(state, sigma)
         return out
 
+    def update(self, k, ins):
+        """Second phase: the model inputs of this tick, for the step to the next."""
+        self.stepping = True
+        for name in self.model.inputs:
+            if usable(ins[name]):
+                self.last_u[name] = ins[name].v
+                self.held = self.held or ins[name].state == UNCERTAIN
+            else:
+                self.held = True
+
     def gap(self, k, n):
-        for i in range(len(self.names)):  # at every gap, one that passed over no tick among them
-            self.p[i][i] += self.p0[i]
+        if n:  # the ticks nobody saw: as many steps on what it last had
+            self._advance(n)
+        if n is None or self.rebased:  # nobody knows how long, or it cannot tell an old sample from a new one
+            for i in range(len(self.names)):
+                self.p[i][i] += self.p0[i]
+        if n != 0:
+            self.held = True  # the step to the tick that runs is on values nobody saw
+        self.lost = self.lost or n is None
+        self.rebased = False
 
     def forget_times(self):
         self.considered = dict.fromkeys(self.meas)
         self.used_at = dict.fromkeys(self.meas)
+        self.rebased = True
 
 
 CATALOGUE = {
@@ -1346,6 +1473,14 @@ class Engine:
 
         self.order = self._order(direct)
         self._loops(every)
+        for bid, block in self.blocks.items():  # 7.9 rule 3: a measurement carries the time of a sample
+            for port in block.meas if isinstance(block, Estimator) else ():
+                if not self._carries(self.wiring[bid][port], set()):
+                    raise CompileError(
+                        f"block {bid}: the measurement {port!r} is read from a block that gives it the tick's time, "
+                        f"so every tick would count as a new sample: read it from an input, a delay, or a formula "
+                        f"that takes its sample time from one"
+                    )
 
         # Types, in an order where they are known.
         self.types = {
@@ -1417,6 +1552,17 @@ class Engine:
                 seen.add(node)
                 todo.extend(edges[node])
         return False
+
+    def _carries(self, src, seen):
+        """Whether a signal carries the sample time of an input, and not the time of the tick (3 rule 7)."""
+        if src[0] != "block":
+            return src[0] == "input"
+        bid = src[1][0]
+        if bid in seen:
+            return False
+        block = self.blocks[bid]
+        through = "x" if isinstance(block, Delay) else getattr(block, "sample_of", None)
+        return through is not None and self._carries(self.wiring[bid][through], seen | {bid})
 
     def _loops(self, every):
         """7.8 rule 8: the blocks that each reach every other are a loop; one that holds a model is one block."""
@@ -1668,8 +1814,8 @@ class Engine:
                         substituted = True
                         value = self.fallback[bid][port]
                         val = Val(UNCERTAIN, value if isinstance(value, bool) else float(value))
-                keeps = block.own_at and usable(val) and not substituted  # 3 rule 7
-                now[(bid, port)] = Val(val.state, val.v, val.at if keeps else t)
+                keeps = block.own_at and usable(val)  # 3 rule 7
+                now[(bid, port)] = Val(val.state, val.v, None if substituted else val.at if keeps else t)
         for bid in self.order:  # second phase
             block, ins = self.blocks[bid], read(bid, False)
             block.update(k, ins)

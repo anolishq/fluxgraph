@@ -1,6 +1,7 @@
-# 7.9.2: q is a variance per second: at a period of 2 s each tick adds 2.
-# With a model input that has never been usable the model is not stepped,
-# and the state's outputs are uncertain. x' = x, starting at 0 with variance 1.
+# 7.9.2, 7.9.7: for a discrete model q is a variance per second: at a period
+# of 2 s each tick adds 2. With a model input that has never been usable
+# the step is not taken, and the outputs are uncertain from the tick it
+# would have led to. x' = x, starting at 0 with variance 1.
 rules: [7.9.2, 7.9.5]
 period: 2s
 inputs: {u: {max_age: none}, z: {max_age: none}}
@@ -12,9 +13,10 @@ blocks:
       model: {type: state_space, A: [[1]], B: [0], C: [1]}
       q: {x0: 1}
       p0: {x0: 1}
-      measure: {z: {of: x0, r: 1}}
+      measure: {z: {of: y, r: 1}}
+      consistency: none
     out: {x0: x, sigma_x0: sigma}
 calls:
-  - {x: {u: 0}, sigma: {u: 1}}
+  - {x: 0, sigma: 1}
   - {x: {u: 0}, sigma: {u: 1.7320508075688772}}
   - {x: {u: 0}, sigma: {u: 2.23606797749979}}

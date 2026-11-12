@@ -13,7 +13,8 @@ blocks:
       model: {type: state_space, A: [[1, 1], [0, 1]], B: [0, 0], C: [1, 0], initial: [0, 1]}
       q: {x0: 0, x1: 0}
       p0: {x0: 1, x1: 4}
-      measure: {z: {of: x0, r: 1}}
+      measure: {z: {of: y, r: 1}}
+      consistency: none
     out: {x0: x, x1: v, sigma_x0: sx, sigma_x1: sv}
 calls:
   - {u: 0, x: 0, v: 1, sx: 1, sv: 2}

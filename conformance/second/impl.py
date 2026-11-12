@@ -5,8 +5,9 @@ Standard library only. Choices the text does not settle are listed in
 ASSUMPTIONS.md, for Amendment 1 (time and the host interface) in
 ASSUMPTIONS-amendment-1.md, for Amendment 2 (doubt through memory) in
 ASSUMPTIONS-amendment-2.md, for Amendment 3 (gaps) in
-ASSUMPTIONS-amendment-3.md, and for Amendment 4 (models) in
-ASSUMPTIONS-amendment-4.md.
+ASSUMPTIONS-amendment-3.md, for Amendment 4 (models) in
+ASSUMPTIONS-amendment-4.md, and for Amendment 5 (the estimator) in
+ASSUMPTIONS-amendment-5.md.
 
 Every time is a whole number of nanoseconds, held as an int (rule 6.2).
 """
@@ -1375,6 +1376,7 @@ class Model:
         self.d = d
         self.x0 = x0
         self.tau = tau  # the slowest time constant, in seconds, or None
+        self.a = None  # A, for a model in continuous time
         # an input is direct if any output reads it (rule 7.8.2)
         self.direct = set(name for j, name in enumerate(self.inputs) if any(row[j] != 0 for row in d))
 
@@ -1418,7 +1420,9 @@ def _continuous(b, inputs, states, outputs, a, bm, c, x0, d=None, named=True, de
     if ad is None:
         # it grows too fast for the graph's period (rule 7.8.7)
         raise b.err("the model grows so fast that its step over one period is more than a double holds")
-    return Model(inputs, states, outputs, ad, bd, c, d, x0, _slowest(a, det) if named else None)
+    model = Model(inputs, states, outputs, ad, bd, c, d, x0, _slowest(a, det) if named else None)
+    model.a = a
+    return model
 
 
 def s_matrix(b, st, key, rows, cols, default=REQ):
@@ -1679,11 +1683,14 @@ class ModelBlock(Block):
         # for each tick passed over, in order: a step on the last usable
         # value of every input while each is within ride_through, and no
         # step from the first tick where one is not (rule 8.6)
-        for _ in range(n):
-            for name in self.model.inputs:
-                s["m"][name] += 1
-            if all(s["last"][name] is not None and s["m"][name] <= self.rt for name in self.model.inputs):
-                self._step(s["last"])
+        # (the result of those steps, and not that each tick is gone through)
+        steps = 0
+        if all(v is not None for v in s["last"].values()):
+            steps = max(0, min(n, self.rt - max(s["m"].values())))
+        for _ in range(steps):
+            self._step(s["last"])
+        for name in self.model.inputs:
+            s["m"][name] += n
         s["run"] += n
         s["doubtful"] += n
 
@@ -1755,8 +1762,39 @@ def _model_block(model_type):
     )
 
 
+def _noise(a, q, period_ns):
+    """What process noise has added by the end of one step (rule 7.9.2):
+    the integral of exp(A.s).Q.exp(A'.s) for s from zero to the period,
+    with Q the q's on its diagonal, as floats; or None where an entry is
+    more than a double holds.
+
+    N(t), that integral up to t, obeys dN/dt = A.N + N.A' + Q from N = 0.
+    With N's entries in one column, row by row, that is a linear model
+    dv/dt = K.v + (Q's entries) with K = A (x) 1 + 1 (x) A, and it is
+    stepped exactly as a model is (_discretize): the integral of exp(K.s)
+    over the period, times Q's entries."""
+    n = len(a)
+    k = [[0.0] * (n * n) for _ in range(n * n)]
+    for i in range(n):
+        for j in range(n):
+            for m in range(n):
+                k[i * n + j][m * n + j] += a[i][m]  # A.N
+                k[i * n + j][i * n + m] += a[j][m]  # N.A'
+    forcing = [[q[i] if i == j else 0.0] for i in range(n) for j in range(n)]
+    _kd, nd = _discretize(k, forcing, period_ns)
+    if nd is None:
+        return None
+    res = [[nd[i * n + j][0] for j in range(n)] for i in range(n)]
+    # it is symmetric: let rounding not say otherwise
+    for i in range(n):
+        for j in range(i):
+            res[i][j] = res[j][i] = (res[i][j] + res[j][i]) / 2
+    return res
+
+
 class Estimator(Block):
-    SETTINGS = ("model", "q", "p0", "measure", "gate", "sigma_max", "use_uncertain")
+    SETTINGS = ("model", "q", "p0", "measure", "consistency", "gate", "max_refused", "sigma_max")
+    has_update = True
 
     def _state_map(self, key, required):
         if key not in self.st:
@@ -1807,24 +1845,62 @@ class Estimator(Block):
                 raise self.err("setting 'p0' for %r must be more than zero" % name)
         self.q = [q[n] for n in states]
         self.p0 = [p0[n] for n in states]
+        # N, what process noise adds over one step (rule 7.9.2)
+        if self.model.a is None:
+            # in discrete time: q times the period on each state's own variance
+            period = self.ctx.period
+            self.noise = [
+                [self.q[i] * period if i == j else 0.0 for j in range(len(states))] for i in range(len(states))
+            ]
+        else:
+            self.noise = _noise(self.model.a, self.q, self.ctx.period_ns)
+            if self.noise is None:
+                raise self.err(
+                    "the model grows so fast that its process noise over one period is more than a double holds"
+                )
         smax = self._state_map("sigma_max", False)
         self.sigma_max = [smax.get(n) for n in states]
         self.gate = s_num(self, self.st, "gate", None)
         if self.gate is not None and self.gate < 0:
             raise self.err("setting 'gate' must not be negative")
-        self.use_uncertain = s_bool(self, self.st, "use_uncertain", False)
+        if self.gate is None:
+            if "max_refused" in self.st:
+                raise self.err("setting 'max_refused' is refused without 'gate'")
+            self.max_refused = None
+        else:
+            self.max_refused = s_whole(self, self.st, "max_refused")
+            if self.max_refused < 0:
+                raise self.err("setting 'max_refused' must not be negative")
+        if "consistency" not in self.st:
+            raise self.err("missing required setting 'consistency'")
+        cons = self.st["consistency"]
+        if isinstance(cons, str) and cons == "none":
+            self.over = None
+            self.limit = None
+        elif isinstance(cons, dict):
+            for key in cons:
+                if key not in ("over", "limit"):
+                    raise self.err("setting 'consistency' has an unknown key %r" % (key,))
+            self.over = s_whole(self, cons, "over")
+            if self.over < 1:
+                raise self.err("setting 'consistency': 'over' must be at least 1")
+            self.limit = s_num(self, cons, "limit")
+            if not self.limit > 0:
+                raise self.err("setting 'consistency': 'limit' must be more than zero")
+        else:
+            raise self.err("setting 'consistency' must be none, or a map with 'over' and 'limit'")
         if "measure" not in self.st:
             raise self.err("missing required setting 'measure'")
         meas = self.st["measure"]
         if not isinstance(meas, dict):
             raise self.err("setting 'measure' must be a map")
         for name in self.model.inputs:
-            self.in_ports[name] = (NUMBER, True, True)
+            self.in_ports[name] = (NUMBER, True, False)  # deferred
         for name in states:
             self.out_ports[name] = NUMBER
         for name in states:
             self._add_out("sigma_" + name)
-        self.measures = []  # (port, state index, r)
+        self.measures = []  # (port, the output's row of C, r, r_uncertain or None)
         for port, spec in meas.items():
             if not isinstance(port, str):
                 raise self.err("setting 'measure': a port's name is text, got %r" % (port,))
@@ -1833,19 +1909,29 @@ class Estimator(Block):
             if not isinstance(spec, dict):
                 raise self.err("setting 'measure': port %r needs 'of' and 'r'" % port)
             for key in spec:
-                if key not in ("of", "r"):
+                if key not in ("of", "r", "r_uncertain"):
                     raise self.err("setting 'measure': port %r has an unknown key %r" % (port, key))
-            if "of" not in spec or spec["of"] not in states:
-                raise self.err("setting 'measure': port %r must name a state of the model in 'of'" % port)
+            if "of" not in spec or spec["of"] not in self.model.outputs:
+                raise self.err("setting 'measure': port %r must name an output of the model in 'of'" % port)
+            row = self.model.outputs.index(spec["of"])
+            if any(v != 0 for v in self.model.d[row]):
+                raise self.err("setting 'measure': port %r is of an output that reads an input directly" % port)
             r = _finite(spec.get("r"))
             if r is None or not r > 0:
                 raise self.err("setting 'measure': port %r needs an 'r' more than zero" % port)
+            ru = None
+            if "r_uncertain" in spec:
+                ru = _finite(spec["r_uncertain"])
+                if ru is None or ru < r:
+                    raise self.err("setting 'measure': port %r needs an 'r_uncertain' not less than 'r'" % port)
             self.in_ports[port] = (NUMBER, True, True)
-            self.measures.append((port, states.index(spec["of"]), r))
-        for port, _i, _r in self.measures:
+            self.measures.append((port, list(self.model.c[row]), r, ru))
+        for port, _c, _r, _ru in self.measures:
             self._add_out("innovation_" + port)
+            self._add_out("nis_" + port)
             self._add_out("refused_" + port)
             self._add_out("since_" + port)
+        self.rebased = False  # between rebase() and the gap() that follows it
 
     def _add_out(self, name):
         if name in self.out_ports:
@@ -1860,82 +1946,189 @@ class Estimator(Block):
             "last": {nm: None for nm in self.model.inputs},
             "considered": {m[0]: None for m in self.measures},
             "refused": {m[0]: 0 for m in self.measures},
+            "run": {m[0]: 0 for m in self.measures},  # refused in a row
+            "nis": {m[0]: [] for m in self.measures},  # of its last `over` considered
             "used": {m[0]: None for m in self.measures},
+            "doubt": False,  # a model input was uncertain or unusable at the tick before
+            "gap": False,  # the next tick is one a gap runs, with a tick passed over
+            "lost": False,  # a gap of no known length, and no measurement used since
         }
 
-    def gap(self, g, n):
+    def _predict(self):
+        """Rule 7.9.2. Whether the state was stepped."""
+        s = self.s
+        n = len(self.model.states)
+        p = s["p"]
+        stepped = all(v is not None for v in s["last"].values())
+        if stepped:
+            f = self.model.ad
+            s["x"] = self.model.step(s["x"], s["last"])
+            fp = [[sum(f[i][m] * p[m][j] for m in range(n)) for j in range(n)] for i in range(n)]
+            p = [[sum(fp[i][m] * f[j][m] for m in range(n)) for j in range(n)] for i in range(n)]
+        s["p"] = [[p[i][j] + self.noise[i][j] for j in range(n)] for i in range(n)]
+        return stepped
+
+    def _predict_many(self, count):
+        """The result of `count` predictions on the model inputs it last
+        had (rule 7.9.9). A few are made one by one. Many are compounded:
+        one prediction is x -> F.x + g, P -> F.P.F' + M, and two of those
+        one after the other are another of the same form, so `count` of
+        them are reached by squaring."""
+        if count <= 32:
+            for _ in range(count):
+                self._predict()
+            return
+        s = self.s
+        n = len(self.model.states)
+
+        def mul(a, b):
+            return [[sum(a[i][k] * b[k][j] for k in range(n)) for j in range(n)] for i in range(n)]
+
+        def then(first, second):
+            f1, g1, m1 = first
+            f2, g2, m2 = second
+            fm = mul(f2, m1)
+            m = [[sum(fm[i][k] * f2[j][k] for k in range(n)) + m2[i][j] for j in range(n)] for i in range(n)]
+            g = [sum(f2[i][k] * g1[k] for k in range(n)) + g2[i] for i in range(n)]
+            return (mul(f2, f1), g, m)
+
+        if all(v is not None for v in s["last"].values()):
+            one = (self.model.ad, self.model.step([0.0] * n, s["last"]), self.noise)
+        else:
+            # the state stays, and the covariance takes N
+            one = ([[float(i == j) for j in range(n)] for i in range(n)], [0.0] * n, self.noise)
+        total = None
+        while count:
+            if count & 1:
+                total = one if total is None else then(total, one)
+            one = then(one, one)
+            count >>= 1
+        f, g, m = total
+        s["x"] = [sum(f[i][k] * s["x"][k] for k in range(n)) + g[i] for i in range(n)]
+        fp = mul(f, s["p"])
+        s["p"] = [[sum(fp[i][k] * f[j][k] for k in range(n)) + m[i][j] for j in range(n)] for i in range(n)]
+
+    def _grow(self):
         for i in range(len(self.p0)):
             self.s["p"][i][i] += self.p0[i]
+
+    def gap(self, g, n):
+        # told n: it predicts n times more, on the model inputs it last had
+        self._predict_many(n or 0)
+        # told nobody knows, and at a rebase whatever its length: by p0
+        if n is None or self.rebased:
+            self._grow()
+        self.rebased = False
+        if n is None:
+            self.s["lost"] = True  # it does not know where it is until a measurement tells it
+        if n != 0:
+            self.s["gap"] = True
 
     def rebase(self):
         for port in self.s["considered"]:
             self.s["considered"][port] = None
             self.s["used"][port] = None
+        self.rebased = True
 
     def output(self, k, t, ins):
         s = self.s
         n = len(self.model.states)
-        period = self.ctx.period
+        # rule 7: what makes this tick's outputs uncertain
+        doubt = s["gap"]
+        s["gap"] = False
         # predict, on the model inputs as they were at the tick before
         if k != 0:
-            p = s["p"]
-            if all(v is not None for v in s["last"].values()):
-                f = self.model.ad  # the model's Ad (rule 7.9.2)
-                s["x"] = self.model.step(s["x"], s["last"])
-                fp = [[sum(f[i][m] * p[m][j] for m in range(n)) for j in range(n)] for i in range(n)]
-                p = [[sum(fp[i][m] * f[j][m] for m in range(n)) for j in range(n)] for i in range(n)]
-                s["p"] = p
-            for i in range(n):
-                p[i][i] += self.q[i] * period
-        any_unusable = False
-        for name in self.model.inputs:
-            sg = ins[name]
-            if usable(sg[0]):
-                s["last"][name] = sg[1]
-            else:
-                any_unusable = True
+            stepped = self._predict()
+            if s["doubt"] or not stepped:
+                doubt = True
         # correct
         res = {}
         x = s["x"]
         p = s["p"]
-        for port, i, r in self.measures:
+        for port, c, r, ru in self.measures:
             sg = ins[port]
-            ok = sg[0] == GOOD or (self.use_uncertain and sg[0] == UNC)
             last = s["considered"][port]
+            ok = sg[0] == GOOD or (sg[0] == UNC and ru is not None)
             if ok and sg[2] is not None and (last is None or sg[2] > last):
                 s["considered"][port] = sg[2]
-                innovation = sg[1] - x[i]
-                spread = p[i][i] + r
+                v = r if sg[0] == GOOD else ru
+                innovation = sg[1] - sum(c[j] * x[j] for j in range(n))
+                pc = [sum(p[i][j] * c[j] for j in range(n)) for i in range(n)]  # P.c'
+                spread = sum(c[i] * pc[i] for i in range(n)) + v
+                nis = innovation * innovation / spread
+                if self.over is not None:
+                    s["nis"][port] = (s["nis"][port] + [nis])[-self.over :]
                 root = math.sqrt(spread) if spread >= 0 else float("nan")
+                use = True
                 if self.gate is not None and abs(innovation) > self.gate * root:
-                    s["refused"][port] += 1
-                else:
-                    g = [p[j][i] / spread for j in range(n)]
-                    row = list(p[i])
-                    for j in range(n):
-                        x[j] += g[j] * innovation
-                        for l in range(n):  # noqa: E741
-                            p[j][l] -= g[j] * row[l]
+                    if s["run"][port] >= self.max_refused:
+                        # one more than the most it refuses in a row: it
+                        # has disagreed for too long to be an outlier. It
+                        # gives in, and the tick is uncertain (rule 7.9.7)
+                        self._grow()
+                        pc = [sum(p[i][j] * c[j] for j in range(n)) for i in range(n)]
+                        spread = sum(c[i] * pc[i] for i in range(n)) + v
+                        doubt = True
+                    else:
+                        use = False
+                if use:
+                    g = [pc[i] / spread for i in range(n)]
+                    for i in range(n):
+                        x[i] += g[i] * innovation
+                    # P = (1 - g.c).P.(1 - g.c)' + g.v.g': the form that
+                    # rounding cannot bring to nothing (rule 7.9.4)
+                    w = [[float(i == j) - g[i] * c[j] for j in range(n)] for i in range(n)]
+                    wp = [[sum(w[i][m] * p[m][j] for m in range(n)) for j in range(n)] for i in range(n)]
+                    for i in range(n):
+                        for j in range(n):
+                            p[i][j] = sum(wp[i][m] * w[j][m] for m in range(n)) + g[i] * v * g[j]
                     s["used"][port] = sg[2]
+                    s["run"][port] = 0
+                    s["lost"] = False
+                    if sg[0] == UNC:
+                        doubt = True
+                else:
+                    s["refused"][port] += 1
+                    s["run"][port] += 1
+                    doubt = True
                 res["innovation_" + port] = out(GOOD, innovation)
+                res["nis_" + port] = out(GOOD, nis)
             else:
                 res["innovation_" + port] = out(NR)
+                res["nis_" + port] = out(NR)
             res["refused_" + port] = out(GOOD, float(s["refused"][port]))
             if s["used"][port] is None:
                 res["since_" + port] = out(NR)
             else:
                 res["since_" + port] = out(GOOD, max(0, t - s["used"][port]) / 1e9)
+        if self.over is not None:
+            for port, _c, _r, _ru in self.measures:
+                kept = s["nis"][port]
+                if len(kept) == self.over and sum(kept) / self.over > self.limit:
+                    doubt = True  # the port is inconsistent
+        if s["lost"]:
+            doubt = True
         for i, name in enumerate(self.model.states):
             var = p[i][i]
             sigma = math.sqrt(var) if var >= 0 else float("nan")
-            st = GOOD
-            if any_unusable:
-                st = UNC
-            elif self.sigma_max[i] is not None and sigma > self.sigma_max[i]:
+            st = UNC if doubt else GOOD
+            if self.sigma_max[i] is not None and sigma > self.sigma_max[i]:
                 st = UNC
             res[name] = out(st, x[i])
             res["sigma_" + name] = out(st, sigma)
         return res
+
+    def update(self, k, t, ins):
+        # the model inputs are deferred: the step to the next tick is on
+        # them as they are at this one
+        s = self.s
+        s["doubt"] = False
+        for name in self.model.inputs:
+            sg = ins[name]
+            if usable(sg[0]):
+                s["last"][name] = sg[1]
+            if sg[0] != GOOD:
+                s["doubt"] = True
 
 
 BLOCK_TYPES = {
@@ -2173,6 +2366,7 @@ class Engine:
         self._order = self._sort()
         self._check_delays()
         self._find_loops()
+        self._check_measurements()
 
         # types
         self._types = {}
@@ -2318,6 +2512,33 @@ class Engine:
                 for conn in b.conns.values():
                     if conn[0] == "blk" and conn[1] in ids:
                         loop.read.add((conn[1], conn[2]))
+
+    def _check_measurements(self):
+        """Rule 7.9.3: a measurement carries the time of a sample. Its port
+        is connected to an input, or to a delay or a formula that takes its
+        sample time, through any number of those, from an input."""
+        for b in self._blocks.values():
+            if not isinstance(b, Estimator):
+                continue
+            for port, _c, _r, _ru in b.measures:
+                conn = b.conns[port]
+                if conn[0] == "const":
+                    raise b.err("measurement %r is given a constant, which is not a sample of anything" % port)
+                seen = set()
+                while conn[0] == "blk":
+                    src = self._blocks[conn[1]]
+                    if conn[1] in seen:
+                        src = None  # round a loop of delays: it never comes from an input
+                    seen.add(conn[1])
+                    if isinstance(src, Delay):
+                        conn = src.conns["x"]
+                    elif isinstance(src, Formula) and src.sample_port is not None:
+                        conn = src.conns[src.sample_port]
+                    else:
+                        raise b.err(
+                            "measurement %r does not carry the time of a sample: it comes by block %r, "
+                            "which gives its output the time of the tick" % (port, conn[1])
+                        )
 
     # ------------------------------------------------------------- running
 
@@ -2574,7 +2795,8 @@ class Engine:
                         # fallback or not
                         b.loop.s["doubt"] = k
                     if port in b.fallback:
-                        res = (UNC, b.fallback[port], t)
+                        # it is not a sample of anything: no sample time (rule 3.7)
+                        res = (UNC, b.fallback[port], None)
                     else:
                         res = (state, None, None)
                 else:

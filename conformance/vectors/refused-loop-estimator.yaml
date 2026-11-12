@@ -4,6 +4,6 @@ period: 1s
 inputs: {z: {max_age: none}}
 blocks:
   - {id: plant, type: state_space, in: {u: k.x0}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}}
-  - {id: k, type: estimator, in: {u: plant.y, z: z}, settings: {model: {type: state_space, A: [[0.5]], B: [1], C: [1]}, q: {x0: 1}, p0: {x0: 4}, measure: {z: {of: x0, r: 1}}}}
+  - {id: k, type: estimator, in: {u: plant.y, z: z}, settings: {model: {type: state_space, A: [[0.5]], B: [1], C: [1]}, q: {x0: 1}, p0: {x0: 4}, measure: {z: {of: y, r: 1}}, consistency: none}}
 expect: compile_error
 error_mentions: [estimator]

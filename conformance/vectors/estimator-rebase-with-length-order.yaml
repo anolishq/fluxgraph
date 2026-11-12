@@ -1,0 +1,22 @@
+# 7.9.9: at a rebase with a length the variance grows by p0 after the
+# predictions for the ticks passed over and before the one for the tick
+# that runs. A thermal mass with a rate of 1, variance 1, q 0. Away 2 s:
+# one tick is passed over. e^-2, then 1 + e^-2, then that times e^-2.
+rules: [7.9.9, 8.5]
+period: 1s
+inputs: {p: {max_age: none}, a: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {power: p, ambient: a, z: z}
+    settings:
+      model: {type: thermal_mass, thermal_mass: 1, heat_transfer: 1, initial: 0}
+      q: {temp: 0}
+      p0: {temp: 1}
+      measure: {z: {of: temp, r: 1}}
+      consistency: none
+    out: {sigma_temp: sigma}
+calls:
+  - {now: 0, p: 0, a: 0, sigma: 1}
+  - {$rebase: 2}
+  - {now: 100, gap: true, skipped: 1, sigma: {u: 0.39198331868250064}}

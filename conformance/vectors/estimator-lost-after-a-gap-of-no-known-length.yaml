@@ -1,0 +1,26 @@
+# 7.9.7, 7.9.9: after a gap of no known length an estimator is uncertain
+# until a measurement is used. x' = x from 0, variance 1, r 1. Tick 0: z of
+# 4 is used: 2, variance 1/2. A restore. Tick 1: the variance grows by p0
+# to 3/2. Tick 2: nothing written, still uncertain. Tick 3: z of 5: the
+# spread is 5/2, the gain 3/5, and it is good.
+rules: [7.9.7, 7.9.9, 8.6]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: state_space, A: [[1]], B: [0], C: [1]}
+      q: {x0: 0}
+      p0: {x0: 1}
+      measure: {z: {of: y, r: 1}}
+      consistency: none
+    out: {x0: x, sigma_x0: sigma}
+calls:
+  - {u: 0, z: 4, x: 2, sigma: 0.7071067811865476}
+  - {$save: a}
+  - {$restore: a}
+  - {now: 50, gap: true, skipped: unknown, u: 0, x: {u: 2}, sigma: {u: 1.224744871391589}}
+  - {now: 51, x: {u: 2}, sigma: {u: 1.224744871391589}}
+  - {now: 52, z: 5, x: 3.8, sigma: 0.7745966692414834}

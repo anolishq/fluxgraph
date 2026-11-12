@@ -19,10 +19,10 @@ the text says, not what it should say.
 | `compare.py` | Runs the two readings side by side on random inputs and call times and compares every output after every call. |
 
 ```bash
-python3 conformance/run.py            # 294 vectors: ALL AGREE
-python3 conformance/run.py --second   # 294 vectors: ALL AGREE
-python3 conformance/mutate.py         # 528 breakages: 528 noticed; every vector failed by one
-python3 conformance/compare.py        # 1874474 comparisons, 0 differences
+python3 conformance/run.py            # 328 vectors: ALL AGREE
+python3 conformance/run.py --second   # 328 vectors: ALL AGREE
+python3 conformance/mutate.py         # 587 breakages: 587 noticed; every vector failed by one
+python3 conformance/compare.py        # 1939441 comparisons, 0 differences
 ```
 
 The format of a vector is described at the top of `run.py`.
@@ -343,6 +343,76 @@ model blocks.
   a vector and a breakage now. Each named model has a breakage for every
   coefficient of its matrices, and the vectors were given settings that
   tell one from another: no mass, inductance or gain is left at 1.
+
+## Amendment 5: the estimator
+
+Review of the third revision showed an estimator whose model had the heat
+loss a fifth too low, with a gate of three sigmas, refusing nearly every
+measurement, ending degrees out and saying `good` throughout. The
+amendment gives a refusal a state, a run of refusals an end, and the
+estimator's author a test of whether its innovations are as large as it
+expects; discretises its process noise exactly; reads a measurement of
+any output of its model; and gives an uncertain measurement a variance of
+its own.
+
+- The lock-out was reproduced before any text was written, and the rules
+  that answer it were tried on the same numbers first: 3,509 of 3,600
+  refused and a worst error of 12 as it stood; a worst error of 1.6 with a
+  run ended after 5; and with the consistency test the ticks that were
+  `good` and more than three sigmas out fell from about 1,200 to under
+  100.
+- As first written from the amended text, the second reading agreed with
+  the reference on all but one of the 310 vectors there were then: it
+  read `max_refused` as one more refusal than the reference did, and the
+  text now says which is meant. It found the rule that mattered most: an
+  estimator that gives in to a measurement it has been refusing was
+  `good` on that tick, and a sensor stuck at 100 moved it from 0 to 88
+  while it said so. That tick is `uncertain` now.
+- The random comparison then found a fault of the reference's own. Across
+  a stall, with a model input that had never been usable, it carried the
+  process noise through the step where the text adds it once for each
+  tick passed over: 1,872 of 1,939,441 comparisons differed, and the
+  second reading had it right.
+- An independent review checked the mathematics against its own:
+  the process noise to 3.5e-11 against closed forms and an exact solution;
+  an n-tick gap worked by doubling against n single predictions to a
+  million ticks; and on data from its own model a normalised estimation
+  error squared of 0.98 to 1.02 at periods from a hundredth to ten time
+  constants, where `q` times the period would have given 0.054 at the
+  long end. It found three ways to a `good` that should not be one, each
+  shared by both readings:
+  - with a `p0` of 10¹⁶ beside an `r` of 1, the covariance after the first
+    measurement rounded to exactly zero, and the estimator never moved
+    again. The update is now in the form that cannot;
+  - after a restore with no measurement written, the estimator was `good`
+    from the next tick on its state from before, 21 degrees out in the
+    review's case. It is `uncertain` now until a measurement is used;
+  - a measurement read through a low-pass was counted as a new sample on
+    every tick, 3,600 times for 60 samples. A measurement now has to come
+    from an input, or through delays and formulas that carry its sample
+    time, and anything else is refused.
+- The second reading then found the same fault by another road: a
+  fallback's value carried the time of the tick, so a formula with a
+  fallback fed an estimator a new sample of nothing every tick. A value a
+  fallback puts in carries no sample time now, for every block that
+  compares them.
+- Fifteen rules were pinned by no vector, since every gate vector had one
+  port and a measurement on every tick, and every continuous estimator
+  vector one state. Each has a vector and a breakage now.
+- The review's second pass reran its findings and found them closed, its
+  statistics unchanged, and nothing new where the estimator says `good`
+  against its own rules. Three clauses were unpinned and have vectors
+  now. What it would warn a reader of is in section 7.11: that `good`
+  means no rule holds and not that the estimate is right, that
+  `max_refused` chooses between two failures, and that one sample read on
+  two ports is used twice.
+- 34 vectors are new and 12 of the earlier 294 are changed. As last
+  written the second reading agrees on all 328 and on all 1,939,441
+  comparisons.
+- What no rule here catches is listed in section 7.11 of the proposal: a
+  sensor that reads steadily high or low, a sensor that has stuck once the
+  estimator has given in to it, a wrong model with `consistency: none`,
+  and a long gap of known length predicted across on inputs nobody saw.
 
 ## What this does not cover
 
