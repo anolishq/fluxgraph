@@ -1,6 +1,6 @@
 # FluxGraph semantics, version 2 (proposal)
 
-**Status:** proposal, third revision, with four amendments. Not in force.
+**Status:** proposal, third revision, with five amendments. Not in force.
 [semantics_spec.md](semantics_spec.md) stays the normative contract for
 FluxGraph 1.x until this is accepted, at which point this document replaces
 it and the library becomes 2.0.
@@ -77,9 +77,20 @@ time. **Amendments so far:**
    are a tick apart, which can make a sound network unstable, and are
    written as one.
 
-Still to be amended, and known to be wrong as it stands:
+5. *The estimator* (section 7.9). Its process noise is discretised
+   exactly, as its model is, and its model inputs are deferred. A
+   measurement is of any output of the model. A refused measurement makes
+   its tick `uncertain`, and a run of them longer than the author allows
+   widens the variance and takes the next: a gate can no longer lock an
+   estimator out. Its author states a test of whether its innovations are
+   as large as it expects, or says there is none. An `uncertain`
+   measurement is used with a variance of its own, or not at all, and
+   makes its tick `uncertain`. At a gap of known length it predicts
+   across it.
 
-- when an estimator's outputs are `good` (section 7.9).
+Nothing is left on the list of what is known to be wrong as it stands.
+What each amendment gives up is at the end of section 7, and what is
+still open is under each section.
 
 ## 1. Why a second version
 
@@ -148,9 +159,10 @@ evaluation, implicit solvers, vector values.
      `sample_of` setting names. A formula with exactly one signal input
      and no `sample_of` carries that input's.
    - A `delay` output carries the sample time of what it gives.
-   - Every other block output carries the time of the tick, and so does a
-     value a fallback puts in (section 7.10), whatever the block.
-   - A signal that is not usable carries none.
+   - Every other block output carries the time of the tick.
+   - A signal that is not usable carries none, and neither does a value a
+     fallback puts in (section 7.10), whatever the block: it is not a
+     sample of anything.
 
    A block that must not use one sample twice remembers the sample time it
    last used, and uses a value only when its sample time is later. There is
@@ -430,10 +442,10 @@ that decides by itself, or a branch it did not take (rules 7.1.2 and
 7.1.3); a latch that is set does not use `set`; `all_good`, a window's
 `count` and the counters read states and not values, and are always `good`.
 A value a block took in at an earlier tick is not one it uses at this
-tick: what the block remembers of it is the block's own rule. There are
-two exceptions to rule D, each named where it is made: a delay, window or
+tick: what the block remembers of it is the block's own rule. There is
+one exception to rule D, named where it is made: a delay, window or
 low-pass on a loop that holds a model block, once the loop has settled
-(rule 7.8.8), and the estimator, whose rule 7.9.5 is still to be amended.
+(rule 7.8.8).
 
 **Memory.** A block that keeps something from one tick to the next says
 how long that memory is.
@@ -819,8 +831,8 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
      refused if the `ticks` of its delays, the lengths of its windows and
      the `settle`s of its low-passes, written or not, all in ticks, add up
      to more than it. An estimator hosts a model but is not a model block, and a loop
-     that holds a model block and an estimator is refused until section
-     7.9 is amended;
+     that holds a model block and an estimator is refused (section 7.9,
+     Open);
    - the loop's **doubt** is the latest tick at which a block in it used a
      value that was not `good`, read from outside the loop, or gave an
      output that was not usable on a port that a block of the loop is
@@ -882,56 +894,150 @@ state from the tick before.
 ### 7.9 The estimator
 
 An estimator hosts a model as its predictor and corrects it from
-measurements. It is an extended Kalman filter with one restriction: each
-measurement reads one state.
+measurements. It is a Kalman filter over a linear model (rule 7.8.7), and
+each measurement reads one output of the model.
 
 1. It starts from the model's initial state, with the variance its `p0`
    gives each state and no covariance between states, and gives outputs
    from tick 0.
-2. **Predict.** On every tick after tick 0 it steps the model one period,
-   from the tick before to this one, and the covariance with it:
-   `P = F·P·Fᵀ`, plus `q` times the period on each state's own variance.
-   `F` is the model's `Ad` (rule 7.8.7). The step is on the model inputs **as they were at the tick
-   before**, as a model block's is (rule 7.8.1): for each, its value then,
-   or if it was unusable then, the last usable value it had had. If some
-   model input had never been usable by then, it does not step the model on
-   this tick: the state stays, and each state's variance still grows by
-   `q` times the period.
+2. **Predict.** Its model inputs are deferred. On every tick after tick 0
+   it steps the model one period, from the tick before to this one, on
+   the model inputs **as they were at the tick before**, as a model
+   block's step is (rule 7.8.1): for each, its value then, or if it was
+   unusable then, the last usable value it had had. The covariance goes
+   with it: `P = Ad·P·Adᵀ + N`. `N` is what process noise has added by the
+   end of the step. For a model in continuous time it is the integral of
+   `exp(A·s)·Q·exp(Aᵀ·s)` for `s` from zero to the period, where `Q` has
+   each state's `q` on its diagonal and nothing off it: `q` is a variance
+   per second, and `N` is exact as `Ad` is, on the same terms (rule
+   7.8.7). For `state_space` it is `q` times the period on each state's
+   own variance. If some model input had never been usable by then, it
+   does not step the state on this tick: the state stays and the
+   covariance is `P + N`.
 3. **Correct.** Then, on every tick, for each measurement in the order they
-   are declared: it is **considered** if it is `good` and its sample time
-   is later than the sample time last considered on that port. A
-   measurement with no sample time is never considered. With
-   `use_uncertain: true` an `uncertain` measurement is considered too.
-4. A considered measurement of state `i`, with variance `r`, has the
-   innovation `z - xᵢ` and the spread `s = Pᵢᵢ + r`. If `gate` is given and
-   the innovation is more than `gate` times the square root of `s` either
-   way, it is **refused**: counted, and nothing changes. Otherwise it is
-   **used**: with `g` the `i`-th column of `P` over `s`, `x = x + g·(z -
-   xᵢ)` and `P = P - g·(row i of P)`.
-5. A state's outputs are `uncertain` on a tick where any model input is
-   unusable at that tick, or where the state's sigma is more than its `sigma_max`, if
-   one is given. Otherwise they are `good`. The covariance is the
-   estimator's own account of its memory, and stands in for a doubt.
-6. Outputs, each a number:
+   are declared: it is **considered** if its sample time is later than
+   the sample time last considered on that port, and it is `good`, or it
+   is `uncertain` and the port gives `r_uncertain`. A measurement with no
+   sample time is never considered. Its variance is the port's `r` if it
+   is `good` and `r_uncertain` if it is `uncertain`. **A measurement
+   carries the time of a sample**: its port is connected to an input, or
+   to a delay or a formula that takes its sample time, through any number
+   of those, from an input (rule 3.7). One connected to any other block,
+   or to a constant, is refused when the graph is compiled: such a block
+   gives its output the time of the tick, and every tick would count as a
+   new sample. Only the path the time comes by is followed. A formula's
+   `sample_of` is its author's word that its value is as new as that
+   input, whatever else the formula reads.
+4. A considered measurement `z` of the output whose row of the model's
+   `C` is `c`, with variance `v`, has the innovation `z - c·x`, the spread
+   `s = c·P·cᵀ + v`, and the **normalised innovation squared**, the
+   innovation squared over `s`. With no gate it is **used**: with
+   `g = P·cᵀ / s`, `x = x + g·(z - c·x)` and
+   `P = (1 - g·c)·P·(1 - g·c)ᵀ + g·v·gᵀ`. That is `P - g·(c·P)`, worked in
+   the form that rounding cannot bring to nothing: with a `p0` of 10¹⁶
+   beside an `r` of 1 the short form leaves a variance of exactly zero
+   after one measurement, and the estimator never moves again. The form
+   keeps `P` symmetric and positive at any ratio. It is not exact at an
+   extreme one: with a `p0` more than about 10¹² times an `r`, the
+   variances of the first few measurements are out by more than the
+   vectors' tolerance, and come right as more are used. A
+   measurement may be of an output that reads no input directly; one that
+   does is refused when the graph is compiled.
+5. **The gate.** If `gate` is given and the innovation is more than `gate`
+   times the square root of `s` either way, the measurement is **over the
+   gate**, and is **refused**: counted, and the state and the covariance
+   do not change. It is still the measurement last considered on its
+   port, and its normalised innovation squared is kept (rule 6). A run is
+   of measurements considered on one port: a tick with none, a gap, and
+   what another port does leave it as it was, and a measurement that is
+   used ends it. `max_refused` is required with `gate`, and is the most a
+   port refuses in a row: a measurement over the gate that would be one
+   more is not refused. It has disagreed for too long to be an outlier:
+   each state's variance grows by its `p0`, `s` is worked again, and the
+   measurement is used. Its normalised innovation squared is the one
+   worked before the variance grew. With `max_refused` of 1 a port
+   refuses one and takes the next; with 0 it refuses none.
+6. **Consistency.** `consistency` is required: either `none`, or `over`, a
+   whole number of measurements, and `limit`. With `over` and `limit`,
+   each port keeps the normalised innovation squared of its last `over`
+   considered measurements, refused ones among them. Once a port has
+   `over` of them, it is **inconsistent** while their mean is more than
+   `limit`. An estimator whose model and noise are right has a mean of 1.
+   A reset empties what a port keeps; a gap does not.
+7. **When it is `good`.** A state's outputs are `uncertain` on a tick
+   where any of these is so, and otherwise `good`:
+   - the step to this tick (rule 2) was on a model input that was
+     `uncertain` or unusable at the tick before, or was not taken, or
+     this tick is the one a gap ran (rule 8.6), unless the gap passed
+     over no tick;
+   - a measurement was refused at this tick, or one over the gate was
+     used at this tick by rule 5: it has given in to what it was refusing,
+     and cannot tell a sensor that is right from one that is stuck;
+   - an `uncertain` measurement was used at this tick;
+   - a port is inconsistent at this tick;
+   - a gap of no known length has gone by (rule 9) and no measurement has
+     been used since, on any port, at the gap's own tick or after it: it
+     does not know where it is until one tells it. A refused measurement
+     does not;
+   - the state's sigma is more than its `sigma_max`, if one is given.
+
+   The covariance is the estimator's own account of its memory, and
+   stands in for a doubt: none of these lasts past its tick but the
+   last three, which last as long as they are so.
+8. Outputs, each a number:
    - one per state, by the state's name, and `sigma_<state>`, the square
      root of its variance;
-   - `innovation_<port>`: on a tick where the measurement was considered,
-     its innovation, `good`; on any other tick `not_ready`;
+   - `innovation_<port>` and `nis_<port>`: on a tick where the measurement
+     was considered, its innovation and its normalised innovation squared,
+     `good`; on any other tick `not_ready`;
    - `refused_<port>`: how many have been refused, `good`;
    - `since_<port>`: the time from the sample time of the measurement last
      used to the tick, and not less than zero, `good`; `not_ready` until one
      has been used.
+9. **At a gap** (rule 8.6). Told that `n` ticks were passed over, it
+   predicts `n` times more, each as rule 2, on the model inputs it last
+   had: that is what those ticks would have done. What is specified is
+   the result of `n` predictions and not that they are made one by one;
+   the same goes for a model block's steps in rule 8.6. Told that nobody
+   knows, each state's variance grows by its `p0`, once. At a rebase,
+   whatever its length, each state's variance grows by its `p0` as well,
+   once, after the predictions for the ticks passed over and before the
+   one for the tick that runs: it compares sample times, and cannot tell
+   a measurement from before the rebase from the same one written again
+   (rule 8.5). A graph whose `N` holds more than a double does is
+   refused, as for `Ad` (rule 7.8.7).
 
 An estimator with a stable model and little process noise stays confident
 through a long stretch without measurements, and is right to if the model
 is right. `since_<port>` is there for the graph that wants to act on the
 stretch itself.
 
+What the consistency test is for. Take a mass of 100 J/K losing 1 W/K,
+heated by a square wave of 60 W with a period of ten minutes, measured
+each second with noise of 0.2, and an estimator of it with `q` of 0.001,
+`r` of 0.04 and `p0` of 1, whose model has the heat loss a fifth too low.
+Over an hour, with a gate of three sigmas and nothing to end a run of
+refusals, it refuses about 3,500 of 3,600 measurements and ends more
+than 3 degrees out; under the third revision's rule it said `good`
+throughout, and under rule 7 it is `uncertain` on every tick it refuses.
+With `max_refused` of 5 it is never more than 1.6 out; it is then `good`
+and more than three of its own sigmas out on about a third of its ticks,
+because a sigma knows only the noise it was told of. With `consistency`
+over 20 and a limit of 2 that falls to between a thirtieth and a
+fiftieth, and with the model right the test costs twenty ticks or
+fewer. The counts move with the noise drawn.
+
 **Open.**
 
-- **A measurement that reads more than one state**, and model inputs with
-  noise of their own. Both need matrix settings and neither needs a vector
-  signal. Settled by: the first graph that needs one.
+- **Model inputs with noise of their own**, and process noise that is not
+  one number per state. Both need matrix settings and neither needs a
+  vector signal. Settled by: the first graph that needs one.
+- **The model's outputs, estimated.** The estimator gives its states. A
+  graph that wants an output that is not a state, a motor's torque say,
+  works it from them in a formula.
+- **An estimator on a loop with a model block** is refused (rule 7.8.8).
+  Its model inputs are deferred, so a loop through them alone compiles;
+  what its being `uncertain` means for a loop's doubt is not worked out.
 
 ### 7.10 Fallbacks
 
@@ -1005,10 +1111,45 @@ to write the stricter thing.
   a gap, goes round for good unless a block of the loop has a fallback or
   rides through. A model block on the cycle ends both, since its outputs
   are always usable.
-- **The estimator** is `good` on an `uncertain` measurement it was told to
-  use (rule 7.9.5), and takes a measurement written again after a rebase
-  as a new one: where its variance had already grown well past `p0`, the
-  one sample sharpens it twice. Section 7.9 is still to be amended.
+- **The estimator takes a measurement written again after a rebase as a
+  new one**: where its variance had already grown well past `p0`, the one
+  sample sharpens it twice.
+- **An estimator is `good` on the tick after a refusal, or after an
+  `uncertain` measurement or model input**, with whatever that did to it
+  still in its state. Its covariance is its account of that, and is right
+  only as far as its model and its noise are. With `consistency: none`
+  nothing checks them, and an estimator with a wrong model is `good` with
+  a sigma that is too small.
+- **`good` from an estimator means that nothing in rule 7.9.7 is so, and
+  not that the estimate is right.** Its sigma is as honest as its `q` and
+  `r`. A `q` of zero says the model is exact: the gain falls to nothing,
+  the sigma with it, and the estimator stops listening and stays `good`.
+- **`max_refused` chooses between two failures.** Large, and after a real
+  step change the estimator is `uncertain` and wrong for that many
+  measurements; small, and a sensor that has stuck is followed within that
+  many. The consistency test needs `over` measurements before it can
+  speak, sees only innovations that are too large, and keeps its last
+  word through a stretch with no measurement.
+- **One sample read on two ports is used twice.** Sample times are kept
+  for each port, so two measurements connected to one input, or to it and
+  a delay of it, each take the one sample. So does a formula whose
+  `sample_of` names an input that is newer than the value it gives.
+- **A sample's time is its host's word.** A host that writes an old value
+  with a new time, as it has to after a rebase (rule 8.5), hands the
+  estimator a new measurement, and after a gap of no known length that is
+  what ends its being `uncertain`.
+- **No test of innovations sees a sensor that reads steadily high or
+  low.** An estimator whose sensor is a degree out is a degree out, and
+  `good`, with or without a consistency test.
+- **An estimator follows a sensor that has stuck**, once it has refused it
+  `max_refused` times: it is `uncertain` on the tick it gives in, and
+  then `good` and as wrong as the sensor. A consistency test catches the
+  jump and not what follows.
+- **An estimator goes on predicting on the model inputs it last had**,
+  through a stretch without them and across a gap of any known length,
+  where a model block stops after `ride_through`. A tick after a stall of
+  a thousand ticks it is `good` on a thousand steps of an input nobody
+  saw, with a sigma that has grown by its process noise alone.
 - **Only a window has a tolerance for doubtful samples.** One `uncertain`
   sample in every `settle` ticks keeps a low-pass, and any low-pass or
   model after it, `uncertain` for good. That includes the value another
@@ -1110,7 +1251,7 @@ to write the stricter thing.
 | `latch` | Unchanged. `doubtful` goes up by `n` if it is not set | Unchanged |
 | `integrate` | The total is unchanged. `missed` and `elapsed` go up by `n` | The total is unchanged. With `max_missed` given it is `bad` until a reset: what it missed is more than that |
 | Model block | For each of those ticks, in order, it steps on the last usable value of every input while each is within `ride_through` (rule 7.8.4), and takes no step from the first tick where one is not. `doubtful` goes up by `n`. The tick before the one that runs is a doubt (rule 7.8.6), its loop's if it is on one: with `settle` it is `uncertain` from the tick that runs | The same doubt. It takes no step, and does not ride through (rule 7.8.4) |
-| `estimator` | Each state's variance grows by its `p0`, whatever `n` is, zero among it. This is not what `n` ticks would have done, and stands until section 7.9 is amended | The same |
+| `estimator` | It predicts `n` times more on the model inputs it last had (rule 7.9.9) | Each state's variance grows by its `p0` |
 
 `elapsed`, which counts ticks, takes in the `n` passed over with no more
 said. Every block that gives `gaps` adds one to it at a gap of either
@@ -1286,7 +1427,7 @@ what the vectors pin down.
 | `mass_spring_damper` | `force` | `mass`, `damping`, `stiffness`, `initial_position` (0), `initial_velocity` (0), and the model settings | `position`, `velocity`; and the model outputs |
 | `dc_motor` | `voltage`, `load_torque` | `resistance`, `inductance`, `back_emf`, `torque_constant`, `inertia`, `friction`, `initial_current` (0), `initial_speed` (0), and the model settings | `speed`, `current`, `torque`; and the model outputs |
 | `state_space` | `u` | `A`, `B`, `C`, `D` (0), `initial` (zeros), and the model settings | `y`; and the model outputs |
-| `estimator` | the model's inputs, and one per measurement | `model`, `q`, `p0`, `measure`, `gate` (none), `sigma_max` (none), `use_uncertain` (false) | see 7.9.6 |
+| `estimator` | the model's inputs, deferred, and one per measurement | `model`, `q`, `p0`, `measure`, `consistency`, `gate` (none), `max_refused`, `sigma_max` (none) | see 7.9.8 |
 
 A setting with a value in brackets may be left out and takes that value.
 `settle` is written as a length of time, like any other counted length. An
@@ -1437,10 +1578,15 @@ and refused without it. `min_good` is required with `only_new: true`.
     settings (not the model settings above).
   - `q` and `p0` are maps from each state's name to a number: `q` a
     variance per second, `p0` a variance.
-  - `measure` maps each measurement port to `of`, a state's name, and `r`,
-    a variance. Its order is the order of rule 7.9.3.
+  - `measure` maps each measurement port to `of`, the name of one of the
+    model's outputs, `r`, a variance, and if wanted `r_uncertain`, a
+    variance not less than `r`. Its order is the order of rule 7.9.3.
+  - `consistency` is `none`, or a map with `over`, a whole number at least
+    1, and `limit`, more than zero.
+  - `max_refused` is a whole number, not negative, given with `gate` and
+    refused without it.
   - `sigma_max` maps states' names to numbers. A state left out has none.
-  - Its inputs are all direct.
+  - Its model inputs are deferred and its measurements direct.
 
 A block may carry `fallback`, a map from an output port to a constant of
 that port's type (section 7.10).
