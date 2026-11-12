@@ -1,0 +1,15 @@
+# 7.8.6: where a model's rates are a pair that swings as it decays, its
+# time constant is one over the rate of decay. omega_n 2 and zeta 0.5
+# decay at 1 a second: settle is 3 ticks.
+rules: [7.8.6, A.second_order_process]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: second_order_process, in: {u: u}, settings: {omega_n: 2, zeta: 0.5}}
+  - {id: s, type: formula, in: {x: m.y}, settings: {expr: "0 * x"}, out: {y: state}}
+calls:
+  - {u: {v: 1, state: uncertain}, state: 0}
+  - {u: 1, state: {u: 0}}
+  - {u: 1, state: {u: 0}}
+  - {u: 1, state: {u: 0}}
+  - {u: 1, state: 0}

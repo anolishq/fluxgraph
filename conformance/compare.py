@@ -51,7 +51,8 @@ def graphs(d, tau):
         return spec
 
     plant = {"A": [[0.5, 0.1], [0.0, 0.8]], "B": [0.5, 0.2], "C": [1.0, 0.0]}
-    thermal = {"thermal_mass": 4.0 * float(tau(1)[:-2]) / 1000.0, "heat_transfer": 1.0, "initial": 3.0}
+    pt = float(tau(1)[:-2]) / 1000.0  # one period, in seconds
+    thermal = {"thermal_mass": 4.0 * pt, "heat_transfer": 1.0, "initial": 3.0}
     return {
         "formula arithmetic": (
             {"a": NUM, "b": NUM},
@@ -246,7 +247,6 @@ def graphs(d, tau):
                     {"power": "a", "ambient": "b"},
                     {"temp": "y"},
                     ride_through=d(1),
-                    substeps=2,
                     **thermal,
                 )
             ],
@@ -283,27 +283,87 @@ def graphs(d, tau):
                 formula("ctl", "0.6 * (a - y)", {"a": "a", "y": "plant.y"}, "e"),
             ],
         ),
-        "two masses, each the other's ambient": (
+        "two masses joined, as one block": (
             {"a": NUM, "b": NUM},
             [
                 block(
-                    "thermal_mass",
-                    {"power": "a", "ambient": "right.temp"},
-                    {"temp": "y"},
-                    bid="left",
-                    settle=d(5),
-                    **thermal,
-                ),
-                block(
-                    "thermal_mass",
-                    {"power": "b", "ambient": "left.temp"},
-                    {"temp": "z", "doubtful": "db"},
-                    bid="right",
-                    settle=d(5),
+                    "thermal_rc2",
+                    {"power": "a", "ambient": "b"},
+                    {"temp_a": "y", "temp_b": "z", "doubtful": "db"},
+                    thermal_mass_a=thermal["thermal_mass"],
+                    thermal_mass_b=2.5 * thermal["thermal_mass"],
+                    heat_transfer_a=1.0,
+                    heat_transfer_b=0.0,
+                    coupling=3.0,
+                    initial_a=3.0,
+                    initial_b=-1.0,
                     ride_through=d(1),
-                    **thermal,
+                )
+            ],
+        ),
+        "first and second order processes": (
+            {"a": NUM},
+            [
+                block("first_order_process", {"u": "a"}, {"y": "y"}, tau=tau(0.3), gain=2.5, initial=1.0),
+                block(
+                    "second_order_process",
+                    {"u": "a"},
+                    {"y": "z", "rate": "zr"},
+                    omega_n=2.0 / (float(tau(1)[:-2]) / 1000.0),
+                    zeta=0.2,
+                    gain=0.5,
+                    initial_rate=1.0,
+                    settle=d(4),
                 ),
             ],
+        ),
+        "a spring, damped and not, and a motor": (
+            {"a": NUM, "b": NUM},
+            [
+                block(
+                    "mass_spring_damper",
+                    {"force": "a"},
+                    {"position": "x", "velocity": "v"},
+                    mass=2.0,
+                    damping=0.0,
+                    stiffness=3.0 / (float(tau(1)[:-2]) / 1000.0) ** 2,
+                    initial_position=0.5,
+                ),
+                block(
+                    "dc_motor",
+                    {"voltage": "a", "load_torque": "b"},
+                    {"speed": "w", "current": "i", "torque": "tq", "gaps": "gp"},
+                    resistance=2.0,
+                    inductance=0.5 * float(tau(1)[:-2]) / 1000.0,
+                    back_emf=0.1,
+                    torque_constant=0.3,
+                    inertia=0.2 * float(tau(1)[:-2]) / 1000.0,
+                    friction=0.05,
+                ),
+            ],
+        ),
+        "a linear model of three states, two inputs and a direct output": (
+            {"a": NUM, "b": NUM},
+            [
+                block(
+                    "linear",
+                    {"p": "a", "q": "b"},
+                    {"first": "y", "mix": "z", "elapsed": "el"},
+                    A=[[-0.4 / pt, 0.1 / pt, 0.0], [0.2 / pt, -0.3 / pt, 0.05 / pt], [0.0, 1.0 / pt, 0.0]],
+                    B=[[1.0 / pt, 0.0], [0.0, 0.5 / pt], [0.0, 0.0]],
+                    C=[[1.0, 0.0, 0.0], [0.5, -1.0, 0.25]],
+                    D=[[0.0, 0.0], [0.0, 2.0]],
+                    initial=[1.0, 0.0, -1.0],
+                    inputs=["p", "q"],
+                    outputs=["first", "mix"],
+                    settle=d(3),
+                    ride_through=d(2),
+                )
+            ],
+        ),
+        "a linear model that grows": (
+            {"a": NUM},
+            [block("linear", {"u": "a"}, {"y": "y"}, A=[[0.3 / pt]], B=[[1.0 / pt]], C=[[1.0]])],
         ),
         "a model in a loop with a delay": (
             {"a": NUM},
@@ -412,7 +472,6 @@ def graphs(d, tau):
                     p0={"temp": 4.0},
                     measure={"z": {"of": "temp", "r": 1.0}},
                     use_uncertain=True,
-                    substeps=2,
                 )
             ],
         ),

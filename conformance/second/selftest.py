@@ -1373,10 +1373,9 @@ def test_loops():
     o = e.tick(ns(0.0))[1]
     check("model 0", o["temp"], ("good", 20.0))
     check("model heat", o["heat"], ("good", 100.0))
-    # d temp/dt = -(temp - 120)/100; RK4 on a linear equation multiplies
-    # the distance from 120 by 1 + z + z^2/2 + z^3/6 + z^4/24, z = -0.01
-    z = -0.01
-    s = 1 + z + z**2 / 2 + z**3 / 6 + z**4 / 24
+    # d temp/dt = -(temp - 120)/100, stepped exactly with its inputs held:
+    # the distance from 120 is multiplied by exp(-0.01) each period
+    s = math.exp(-0.01)
     check("model 1", e.tick(ns(1.0))[1]["temp"], ("good", 120 - 100 * s))
     check("model 2", e.tick(ns(2.0))[1]["temp"], ("good", 120 - 100 * s * s))
     # the two are a loop that holds a model: without `settle` it is refused
@@ -1437,20 +1436,25 @@ def test_loops():
     check("doubt gap info", e.info, info(True, 20, 20 * S, skipped=7))
     step("21", 21, None, "uncertain", 11)
     step("22", 22, None, "good", 11)
-    refused(
-        "unstable",
-        {
-            "period": "30s",
-            "blocks": [
-                {
-                    "id": "plant",
-                    "type": "thermal_mass",
-                    "in": {"power": 0, "ambient": 20},
-                    "settings": {"thermal_mass": 10, "heat_transfer": 1, "initial": 20},
-                }
-            ],
-        },
-    )
+    # no step is too long: three time constants a period is accepted, and
+    # there are no sub-steps (rule 7.8.7)
+    g = {
+        "period": "30s",
+        "blocks": [
+            {
+                "id": "plant",
+                "type": "thermal_mass",
+                "in": {"power": 0, "ambient": 20},
+                "settings": {"thermal_mass": 10, "heat_transfer": 1, "initial": 50},
+                "out": {"temp": "temp"},
+            }
+        ],
+    }
+    e = Engine(g)
+    e.tick(0)
+    check("long step", e.tick(30 * S)[1]["temp"], ("good", 20 + 30 * math.exp(-3.0)))
+    g["blocks"][0]["settings"]["substeps"] = 2
+    refused("substeps is gone", g)
 
     # a state-space block with D not zero reads u at the same tick
     g = {
@@ -1490,31 +1494,34 @@ def test_loops():
     check("ss 6 doubtful", o["db"], ("good", 2.0))
 
 
-def two_masses(settle_a="2s", settle_b="2s"):
-    def mass(bid, power, ambient, settle):
-        st = {"thermal_mass": 10, "heat_transfer": 1, "initial": 20}
-        if settle is not None:
-            st["settle"] = settle
-        return {
-            "id": bid,
-            "type": "thermal_mass",
-            "in": {"power": power, "ambient": ambient},
-            "settings": st,
-            "out": {"temp": bid},
-        }
-
+def two_masses(settle="2s"):
+    """Since amendment 4 a loop holds one model block: a thermal mass whose
+    ambient is its own temperature, by way of a formula. The formula's
+    output is published as `b`."""
+    st = {"thermal_mass": 10, "heat_transfer": 1, "initial": 20}
+    if settle is not None:
+        st["settle"] = settle
     return {
         "period": "1s",
         "max_catch_up": 3,
         "inputs": {"p": {"max_age": "none"}},
-        "blocks": [mass("a", "p", "b.temp", settle_a), mass("b", 0, "a.temp", settle_b)],
+        "blocks": [
+            {
+                "id": "a",
+                "type": "thermal_mass",
+                "in": {"power": "p", "ambient": "b"},
+                "settings": st,
+                "out": {"temp": "a"},
+            },
+            {"id": "f", "type": "formula", "in": {"t": "a.temp"}, "settings": {"expr": "t"}, "out": {"y": "b"}},
+        ],
     }
 
 
 def test_model_loops():
     """Rule 7.8.8: a loop that holds a model is one block."""
-    # two masses that each take the other's temperature. Nothing moves:
-    # both start at 20 and the power is 0.
+    # a mass that takes its own temperature as its ambient, through a
+    # formula: one loop. Nothing moves: it starts at 20 and the power is 0.
     e = Engine(two_masses())
 
     def step(k, p, want):
@@ -1547,16 +1554,41 @@ def test_model_loops():
     step(0, None, "uncertain")  # tick 22: the doubt is tick 21
     step(1, None, "uncertain")
     step(2, None, "good")
-    refused("masses, one with no settle", two_masses("2s", None))
-    refused("masses, neither with settle", two_masses(None, None))
-    refused("masses, settles differ", two_masses("2s", "3s"))
-    g = two_masses(None, None)
+    refused("a model on a loop with no settle", two_masses(None))
+    g = two_masses(None)
     g["blocks"][0]["in"]["ambient"] = 20
-    Engine(g)  # no loop: b reads a, and a reads nothing of b
+    Engine(g)  # no loop: the formula reads a, and a reads nothing of it
     g["blocks"][0]["in"]["ambient"] = "a.temp"
     refused("a model that reads its own output, with no settle", g)
     g["blocks"][0]["settings"]["settle"] = "0s"
     Engine(g)
+
+    # a loop holds one model block and no more (amendment 4): two thermal
+    # masses that each take the other's temperature are refused
+    def mass(bid, ambient):
+        return {
+            "id": bid,
+            "type": "thermal_mass",
+            "in": {"power": 0, "ambient": ambient},
+            "settings": {"thermal_mass": 10, "heat_transfer": 1, "initial": 20, "settle": "2s"},
+        }
+
+    refused("two model blocks on a loop", {"period": "1s", "blocks": [mass("a", "b.temp"), mass("b", "a.temp")]})
+    # also when a formula and a delay stand between them
+    refused(
+        "two model blocks on a loop, apart",
+        {
+            "period": "1s",
+            "blocks": [
+                mass("a", "f.y"),
+                mass("b", "a.temp"),
+                {"id": "d", "type": "delay", "in": {"x": "b.temp"}, "settings": {"initial": 20}},
+                {"id": "f", "type": "formula", "in": {"t": "d.y"}, "settings": {"expr": "t"}},
+            ],
+        },
+    )
+    # one after the other, with no way back, is no loop
+    Engine({"period": "1s", "blocks": [mass("a", 20), mass("b", "a.temp")]})
 
     # a plant, a delay and a controller in one loop:
     #   plant: x' = 0.5 x + u, y = x;  d: plant.y one tick late;
@@ -2458,9 +2490,9 @@ def test_gap_blocks():
     counts("gd integ 7", o, missed=5, elapsed=8, gaps=2)
 
     # --- a model: steps not taken, and riding through a gap
-    # d temp/dt = (10 - (temp - 20)) / 10: towards 30, by s per step
-    z = -0.1
-    s = 1 + z + z**2 / 2 + z**3 / 6 + z**4 / 24
+    # d temp/dt = (10 - (temp - 20)) / 10: towards 30, by s per step,
+    # exactly: s is exp(-0.1)
+    s = math.exp(-0.1)
     t1 = 30 - 10 * s
     t2 = 30 - 10 * s * s
     mass = {
@@ -2654,6 +2686,738 @@ def test_gap_round_three():
     o = put(e, 0, "good", 7.0)
     check("g3 window plain count", o["count"], ("good", 4.0))
     check("g3 window plain mean", o["mean"], ("good", 4.0))
+
+
+def model_run(block, period, ticks, x=None, in_type="number"):
+    """One model block with every output published under its port's name;
+    the input `x`, if given, is written `good` before tick 0 and stands.
+    Gives the outputs of ticks 0 to ticks - 1; tick k is at k periods."""
+    blk = dict(block, id="b")
+    g = {"period": period, "inputs": {"x": {"type": in_type, "max_age": "none"}}, "blocks": [blk]}
+    e = Engine(g)
+    blk["out"] = {p: p for p in e._blocks["b"].out_ports}
+    e = Engine(g)
+    step = e._period_ns
+    if x is not None:
+        e.write("x", "good", x, 0)
+    return [e.tick(k * step)[1] for k in range(ticks)]
+
+
+def against(label, outs, period_s, **forms):
+    """forms: for each port, the closed form as a function of time."""
+    for port, f in forms.items():
+        for k, o in enumerate(outs):
+            check("%s %s %d" % (label, port, k), o[port], ("good", f(k * period_s)))
+
+
+def test_models_closed_form():
+    """Amendment 4, rule 7.8.7: a model is stepped exactly. With its inputs
+    constant from tick 0, its state at tick k is the solution of its
+    equation at k periods; each closed form here is worked out by hand."""
+    exp, cos, sin, sqrt = math.exp, math.cos, math.sin, math.sqrt
+
+    # thermal_mass: temp = amb + P/h + (T0 - amb - P/h) exp(-h t / c)
+    blk = {
+        "type": "thermal_mass",
+        "in": {"power": "x", "ambient": 20},
+        "settings": {"thermal_mass": 10, "heat_transfer": 2, "initial": 50},
+    }
+    against("cf thermal", model_run(blk, "1s", 6, 30.0), 1.0, temp=lambda t: 35 + 15 * exp(-0.2 * t))
+    # a period of ten time constants, and of a hundredth of one
+    against("cf thermal long", model_run(blk, "50s", 3, 30.0), 50.0, temp=lambda t: 35 + 15 * exp(-0.2 * t))
+    against("cf thermal short", model_run(blk, "50ms", 4, 30.0), 0.05, temp=lambda t: 35 + 15 * exp(-0.2 * t))
+
+    # first_order_process: y = g u + (y0 - g u) exp(-t / tau)
+    blk = {"type": "first_order_process", "in": {"u": "x"}, "settings": {"tau": "2s", "gain": 3, "initial": 1}}
+    against("cf first", model_run(blk, "500ms", 6, 2.0), 0.5, y=lambda t: 6 - 5 * exp(-t / 2))
+    # the answer does not depend on the period: 1 s, in one step and in four
+    one = model_run(blk, "1s", 2, 2.0)[1]["y"]
+    four = model_run(blk, "250ms", 5, 2.0)[4]["y"]
+    check("cf first period", one, four)
+    blk = {"type": "first_order_process", "in": {"u": "x"}, "settings": {"tau": "2s"}}
+    against("cf first defaults", model_run(blk, "1s", 4, 2.0), 1.0, y=lambda t: 2 - 2 * exp(-t / 2))
+
+    # second_order_process, underdamped, from rest, u = 1, gain 5:
+    #   y = g (1 - exp(-z w t) (cos wd t + z / sqrt(1 - z^2) sin wd t))
+    #   rate = g w / sqrt(1 - z^2) exp(-z w t) sin wd t,  wd = w sqrt(1 - z^2)
+    w, z, g = 2.0, 0.25, 5.0
+    r = sqrt(1 - z * z)
+    wd = w * r
+    blk = {"type": "second_order_process", "in": {"u": "x"}, "settings": {"omega_n": w, "zeta": z, "gain": g}}
+    against(
+        "cf second under",
+        model_run(blk, "300ms", 8, 1.0),
+        0.3,
+        y=lambda t: g * (1 - exp(-z * w * t) * (cos(wd * t) + z / r * sin(wd * t))),
+        rate=lambda t: g * w / r * exp(-z * w * t) * sin(wd * t),
+    )
+    # critically damped: y = 1 - exp(-w t) (1 + w t), rate = w^2 t exp(-w t)
+    blk = {"type": "second_order_process", "in": {"u": "x"}, "settings": {"omega_n": w, "zeta": 1}}
+    against(
+        "cf second critical",
+        model_run(blk, "300ms", 8, 1.0),
+        0.3,
+        y=lambda t: 1 - exp(-w * t) * (1 + w * t),
+        rate=lambda t: w * w * t * exp(-w * t),
+    )
+    # overdamped, w = 1, z = 1.25: roots -0.5 and -2, so
+    #   y = 1 - (4 exp(-t / 2) - exp(-2 t)) / 3,  rate = 2 (exp(-t / 2) - exp(-2 t)) / 3
+    blk = {"type": "second_order_process", "in": {"u": "x"}, "settings": {"omega_n": 1, "zeta": 1.25}}
+    against(
+        "cf second over",
+        model_run(blk, "700ms", 6, 1.0),
+        0.7,
+        y=lambda t: 1 - (4 * exp(-t / 2) - exp(-2 * t)) / 3,
+        rate=lambda t: 2 * (exp(-t / 2) - exp(-2 * t)) / 3,
+    )
+    # undamped, no input, from y = 3 with rate 4: y = 3 cos 2t + 2 sin 2t
+    blk = {
+        "type": "second_order_process",
+        "in": {"u": 0},
+        "settings": {"omega_n": 2, "zeta": 0, "initial": 3, "initial_rate": 4},
+    }
+    against(
+        "cf second undamped",
+        model_run(blk, "400ms", 8),
+        0.4,
+        y=lambda t: 3 * cos(2 * t) + 2 * sin(2 * t),
+        rate=lambda t: -6 * sin(2 * t) + 4 * cos(2 * t),
+    )
+
+    # mass_spring_damper. No spring and no damper, force 6 on a mass of 2:
+    #   velocity = 3 t, position = 1.5 t^2 (A is not invertible)
+    blk = {"type": "mass_spring_damper", "in": {"force": "x"}, "settings": {"mass": 2, "damping": 0, "stiffness": 0}}
+    against(
+        "cf msd free",
+        model_run(blk, "500ms", 6, 6.0),
+        0.5,
+        position=lambda t: 1.5 * t * t,
+        velocity=lambda t: 3 * t,
+    )
+    # a spring and no damper, mass 2, stiffness 8 (2 rad/s), force 4 from rest:
+    #   position = (1 - cos 2t) / 2, velocity = sin 2t
+    blk = {"type": "mass_spring_damper", "in": {"force": "x"}, "settings": {"mass": 2, "damping": 0, "stiffness": 8}}
+    against(
+        "cf msd spring",
+        model_run(blk, "250ms", 10, 4.0),
+        0.25,
+        position=lambda t: (1 - cos(2 * t)) / 2,
+        velocity=lambda t: sin(2 * t),
+    )
+    # a damper and no spring, mass 2, damping 4, force 8:
+    #   velocity = 2 (1 - exp(-2t)), position = 2 t - (1 - exp(-2t))
+    blk = {"type": "mass_spring_damper", "in": {"force": "x"}, "settings": {"mass": 2, "damping": 4, "stiffness": 0}}
+    against(
+        "cf msd damper",
+        model_run(blk, "250ms", 8, 8.0),
+        0.25,
+        position=lambda t: 2 * t - (1 - exp(-2 * t)),
+        velocity=lambda t: 2 * (1 - exp(-2 * t)),
+    )
+    # all three, underdamped, released from 1 at rest: m 1, c 2, k 5:
+    #   roots -1 +- 2i: position = exp(-t) (cos 2t + sin 2t / 2),
+    #   velocity = -2.5 exp(-t) sin 2t
+    blk = {
+        "type": "mass_spring_damper",
+        "in": {"force": 0},
+        "settings": {"mass": 1, "damping": 2, "stiffness": 5, "initial_position": 1},
+    }
+    against(
+        "cf msd all",
+        model_run(blk, "300ms", 8),
+        0.3,
+        position=lambda t: exp(-t) * (cos(2 * t) + sin(2 * t) / 2),
+        velocity=lambda t: -2.5 * exp(-t) * sin(2 * t),
+    )
+
+    # thermal_rc2, both masses 10, both losses 1, coupling 3, no power,
+    # ambient 20, from 50 and 30. With a = temp_a - 20 and b = temp_b - 20
+    # the sum decays at 1/10 and the difference at (1 + 2*3)/10:
+    #   a + b = 40 exp(-0.1 t), a - b = 20 exp(-0.7 t)
+    rc2 = {
+        "thermal_mass_a": 10,
+        "thermal_mass_b": 10,
+        "heat_transfer_a": 1,
+        "heat_transfer_b": 1,
+        "coupling": 3,
+        "initial_a": 50,
+        "initial_b": 30,
+    }
+    blk = {"type": "thermal_rc2", "in": {"power": 0, "ambient": 20}, "settings": rc2}
+    against(
+        "cf rc2",
+        model_run(blk, "2s", 6),
+        2.0,
+        temp_a=lambda t: 20 + 20 * exp(-0.1 * t) + 10 * exp(-0.7 * t),
+        temp_b=lambda t: 20 + 20 * exp(-0.1 * t) - 10 * exp(-0.7 * t),
+    )
+    # the text's case: a conductance of three times the loss, run at half
+    # the time constant (5 s): the one block gives the true answer
+    against(
+        "cf rc2 half",
+        model_run(blk, "5s", 5),
+        5.0,
+        temp_a=lambda t: 20 + 20 * exp(-0.1 * t) + 10 * exp(-0.7 * t),
+        temp_b=lambda t: 20 + 20 * exp(-0.1 * t) - 10 * exp(-0.7 * t),
+    )
+    # with power 11 into the first, unequal masses and losses 1 and 2,
+    # coupling 3: at rest, 3 (a - b) = 2 b and 11 = a + 2 b, so b = 3 and
+    # a = 5 above ambient. One step of a day gets there.
+    rc2b = dict(rc2, thermal_mass_b=40, heat_transfer_b=2)
+    blk = {"type": "thermal_rc2", "in": {"power": "x", "ambient": 20}, "settings": rc2b}
+    o = model_run(blk, "24h", 2, 11.0)[1]
+    check("cf rc2 rest a", o["temp_a"], ("good", 25.0))
+    check("cf rc2 rest b", o["temp_b"], ("good", 23.0))
+
+    # dc_motor with no back emf: the current is a first-order lag of the
+    # voltage (rate R/L = 4) and the speed a lag of the current (rate
+    # b/J = 1):  i = (V/R)(1 - exp(-4t)),
+    #   speed = (Kt V / (R b)) (1 - (4 exp(-t) - exp(-4t)) / 3)
+    motor = {
+        "resistance": 2,
+        "inductance": 0.5,
+        "back_emf": 0,
+        "torque_constant": 3,
+        "inertia": 2,
+        "friction": 2,
+    }
+    blk = {"type": "dc_motor", "in": {"voltage": "x", "load_torque": 0}, "settings": motor}
+    against(
+        "cf motor",
+        model_run(blk, "200ms", 8, 4.0),
+        0.2,
+        current=lambda t: 2 * (1 - exp(-4 * t)),
+        torque=lambda t: 6 * (1 - exp(-4 * t)),
+        speed=lambda t: 3 * (1 - (4 * exp(-t) - exp(-4 * t)) / 3),
+    )
+    # a load torque alone: speed = -(TL / b)(1 - exp(-b t / J))
+    blk = {"type": "dc_motor", "in": {"voltage": 0, "load_torque": "x"}, "settings": motor}
+    against(
+        "cf motor load",
+        model_run(blk, "500ms", 6, 5.0),
+        0.5,
+        speed=lambda t: -2.5 * (1 - exp(-t)),
+        current=lambda t: 0.0,
+    )
+    # with back emf, at rest: V = R i + Ke w and Kt i = b w + TL. With
+    # R 2, Ke 0.5, Kt 3, b 2, V 8, TL 1: i = 3, w = 4, torque = 9.
+    blk = {
+        "type": "dc_motor",
+        "in": {"voltage": "x", "load_torque": 1},
+        "settings": dict(motor, back_emf=0.5, initial_current=1, initial_speed=-2),
+    }
+    o = model_run(blk, "1h", 2, 8.0)
+    check("cf motor initial speed", o[0]["speed"], ("good", -2.0))
+    check("cf motor initial current", o[0]["current"], ("good", 1.0))
+    check("cf motor initial torque", o[0]["torque"], ("good", 3.0))
+    check("cf motor rest speed", o[1]["speed"], ("good", 4.0))
+    check("cf motor rest current", o[1]["current"], ("good", 3.0))
+    check("cf motor rest torque", o[1]["torque"], ("good", 9.0))
+
+    # linear. Three integrators in a row, u = 6: x2 = 6t, x1 = 3t^2, x0 = t^3
+    blk = {
+        "type": "linear",
+        "in": {"u": "x"},
+        "settings": {
+            "A": [[0, 1, 0], [0, 0, 1], [0, 0, 0]],
+            "B": [[0], [0], [1]],
+            "C": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+        },  # noqa: E501
+    }
+    against(
+        "cf linear chain",
+        model_run(blk, "500ms", 6, 6.0),
+        0.5,
+        y0=lambda t: t**3,
+        y1=lambda t: 3 * t * t,
+        y2=lambda t: 6 * t,
+    )
+    # a turn that grows: A = [[a, -w], [w, a]] gives exp(a t) times a turn by w t
+    blk = {
+        "type": "linear",
+        "in": {"u": 0},
+        "settings": {
+            "A": [[0.1, -2], [2, 0.1]],
+            "B": [[0], [0]],
+            "C": [[1, 0], [0, 1]],
+            "initial": [1, 0],
+            "outputs": ["c", "s"],
+        },
+    }
+    against(
+        "cf linear turn",
+        model_run(blk, "700ms", 8),
+        0.7,
+        c=lambda t: exp(0.1 * t) * cos(2 * t),
+        s=lambda t: exp(0.1 * t) * sin(2 * t),
+    )
+    # stiff: rates of a thousand and of a thousandth a second, period 10 s
+    # (the first row, summed, times the period is 10,000: within the bound).
+    #   x0' = -1e3 x0 + 1e3 u, x1' = x0 - 1e-3 x1, u = 1, from rest:
+    #   x0 = 1 - exp(-1e3 t)
+    #   x1 = 1e3 (1 - exp(-1e-3 t)) - (exp(-1e-3 t) - exp(-1e3 t)) / (1e3 - 1e-3)
+    blk = {
+        "type": "linear",
+        "in": {"u": "x"},
+        "settings": {"A": [[-1e3, 0], [1, -1e-3]], "B": [[1e3], [0]], "C": [[1, 0], [0, 1]]},
+    }
+    against(
+        "cf linear stiff",
+        model_run(blk, "10s", 5, 1.0),
+        10.0,
+        y0=lambda t: 1 - exp(-1e3 * t),
+        y1=lambda t: 1e3 * (1 - exp(-1e-3 * t)) - (exp(-1e-3 * t) - exp(-1e3 * t)) / (1e3 - 1e-3),
+    )
+    # two inputs, two outputs and a D: an output that reads an input reads
+    # it at the same tick. x' = -x + u0 + 2 u1; ya = x, yb = 3 x + 4 u1.
+    #   with u0 = 1 (constant) and u1 = 2: x = 5 (1 - exp(-t))
+    blk = {
+        "type": "linear",
+        "in": {"p": 1, "q": "x"},
+        "settings": {
+            "A": [[-1]],
+            "B": [[1, 2]],
+            "C": [[1], [3]],
+            "D": [[0, 0], [0, 4]],
+            "inputs": ["p", "q"],
+            "states": ["level"],
+            "outputs": ["ya", "yb"],
+        },
+    }
+    against(
+        "cf linear D",
+        model_run(blk, "1s", 5, 2.0),
+        1.0,
+        ya=lambda t: 5 * (1 - exp(-t)),
+        yb=lambda t: 15 * (1 - exp(-t)) + 8,
+    )
+    # a linear block is the named model it spells out
+    blk = {
+        "type": "linear",
+        "in": {"u0": "x", "u1": 20},
+        "settings": {"A": [[-0.2]], "B": [[0.1, 0.2]], "C": [[1]], "initial": [50]},
+    }
+    against("cf linear as thermal", model_run(blk, "1s", 6, 30.0), 1.0, y=lambda t: 35 + 15 * exp(-0.2 * t))
+
+    # state_space is in discrete time: its A and B are the step itself,
+    # at whatever period. x' = 0.5 x + u, u = 1: x = 2 (1 - 0.5^k)
+    blk = {"type": "state_space", "in": {"u": "x"}, "settings": {"A": [[0.5]], "B": [1], "C": [1]}}
+    for period in ("1s", "10ms", "1h"):
+        outs = model_run(blk, period, 5, 1.0)
+        for k, o in enumerate(outs):
+            check("cf state_space %s %d" % (period, k), o["y"], ("good", 2 * (1 - 0.5**k)))
+
+
+def test_models_settle_and_names():
+    """Amendment 4: where `settle` comes from (rule 7.8.6), the names of a
+    `linear` block, and what is refused."""
+
+    def uncertain_ticks(block, period="1s", ticks=60):
+        """The input is unusable at tick 1 and at no other: a step not
+        taken, the doubt. How many ticks after it are uncertain."""
+        blk = dict(block, id="b")
+        g = {"period": period, "inputs": {"x": {"max_age": "none"}}, "blocks": [blk]}
+        e = Engine(g)
+        port = next(iter(e._blocks["b"].out_ports))
+        blk["out"] = {port: "o"}
+        e = Engine(g)
+        step = e._period_ns
+        states = []
+        for k in range(ticks):
+            if k < 3:
+                e.write("x", "bad" if k == 1 else "good", None if k == 1 else 0.0, k * step)
+            states.append(e.tick(k * step)[1]["o"][0])
+        check("settle: good up to the doubt", states[:2], ["good", "good"])
+        n = 0
+        while 2 + n < ticks and states[2 + n] == "uncertain":
+            n += 1
+        check("settle: good after it", all(s == "good" for s in states[2 + n :]), True)
+        return n
+
+    # thermal_mass: one eigenvalue, -h/c = -0.1: three time constants are 30
+    blk = {
+        "type": "thermal_mass",
+        "in": {"power": "x", "ambient": 20},
+        "settings": {"thermal_mass": 10, "heat_transfer": 1, "initial": 20},
+    }
+    check("settle thermal", uncertain_ticks(blk), 30)
+    check("settle thermal, 4 s", uncertain_ticks(blk, "4s"), 8)  # 30 s is 7.5 periods
+    check("settle thermal given", uncertain_ticks(dict(blk, settings=dict(blk["settings"], settle="2s"))), 2)
+    # first_order_process: tau 2.5 s: 7.5 s, rounded up
+    blk = {"type": "first_order_process", "in": {"u": "x"}, "settings": {"tau": "2500ms"}}
+    check("settle first", uncertain_ticks(blk), 8)
+    # second_order_process, underdamped: the real part is -zeta omega_n = -0.5
+    blk = {"type": "second_order_process", "in": {"u": "x"}, "settings": {"omega_n": 2, "zeta": 0.25}}
+    check("settle second under", uncertain_ticks(blk), 6)
+    # overdamped, omega_n 1, zeta 1.25: eigenvalues -0.5 and -2; the slowest
+    blk = {"type": "second_order_process", "in": {"u": "x"}, "settings": {"omega_n": 1, "zeta": 1.25}}
+    check("settle second over", uncertain_ticks(blk), 6)
+    # critically damped: both are -2: 1.5 s
+    blk = {"type": "second_order_process", "in": {"u": "x"}, "settings": {"omega_n": 2, "zeta": 1}}
+    check("settle second critical", uncertain_ticks(blk), 2)
+    # no damping: a state that does not decay, so no settle: good
+    blk = {"type": "second_order_process", "in": {"u": "x"}, "settings": {"omega_n": 2, "zeta": 0}}
+    check("settle second undamped", uncertain_ticks(blk), 0)
+    # mass_spring_damper: m 1, c 2, k 5: -1 +- 2i: 3 s
+    msd = {"type": "mass_spring_damper", "in": {"force": "x"}, "settings": {"mass": 1, "damping": 2, "stiffness": 5}}
+    check("settle msd", uncertain_ticks(msd), 3)
+    # no spring: an eigenvalue of zero (the position stays where it is)
+    check("settle msd no spring", uncertain_ticks(dict(msd, settings={"mass": 1, "damping": 2, "stiffness": 0})), 0)
+    check("settle msd no damper", uncertain_ticks(dict(msd, settings={"mass": 1, "damping": 0, "stiffness": 5})), 0)
+    # thermal_rc2, masses 10, losses 1, coupling 3: rates 0.1 and 0.7
+    rc2 = {
+        "thermal_mass_a": 10,
+        "thermal_mass_b": 10,
+        "heat_transfer_a": 1,
+        "heat_transfer_b": 1,
+        "coupling": 3,
+        "initial_a": 20,
+        "initial_b": 20,
+    }
+    blk = {"type": "thermal_rc2", "in": {"power": "x", "ambient": 20}, "settings": rc2}
+    check("settle rc2", uncertain_ticks(blk), 30)
+    # with no loss at all the heat stays in: no settle
+    blk = dict(blk, settings=dict(rc2, heat_transfer_a=0, heat_transfer_b=0))
+    check("settle rc2 no loss", uncertain_ticks(blk), 0)
+    # round three: no coupling is allowed. Two masses apart, with rates
+    # 0.1 and 0.2: h is -0.15 and d 0.02, h squared is more than d, and
+    # the largest real part is d / (h - sqrt(h^2 - d)) = 0.02 / -0.2
+    blk = dict(blk, settings=dict(rc2, coupling=0, heat_transfer_b=2))
+    check("settle rc2 apart", uncertain_ticks(blk), 30)
+    # the second loses nothing: d is zero, and so is the largest real part
+    blk = dict(blk, settings=dict(rc2, coupling=0, heat_transfer_b=0))
+    check("settle rc2 apart, one kept in", uncertain_ticks(blk), 0)
+    # two the same, 0.3 each: h squared is no more than d, and it is h
+    blk = dict(blk, settings=dict(rc2, coupling=0, heat_transfer_a=3, heat_transfer_b=3))
+    check("settle rc2 apart, alike", uncertain_ticks(blk), 10)
+    blk = {"type": "thermal_rc2", "in": {"power": "x", "ambient": 20}, "settings": rc2}
+    # round four: the determinant comes from the settings and not from
+    # A's entries (rule 7.8.6). Both masses 1, coupling 1, losses of 1e-9:
+    # the two cool together at 1e-9 a second, so the constant is 1e9 s and
+    # settle three of them. Worked from A's entries, d loses that rate in
+    # a subtraction and the constant comes out near 0.99999992e9.
+    slow = dict(rc2, thermal_mass_a=1, thermal_mass_b=1, heat_transfer_a=1e-9, heat_transfer_b=1e-9, coupling=1)
+    slow = {"id": "b", "type": "thermal_rc2", "in": {"power": 0, "ambient": 0}, "settings": slow}
+    e = Engine({"period": "1s", "blocks": [slow]})
+    check("settle rc2 slow tau", close(e._blocks["b"].model.tau, 1e9), True)
+    check("settle rc2 slow ticks", abs(e._blocks["b"].settle - 3 * 10**9) <= 3, True)
+    # dc_motor with no back emf: rates R/L = 4 and b/J = 1: 3 s
+    motor = {"resistance": 2, "inductance": 0.5, "back_emf": 0, "torque_constant": 3, "inertia": 2, "friction": 2}
+    blk = {"type": "dc_motor", "in": {"voltage": "x", "load_torque": 0}, "settings": motor}
+    check("settle motor", uncertain_ticks(blk), 3)
+    # with back emf 0.5: h is -2.5 and d (2*2 + 0.5*3) / (0.5*2) = 5.5; the
+    # largest real part is 5.5 / (-2.5 - sqrt(0.75)), a constant of 0.612 s
+    check("settle motor back emf", uncertain_ticks(dict(blk, settings=dict(motor, back_emf=0.5))), 2)
+    # a spring and a heavy damper on a mass of 2: A is [[0, 1], [-4, -5]],
+    # d is stiffness / mass = 4, eigenvalues -1 and -4: 3 s
+    over = {"type": "mass_spring_damper", "in": {"force": "x"}, "settings": {"mass": 2, "damping": 10, "stiffness": 8}}
+    check("settle msd over", uncertain_ticks(over), 3)
+    # a motor with no resistance and no friction: d is back_emf times
+    # torque_constant over inductance times inertia, h is zero, and the
+    # eigenvalues are a pair on the imaginary axis. No state decays, so no
+    # settle. (Round five: the two constants are not negative, so no named
+    # model has an eigenvalue with a real part above zero.)
+    blk = dict(blk, settings=dict(motor, resistance=0, friction=0, back_emf=1, torque_constant=1))
+    check("settle motor lossless", uncertain_ticks(blk, ticks=12), 0)
+    # nothing at all: d is zero
+    blk = dict(blk, settings=dict(motor, resistance=0, friction=0, back_emf=0, torque_constant=0))
+    check("settle motor idle", uncertain_ticks(blk, ticks=12), 0)
+    # linear and state_space are given none, whatever their A
+    blk = {"type": "linear", "in": {"u": "x"}, "settings": {"A": [[-0.1]], "B": [[0.1]], "C": [[1]]}}
+    check("settle linear", uncertain_ticks(blk), 0)
+    check("settle linear given", uncertain_ticks(dict(blk, settings=dict(blk["settings"], settle="4s"))), 4)
+    blk = {"type": "state_space", "in": {"u": "x"}, "settings": {"A": [[0.5]], "B": [1], "C": [1]}}
+    check("settle state_space", uncertain_ticks(blk), 0)
+
+    # the names of a linear block
+    def lin(**settings):
+        st = {"A": [[0, 1], [0, 0]], "B": [[0, 0], [1, 1]], "C": [[1, 0], [0, 1]]}
+        st.update(settings)
+        st = {k: v for k, v in st.items() if v is not None}
+        ins = {name: 0 for name in st.get("inputs", ["u0", "u1"])}
+        return {"period": "1s", "blocks": [{"id": "b", "type": "linear", "in": ins, "settings": st}]}
+
+    e = Engine(lin())
+    check("lin default inputs", sorted(e._blocks["b"].in_ports), ["u0", "u1"])
+    check("lin default outputs", sorted(e._blocks["b"].out_ports), ["doubtful", "elapsed", "gaps", "y0", "y1"])
+    check("lin default states", list(e._blocks["b"].model.states), ["x0", "x1"])
+    e = Engine(
+        {
+            "period": "1s",
+            "blocks": [{"id": "b", "type": "linear", "in": {"u": 0}, "settings": {"A": [[0]], "B": [[1]], "C": [[1]]}}],
+        }
+    )  # noqa: E501
+    check("lin single input", sorted(e._blocks["b"].in_ports), ["u"])
+    check("lin single output", sorted(e._blocks["b"].out_ports), ["doubtful", "elapsed", "gaps", "y"])
+    check("lin single state", list(e._blocks["b"].model.states), ["x0"])
+    Engine(lin(inputs=["a", "b"], states=["p", "v"], outputs=["pos", "vel"]))
+    Engine(lin(outputs=["u0", "x0"]))  # an output may be named as an input or a state is
+    refused("lin names repeated", lin(outputs=["pos", "pos"]))
+    refused("lin inputs repeated", lin(inputs=["a", "a"]))
+    refused("lin states repeated", lin(states=["a", "a"]))
+    refused("lin output named as a model output", lin(outputs=["pos", "gaps"]))
+    refused("lin too few names", lin(outputs=["pos"]))
+    refused("lin a name that is not text", lin(states=["p", 2]))
+    refused("lin A not square", lin(A=[[0, 1], [0, 0], [0, 0]]))
+    refused("lin A ragged", lin(A=[[0, 1], [0]]))
+    refused("lin B rows", lin(B=[[0, 0]]))
+    refused("lin B ragged", lin(B=[[0, 0], [1]]))
+    refused("lin C width", lin(C=[[1, 0, 0]]))
+    refused("lin D size", lin(D=[[0, 0]]))
+    refused("lin D width", lin(D=[[0], [0]]))
+    refused("lin initial size", lin(initial=[0]))
+    refused("lin no A", lin(A=None))
+    refused("lin no B", lin(B=None))
+    refused("lin no C", lin(C=None))
+    refused("lin not finite", lin(A=[[0, float("inf")], [0, 0]]))
+    refused("lin substeps", lin(substeps=1))
+    # round two: at least one state, one input and one output
+    refused("lin no input", lin(B=[[], []], inputs=[]))
+    refused("lin no output", lin(C=[]))
+    refused("lin no state", lin(A=[], B=[], C=[[]]))
+    # the three lists do not have to differ from each other
+    Engine(lin(inputs=["a", "b"], states=["a", "b"], outputs=["a", "b"]))
+
+    # round two, rule 7.8.7: a model that grows so fast that Ad or Bd is
+    # not finite at the graph's period is refused. exp(5 * 200) is not a
+    # double; exp(5 * 100) is, about 1.4e217.
+    def grows(period, a=5):
+        blk = {"id": "b", "type": "linear", "in": {"u": "x"}, "settings": {"A": [[a]], "B": [[1]], "C": [[1]]}}
+        blk["out"] = {"y": "y"}
+        return {"period": period, "inputs": {"x": {"max_age": "none"}}, "blocks": [blk]}
+
+    refused("grows: Ad not finite", grows("200s"))
+    e = Engine(grows("100s"))
+    e.write("x", "good", 0.0, 0)
+    check("grows 0", e.tick(0)[1]["y"], ("good", 0.0))
+    check("grows 1", e.tick(100 * S)[1]["y"], ("good", 0.0))
+    # with u = 1: x = (exp(5 t) - 1) / 5
+    e = Engine(grows("100s"))
+    e.write("x", "good", 1.0, 0)
+    e.tick(0)
+    check("grows u", e.tick(100 * S)[1]["y"], ("good", (math.exp(500.0) - 1) / 5))
+    # Bd alone: exp(5 * 141) is about 1.5e306, a double, and with a B of
+    # 1e10 the integral, a fifth of that times B, is not
+    g = grows("141s")
+    Engine(g)
+    g["blocks"][0]["settings"]["B"] = [[1e10]]
+    refused("grows: Bd not finite", g)
+    # (round five: no named model can grow, now that a dc_motor's
+    # constants are not negative; only `linear` can be refused for this)
+    # and the model of an estimator
+    est = {
+        "id": "b",
+        "type": "estimator",
+        "in": {"u": 0, "z": 0},
+        "settings": {
+            "model": {"type": "linear", "A": [[5]], "B": [[1]], "C": [[1]]},
+            "q": {"x0": 1},
+            "p0": {"x0": 1},
+            "measure": {"z": {"of": "x0", "r": 1}},
+        },
+    }
+    Engine({"period": "100s", "blocks": [est]})
+    refused("grows: an estimator's model", {"period": "200s", "blocks": [est]})
+    # round three: the bound. The largest sum of the absolute values along
+    # a row of A, times the period, may be 100,000 at most. With A of -5:
+    # 20,000 s is 100,000 exactly, and is accepted; a decay of exp(-1e5) is
+    # zero, and it rests where its input puts it
+    e = Engine(grows("20000s", a=-5))
+    e.write("x", "good", 10.0, 0)
+    e.tick(0)
+    check("bound: at it", e.tick(20000 * S)[1]["y"], ("good", 2.0))
+    # a millisecond more is past it (a nanosecond more is within rounding)
+    refused("bound: a millisecond past", grows("20000001ms", a=-5))
+    refused("bound: far past", grows("1000000s", a=-5))
+    # round four: the sum is in double arithmetic, and a graph within
+    # rounding of the bound may be taken either way: the double nearest
+    # 100,000 / 3, at 3 s, is 7e-12 past it exactly and at it in doubles.
+    # Either answer is right; it must not fail some other way.
+    try:
+        Engine(grows("3s", a=-33333.333333333336))
+    except CompileError:
+        pass
+    Engine(grows("3s", a=-33333.33333333333))  # the double below it
+
+    # it is the sum of a row, not its largest entry or the eigenvalue: a
+    # row of -3 and 2 counts as 5
+    def two(period, a01):
+        st = {"A": [[-3, a01], [0, -1]], "B": [[0], [1]], "C": [[1, 0]]}
+        return {"period": period, "blocks": [{"id": "b", "type": "linear", "in": {"u": 0}, "settings": st}]}
+
+    Engine(two("20000s", 2))
+    refused("bound: the sum of a row", two("20001s", 2))
+    Engine(two("20001s", -1.99))  # 4.99 times 20,001 is 99,804.99
+    refused("bound: absolute values", two("20001s", -2))
+    # B does not count, and nor does a state_space block
+    blk = {"id": "b", "type": "linear", "in": {"u": 0}, "settings": {"A": [[-1]], "B": [[1e9]], "C": [[1]]}}
+    Engine({"period": "100000s", "blocks": [blk]})
+    blk = {"id": "b", "type": "state_space", "in": {"u": 0}, "settings": {"A": [[1e9]], "B": [1], "C": [1]}}
+    Engine({"period": "100000s", "blocks": [blk]})
+
+    # a named model: thermal_mass with h / c of 1000 a second, at 100 s and
+    # at one nanosecond more
+    def fast(period):
+        st = {"thermal_mass": 1, "heat_transfer": 1000, "initial": 0}
+        blk = {"id": "b", "type": "thermal_mass", "in": {"power": 0, "ambient": 0}, "settings": st}
+        return {"period": period, "blocks": [blk]}
+
+    Engine(fast("100s"))
+    refused("bound: a named model", fast("100000000001ns"))
+    # and an estimator's model
+    est["settings"]["model"]["A"] = [[-5]]
+    Engine({"period": "20000s", "blocks": [est]})
+    refused("bound: an estimator's model", {"period": "20001s", "blocks": [est]})
+    # the bound is tried before the size of the step: a model that is both
+    # too fast and growing is refused either way
+    refused("bound: and grows", grows("1000000s", a=5))
+    # an input is direct where its column of D is not all zero
+    e = Engine(lin(D=[[0, 0], [0, 2]]))
+    check("lin direct", {p: v[2] for p, v in e._blocks["b"].in_ports.items()}, {"u0": False, "u1": True})
+
+    # ranges of the named models
+    def named(type_, ins, **settings):
+        return {"period": "1s", "blocks": [{"id": "b", "type": type_, "in": ins, "settings": settings}]}
+
+    tm = {"power": 0, "ambient": 0}
+    Engine(named("thermal_mass", tm, thermal_mass=1, heat_transfer=1, initial=0))
+    refused("tm no initial", named("thermal_mass", tm, thermal_mass=1, heat_transfer=1))
+    refused("tm no loss", named("thermal_mass", tm, thermal_mass=1, heat_transfer=0, initial=0))
+    refused("tm no mass", named("thermal_mass", tm, thermal_mass=0, heat_transfer=1, initial=0))
+    ok = dict(
+        thermal_mass_a=1, thermal_mass_b=1, heat_transfer_a=0, heat_transfer_b=0, coupling=1, initial_a=0, initial_b=0
+    )  # noqa: E501
+    Engine(named("thermal_rc2", tm, **ok))
+    Engine(named("thermal_rc2", tm, **dict(ok, coupling=0)))  # round three: not negative
+    refused("rc2 coupling below zero", named("thermal_rc2", tm, **dict(ok, coupling=-1)))
+    refused("rc2 loss below zero", named("thermal_rc2", tm, **dict(ok, heat_transfer_b=-1)))
+    refused("rc2 no mass", named("thermal_rc2", tm, **dict(ok, thermal_mass_b=0)))
+    refused("rc2 no initial", named("thermal_rc2", tm, **{k: v for k, v in ok.items() if k != "initial_b"}))
+    Engine(named("first_order_process", {"u": 0}, tau="1s", gain=-2))
+    refused("fop tau a bare number", named("first_order_process", {"u": 0}, tau=1))
+    refused("fop tau zero", named("first_order_process", {"u": 0}, tau="0s"))
+    refused("fop no tau", named("first_order_process", {"u": 0}))
+    Engine(named("second_order_process", {"u": 0}, omega_n=1, zeta=0))
+    refused("sop zeta below zero", named("second_order_process", {"u": 0}, omega_n=1, zeta=-0.1))
+    refused("sop omega zero", named("second_order_process", {"u": 0}, omega_n=0, zeta=1))
+    Engine(named("mass_spring_damper", {"force": 0}, mass=1, damping=0, stiffness=0))
+    refused("msd no mass", named("mass_spring_damper", {"force": 0}, mass=0, damping=0, stiffness=0))
+    refused("msd damping below zero", named("mass_spring_damper", {"force": 0}, mass=1, damping=-1, stiffness=0))
+    mi = {"voltage": 0, "load_torque": 0}
+    mok = dict(resistance=0, inductance=1, back_emf=0, torque_constant=0, inertia=1, friction=0)
+    Engine(named("dc_motor", mi, **mok))
+    # round five: back_emf and torque_constant are not negative, so that
+    # nothing in the determinant is subtracted
+    refused("motor back_emf below zero", named("dc_motor", mi, **dict(mok, back_emf=-0.03)))
+    refused("motor torque_constant below zero", named("dc_motor", mi, **dict(mok, torque_constant=-1)))
+    refused("motor both below zero", named("dc_motor", mi, **dict(mok, back_emf=-1, torque_constant=-1)))
+    Engine(named("dc_motor", mi, **dict(mok, back_emf=0.03, torque_constant=1)))
+    refused("motor no inductance", named("dc_motor", mi, **dict(mok, inductance=0)))
+    refused("motor no inertia", named("dc_motor", mi, **dict(mok, inertia=0)))
+    refused("motor resistance below zero", named("dc_motor", mi, **dict(mok, resistance=-1)))
+    refused("motor no back_emf", named("dc_motor", mi, **{k: v for k, v in mok.items() if k != "back_emf"}))
+    refused("motor one input", named("dc_motor", {"voltage": 0}, **mok))
+
+    # an estimator: F is the model's Ad. thermal_mass, c 10, h 1: Ad is
+    # exp(-0.1). p0 4, q 1 a second, no measurement: after one predict the
+    # variance is 4 exp(-0.2) + 1. With power 30 and ambient 20 it rests
+    # at 50, and from 80 the state is 50 + 30 exp(-0.1 k) at tick k.
+    est = {
+        "id": "est",
+        "type": "estimator",
+        "in": {"power": 30, "ambient": 20, "z": "z"},
+        "settings": {
+            "model": {"type": "thermal_mass", "thermal_mass": 10, "heat_transfer": 1, "initial": 80},
+            "q": {"temp": 1},
+            "p0": {"temp": 4},
+            "measure": {"z": {"of": "temp", "r": 1}},
+        },
+        "out": {"temp": "temp", "sigma_temp": "sigma"},
+    }
+    g = {"period": "1s", "inputs": {"z": {"max_age": "none"}}, "blocks": [est]}
+    e = Engine(g)
+    o = e.tick(0)[1]
+    check("est model temp 0", o["temp"], ("good", 80.0))
+    check("est model sigma 0", o["sigma"], ("good", 2.0))
+    o = e.tick(1 * S)[1]
+    check("est model temp 1", o["temp"], ("good", 50 + 30 * math.exp(-0.1)))
+    check("est model sigma 1", o["sigma"], ("good", math.sqrt(4 * math.exp(-0.2) + 1)))
+    o = e.tick(2 * S)[1]
+    check("est model temp 2", o["temp"], ("good", 50 + 30 * math.exp(-0.2)))
+    check("est model sigma 2", o["sigma"], ("good", math.sqrt((4 * math.exp(-0.2) + 1) * math.exp(-0.2) + 1)))
+    est["settings"]["substeps"] = 1
+    refused("est substeps is gone", g)
+
+
+def test_models_large_b():
+    """Amendment 4, round six: the step does not depend on the size of B.
+    Bd is the integral of exp(A.s) over the period, times B."""
+    exp, cos, sin = math.exp, math.cos, math.sin
+    for b in (1.0, 1e9, 1e80, 1e120, 1e300, 1e-200):
+        # x' = -x + b u, from 5:  x = b u (1 - exp(-t)) + 5 exp(-t)
+        blk = {"type": "linear", "in": {"u": "x"}, "settings": {"A": [[-1]], "B": [[b]], "C": [[1]], "initial": [5]}}
+        # with no input, Ad alone: 5 exp(-t)
+        against("large b %g, Ad" % b, model_run(blk, "1s", 5, 0.0), 1.0, y=lambda t: 5 * exp(-t))
+        # with u = 1 / b the answer is of order 1 whatever b is
+        against("large b %g, 1/b" % b, model_run(blk, "1s", 5, 1 / b), 1.0, y=lambda t: 1 + 4 * exp(-t))
+        if b <= 1e120:
+            # and with u = 2 it is of the order of b: compared to one part
+            # in 1e9 of the value
+            outs = model_run(blk, "1s", 5, 2.0)
+            for k, o in enumerate(outs):
+                want = 2 * b * (1 - exp(-k)) + 5 * exp(-k)
+                check("large b %g, u %d state" % (b, k), o["y"][0], "good")
+                check("large b %g, u %d" % (b, k), abs(o["y"][1] - want) <= 1e-9 * max(1.0, abs(want)), True)
+    # two states, a spring with no damper driven through a large B, and a
+    # second input with a small one. m 2, k 8 (2 rad/s), from rest:
+    #   position = (b f / k)(1 - cos 2t), velocity = (b f / (2 m)) sin 2t
+    for b in (1e9, 1e80, 1e120):
+        blk = {
+            "type": "linear",
+            "in": {"f": "x", "g": 0},
+            "settings": {
+                "A": [[0, 1], [-4, 0]],
+                "B": [[0, 0], [b / 2, 1e-30]],
+                "C": [[1, 0], [0, 1]],
+                "inputs": ["f", "g"],
+            },
+        }
+        against(
+            "large b %g, spring" % b,
+            model_run(blk, "250ms", 10, 4 / b),
+            0.25,
+            y0=lambda t: (1 - cos(2 * t)) / 2,
+            y1=lambda t: sin(2 * t),
+        )
+    # an integrator: A is zero, and Bd is B times the period
+    for b in (1e9, 1e120):
+        blk = {"type": "linear", "in": {"u": "x"}, "settings": {"A": [[0]], "B": [[b]], "C": [[1]]}}
+        against("large b %g, integrator" % b, model_run(blk, "500ms", 4, 3 / b), 0.5, y=lambda t: 3 * t)
+
+    # Bd past what a double holds is refused, and just within it is not
+    def big(b, period):
+        blk = {"id": "b", "type": "linear", "in": {"u": 0}, "settings": {"A": [[0]], "B": [[b]], "C": [[1]]}}
+        return {"period": period, "blocks": [blk]}
+
+    Engine(big(1e307, "10s"))
+    refused("large b: Bd more than a double holds", big(1e308, "10s"))
+    # the size of B does not count towards the bound on A
+    Engine(big(1e300, "100000s"))
+
+    # the named models of the second order: the row holds the square of
+    # the rate. A resonance of 50 Hz is 314.159... rad/s, squared 98,696:
+    # within the bound at a period of 1 s and past it at 2.5 s
+    def resonance(type_, period, **settings):
+        ins = {"u": 0} if type_ == "second_order_process" else {"force": 0}
+        return {"period": period, "blocks": [{"id": "b", "type": type_, "in": ins, "settings": settings}]}
+
+    w = 2 * math.pi * 50
+    Engine(resonance("second_order_process", "1s", omega_n=w, zeta=0))
+    refused("bound: 50 Hz at 2.5 s", resonance("second_order_process", "2500ms", omega_n=w, zeta=0))
+    Engine(resonance("mass_spring_damper", "1s", mass=1, damping=0, stiffness=w * w))
+    refused(
+        "bound: 50 Hz spring at 2.5 s", resonance("mass_spring_damper", "2500ms", mass=1, damping=0, stiffness=w * w)
+    )
 
 
 def test_estimator():

@@ -1,0 +1,21 @@
+# 7.9.2: P = F P F', with F the model's step. A position that takes up its
+# velocity each tick: F = [[1, 1], [0, 1]]. From variances of 1 and 4 and
+# no covariance, one step gives [[5, 4], [4, 4]] and two give
+# [[17, 8], [8, 4]]. q is 0 and no measurement is written.
+rules: [7.9.2, 7.9.1]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: state_space, A: [[1, 1], [0, 1]], B: [0, 0], C: [1, 0], initial: [0, 1]}
+      q: {x0: 0, x1: 0}
+      p0: {x0: 1, x1: 4}
+      measure: {z: {of: x0, r: 1}}
+    out: {x0: x, x1: v, sigma_x0: sx, sigma_x1: sv}
+calls:
+  - {u: 0, x: 0, v: 1, sx: 1, sv: 2}
+  - {u: 0, x: 1, v: 1, sx: 2.23606797749979, sv: 2}
+  - {u: 0, x: 2, v: 1, sx: 4.123105625617661, sv: 2}

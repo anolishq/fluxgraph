@@ -1,8 +1,8 @@
-# 7.9.2, Appendix A: an estimator over a thermal mass uses the model's
-# sensitivity: 0.6067708333333333 over one period of 1 s at tau 2 s. No
-# measurement is written, so this is prediction alone: from 16 with
-# variance 1, q 0. The variance is multiplied by the factor squared each tick.
-rules: [7.9.2, A.thermal_mass]
+# 7.9.2, 7.8.7: an estimator over a thermal mass steps by the model's own
+# exact step: e^-0.5 over one period of 1 s at tau 2 s. No measurement is
+# written, so this is prediction alone: from 16 with variance 1, q 0. The
+# variance is multiplied by that factor squared each tick.
+rules: [7.9.2, 7.8.7, A.thermal_mass]
 period: 1s
 inputs: {p: {max_age: none}, amb: {max_age: none}, z: {max_age: none}}
 blocks:
@@ -17,5 +17,5 @@ blocks:
     out: {temp: temp, sigma_temp: sigma}
 calls:
   - {p: 0, amb: 0, temp: 16, sigma: 1}
-  - {temp: 9.708333333333332, sigma: 0.6067708333333333}
-  - {temp: 5.890733506944443, sigma: 0.3681708441840277}
+  - {temp: 9.704490555402135, sigma: 0.6065306597126334}
+  - {temp: 5.886071058743077, sigma: 0.36787944117144233}

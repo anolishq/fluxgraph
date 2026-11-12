@@ -121,6 +121,15 @@ def read_settings(where, spec, raw, period):
                     isinstance(r, list) and len(r) == len(rows) and all(map(is_number, r)) for r in rows
                 ):
                     raise CompileError("is a square list of rows of finite numbers")
+            elif kind == "rows":
+                rows = value if isinstance(value, list) else []
+                if not rows or not all(
+                    isinstance(r, list) and r and len(r) == len(rows[0]) and all(map(is_number, r)) for r in rows
+                ):
+                    raise CompileError("is a list of rows of finite numbers, each as long as the others")
+            elif kind == "names":
+                if not isinstance(value, list) or not value or not all(isinstance(v, str) and v for v in value):
+                    raise CompileError("is a list of names")
             elif kind == "map" and not isinstance(value, dict):
                 raise CompileError("is a map")
         except CompileError as exc:
@@ -611,29 +620,171 @@ class Integrate(Block):
 # ---------------------------------------------------------------- models (4 rule 9)
 
 
+def matmul(a, b):
+    return [[sum(a[i][m] * b[m][j] for m in range(len(b))) for j in range(len(b[0]))] for i in range(len(a))]
+
+
+def expm(m):
+    """e to a matrix, by scaling, a Taylor series and squaring. Any way to the same number will do (7.8 rule 7).
+
+    Each squaring doubles the rounding error, so it is scaled no further than to a row sum of 2, where the series
+    still loses nothing.
+    """
+    n = len(m)
+    norm = max(sum(abs(v) for v in row) for row in m)
+    squarings = max(0, math.ceil(math.log2(norm)) - 1) if norm > 0 else 0
+    scaled = [[v / 2**squarings for v in row] for row in m]
+    out = [[float(i == j) for j in range(n)] for i in range(n)]
+    term = [row[:] for row in out]
+    for order in range(1, 40):
+        term = [[v / order for v in row] for row in matmul(term, scaled)]
+        out = [[out[i][j] + term[i][j] for j in range(n)] for i in range(n)]
+    for _ in range(squarings):
+        out = matmul(out, out)
+    return out
+
+
+def discretise(a, b, dt):
+    """dx/dt = Ax + Bu with u held over dt -> x' = Ad x + Bd u, exactly.
+
+    One exponential, of [[A, I], [0, 0]] dt, gives Ad and the integral of exp(A s) over the period; Bd is that
+    integral times B. B is kept out of the exponential, so that its size costs Ad nothing.
+    """
+    n = len(a)
+    big = [[v * dt for v in a[i]] + [dt * (i == j) for j in range(n)] for i in range(n)] + [[0.0] * (2 * n)] * n
+    e = expm(big)
+    return [row[:n] for row in e[:n]], matmul([row[n:] for row in e[:n]], b)
+
+
+STIFFEST = 100_000.0  # 7.8 rule 7: the most a row of A, summed, times the period, may be
+
+
 class Model:
-    """A state, a step over one period, and outputs from the state and the inputs."""
+    """A linear model (4 rule 9): x' = Ad x + Bd u over one period, and y = C x + D u.
+
+    A subclass says what it is in `build`: its matrices, its initial state and the names of its inputs, states
+    and outputs. In continuous time the step over the period is worked out here, exactly, with the inputs held.
+    """
 
     params: dict = {}
-    inputs: tuple = ()
-    states: tuple = ()
-    outputs: tuple = ()
-    reads_now: frozenset = frozenset()  # the inputs its outputs read: those are direct
-    tau = None  # its slowest time constant, in seconds, if its memory fades
-    limit = math.inf  # the longest step it is stable at
+    continuous = True
+    default_settle = False  # whether `settle` is three of its slowest time constant unless given
+
+    def __init__(self, p, period):
+        made = self.build(p)
+        self.inputs, self.states, self.outputs = (tuple(made[key]) for key in ("inputs", "states", "outputs"))
+        a, b, self.c, self.d = ([[float(v) for v in row] for row in made[key]] for key in "ABCD")
+        self.x0 = [float(v) for v in made["initial"]]
+        n, m, p_out = len(self.states), len(self.inputs), len(self.outputs)
+        sizes = len(a) == n and all(len(row) == n for row in a) and len(b) == n and all(len(row) == m for row in b)
+        sizes = sizes and len(self.c) == p_out and all(len(row) == n for row in self.c)
+        sizes = sizes and len(self.d) == p_out and all(len(row) == m for row in self.d) and len(self.x0) == n
+        if not sizes:  # each list has something in it already: the kinds of the settings see to that
+            raise CompileError(
+                "A is square, B has a row per state and a column per input, C a row per output "
+                "and a column per state, D a row per output and a column per input, and initial "
+                "a number per state"
+            )
+        for names in (self.inputs, self.states, self.outputs):
+            if len(set(names)) != len(names) or not all(isinstance(name, str) and name for name in names):
+                raise CompileError("the names of a model's inputs, of its states and of its outputs are each distinct")
+        if set(self.outputs) & set(COUNTERS):
+            raise CompileError(f"a model's output is not named one of {sorted(COUNTERS)}")
+        # an input is direct if an output reads it (7.8 rule 2)
+        self.reads_now = frozenset(name for j, name in enumerate(self.inputs) if any(row[j] != 0.0 for row in self.d))
+        if self.continuous:  # rule 7: how fast it is against the period, by the largest row of A
+            stiff = max(sum(abs(v) for v in row) for row in a) * period
+            if not stiff <= STIFFEST:
+                raise CompileError(
+                    f"the model is too fast for this period: the largest sum along a row of A, times the period, "
+                    f"is {stiff:g}, and may be {STIFFEST:g} at most. Leave out the state that has settled long "
+                    f"before a tick, or put the states in units nearer each other"
+                )
+        self.ad, self.bd = discretise(a, b, period) if self.continuous else (a, b)
+        if not all(math.isfinite(v) for row in (*self.ad, *self.bd) for v in row):
+            raise CompileError("the model's step over this period is not finite: it grows too fast for the period")
+        self.tau = self.slowest(a, made.get("det")) if self.continuous and self.default_settle else None
+
+    def build(self, p):
+        raise NotImplementedError
+
+    @staticmethod
+    def slowest(a, det):
+        """The slowest time constant of one or two states, in seconds, or None if a mode does not decay.
+
+        `det` is A's determinant as the model's own settings give it, with no subtraction to lose a slow rate in.
+        """
+        if len(a) == 1:
+            top = a[0][0]
+        else:
+            half = (a[0][0] + a[1][1]) / 2
+            if half * half <= det:
+                top = half  # a pair that swings, or one rate twice
+            elif half < 0:
+                top = det / (half - math.sqrt(half * half - det))  # the product over the faster: nothing cancels
+            else:
+                top = half + math.sqrt(half * half - det)
+        return -1.0 / top if top < 0 else None
 
     def initial(self):
-        raise NotImplementedError
+        return list(self.x0)
 
-    def step(self, x, u, dt):
-        raise NotImplementedError
+    def step(self, x, u):
+        """One period on, with the inputs held."""
+        held = [u[name] for name in self.inputs]
+        return [
+            sum(f * xi for f, xi in zip(row, x, strict=True)) + sum(g * ui for g, ui in zip(gain, held, strict=True))
+            for row, gain in zip(self.ad, self.bd, strict=True)
+        ]
 
     def give(self, x, u):
-        return dict(zip(self.outputs, x, strict=True))
+        out = {}
+        for name, row, direct in zip(self.outputs, self.c, self.d, strict=True):
+            out[name] = sum(c * xi for c, xi in zip(row, x, strict=True))
+            out[name] += sum(d * u[port] for d, port in zip(direct, self.inputs, strict=True) if d != 0.0)
+        return out
 
-    def sensitivity(self, x, u, dt):
-        """How the stepped state moves with the state it was stepped from: rows by stepped state."""
-        raise NotImplementedError
+
+def _positive(p, *names):
+    for name in names:
+        if not p[name] > 0:
+            raise CompileError(f"{name} is more than zero")
+
+
+def _not_negative(p, *names):
+    for name in names:
+        if p[name] < 0:
+            raise CompileError(f"{name} is not negative")
+
+
+class Linear(Model):
+    params = {
+        "A": ("matrix", True, None),
+        "B": ("rows", True, None),
+        "C": ("rows", True, None),
+        "D": ("rows", False, None),
+        "initial": ("numbers", False, None),
+        "inputs": ("names", False, None),
+        "states": ("names", False, None),
+        "outputs": ("names", False, None),
+    }
+
+    def build(self, p):
+        n, m, outs = len(p["A"]), len(p["B"][0]), len(p["C"])
+
+        def names(given, one, many, count):
+            return given if given is not None else [one] if count == 1 else [f"{many}{i}" for i in range(count)]
+
+        return {
+            "A": p["A"],
+            "B": p["B"],
+            "C": p["C"],
+            "D": p["D"] if p["D"] is not None else [[0.0] * m for _ in range(outs)],
+            "initial": p["initial"] if p["initial"] is not None else [0.0] * n,
+            "inputs": names(p["inputs"], "u", "u", m),
+            "states": names(p["states"], "x0", "x", n),
+            "outputs": names(p["outputs"], "y", "y", outs),
+        }
 
 
 class ThermalMass(Model):
@@ -642,34 +793,162 @@ class ThermalMass(Model):
         "heat_transfer": ("number", True, None),
         "initial": ("number", True, None),
     }
-    inputs, states, outputs = ("power", "ambient"), ("temp",), ("temp",)
+    default_settle = True
 
-    def __init__(self, p):
-        self.c, self.h, self.t0 = float(p["thermal_mass"]), float(p["heat_transfer"]), float(p["initial"])
-        if self.c <= 0 or self.h <= 0:
-            raise CompileError("thermal_mass and heat_transfer are more than zero")
-        self.tau = self.c / self.h
-        self.limit = 2.785 * self.tau
+    def build(self, p):
+        _positive(p, "thermal_mass", "heat_transfer")
+        c, h = p["thermal_mass"], p["heat_transfer"]
+        return {
+            "A": [[-h / c]],
+            "B": [[1 / c, h / c]],
+            "C": [[1.0]],
+            "D": [[0.0, 0.0]],
+            "initial": [p["initial"]],
+            "inputs": ["power", "ambient"],
+            "states": ["temp"],
+            "outputs": ["temp"],
+        }
 
-    def initial(self):
-        return [self.t0]
 
-    def step(self, x, u, dt):  # classical fourth-order Runge-Kutta, inputs held
-        def rate(temp):
-            return (u["power"] - self.h * (temp - u["ambient"])) / self.c
+class ThermalRc2(Model):
+    params = {
+        "thermal_mass_a": ("number", True, None),
+        "thermal_mass_b": ("number", True, None),
+        "heat_transfer_a": ("number", True, None),
+        "heat_transfer_b": ("number", True, None),
+        "coupling": ("number", True, None),
+        "initial_a": ("number", True, None),
+        "initial_b": ("number", True, None),
+    }
+    default_settle = True
 
-        k1 = rate(x[0])
-        k2 = rate(x[0] + dt / 2 * k1)
-        k3 = rate(x[0] + dt / 2 * k2)
-        k4 = rate(x[0] + dt * k3)
-        return [x[0] + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)]
+    def build(self, p):
+        _positive(p, "thermal_mass_a", "thermal_mass_b")
+        _not_negative(p, "heat_transfer_a", "heat_transfer_b", "coupling")
+        ca, cb, ha, hb, k = (
+            p[key] for key in ("thermal_mass_a", "thermal_mass_b", "heat_transfer_a", "heat_transfer_b", "coupling")
+        )
+        return {
+            "A": [[-(ha + k) / ca, k / ca], [k / cb, -(hb + k) / cb]],
+            "det": (ha * hb + k * (ha + hb)) / (ca * cb),
+            "B": [[1 / ca, ha / ca], [0.0, hb / cb]],
+            "C": [[1.0, 0.0], [0.0, 1.0]],
+            "D": [[0.0, 0.0], [0.0, 0.0]],
+            "initial": [p["initial_a"], p["initial_b"]],
+            "inputs": ["power", "ambient"],
+            "states": ["temp_a", "temp_b"],
+            "outputs": ["temp_a", "temp_b"],
+        }
 
-    def sensitivity(self, x, u, dt):
-        z = -dt * self.h / self.c
-        return [[1 + z + z**2 / 2 + z**3 / 6 + z**4 / 24]]
+
+class FirstOrderProcess(Model):
+    params = {"tau": ("seconds", True, None), "gain": ("number", False, 1.0), "initial": ("number", False, 0.0)}
+    default_settle = True
+
+    def build(self, p):
+        _positive(p, "tau")
+        tau = float(p["tau"])
+        return {
+            "A": [[-1 / tau]],
+            "B": [[p["gain"] / tau]],
+            "C": [[1.0]],
+            "D": [[0.0]],
+            "initial": [p["initial"]],
+            "inputs": ["u"],
+            "states": ["y"],
+            "outputs": ["y"],
+        }
+
+
+class SecondOrderProcess(Model):
+    params = {
+        "omega_n": ("number", True, None),
+        "zeta": ("number", True, None),
+        "gain": ("number", False, 1.0),
+        "initial": ("number", False, 0.0),
+        "initial_rate": ("number", False, 0.0),
+    }
+    default_settle = True
+
+    def build(self, p):
+        _positive(p, "omega_n")
+        _not_negative(p, "zeta")
+        w, z = p["omega_n"], p["zeta"]
+        return {
+            "A": [[0.0, 1.0], [-w * w, -2 * z * w]],
+            "det": w * w,
+            "B": [[0.0], [w * w * p["gain"]]],
+            "C": [[1.0, 0.0], [0.0, 1.0]],
+            "D": [[0.0], [0.0]],
+            "initial": [p["initial"], p["initial_rate"]],
+            "inputs": ["u"],
+            "states": ["y", "rate"],
+            "outputs": ["y", "rate"],
+        }
+
+
+class MassSpringDamper(Model):
+    params = {
+        "mass": ("number", True, None),
+        "damping": ("number", True, None),
+        "stiffness": ("number", True, None),
+        "initial_position": ("number", False, 0.0),
+        "initial_velocity": ("number", False, 0.0),
+    }
+    default_settle = True
+
+    def build(self, p):
+        _positive(p, "mass")
+        _not_negative(p, "damping", "stiffness")
+        m, c, k = p["mass"], p["damping"], p["stiffness"]
+        return {
+            "A": [[0.0, 1.0], [-k / m, -c / m]],
+            "det": k / m,
+            "B": [[0.0], [1 / m]],
+            "C": [[1.0, 0.0], [0.0, 1.0]],
+            "D": [[0.0], [0.0]],
+            "initial": [p["initial_position"], p["initial_velocity"]],
+            "inputs": ["force"],
+            "states": ["position", "velocity"],
+            "outputs": ["position", "velocity"],
+        }
+
+
+class DcMotor(Model):
+    params = {
+        "resistance": ("number", True, None),
+        "inductance": ("number", True, None),
+        "back_emf": ("number", True, None),
+        "torque_constant": ("number", True, None),
+        "inertia": ("number", True, None),
+        "friction": ("number", True, None),
+        "initial_current": ("number", False, 0.0),
+        "initial_speed": ("number", False, 0.0),
+    }
+    default_settle = True
+
+    def build(self, p):
+        _positive(p, "inductance", "inertia")
+        _not_negative(p, "resistance", "friction", "back_emf", "torque_constant")
+        r, ind, ke, kt, j, b = (
+            p[key] for key in ("resistance", "inductance", "back_emf", "torque_constant", "inertia", "friction")
+        )
+        return {
+            "A": [[-r / ind, -ke / ind], [kt / j, -b / j]],
+            "det": (r * b + ke * kt) / (ind * j),
+            "B": [[1 / ind, 0.0], [0.0, -1 / j]],
+            "C": [[0.0, 1.0], [1.0, 0.0], [kt, 0.0]],
+            "D": [[0.0, 0.0]] * 3,
+            "initial": [p["initial_current"], p["initial_speed"]],
+            "inputs": ["voltage", "load_torque"],
+            "states": ["current", "speed"],
+            "outputs": ["speed", "current", "torque"],
+        }
 
 
 class StateSpace(Model):
+    """Discrete, one input and one output, as 1.x has it: its matrices are the step itself, at whatever period."""
+
     params = {
         "A": ("matrix", True, None),
         "B": ("numbers", True, None),
@@ -677,43 +956,33 @@ class StateSpace(Model):
         "D": ("number", False, 0.0),
         "initial": ("numbers", False, None),
     }
-    inputs, outputs = ("u",), ("y",)
+    continuous = False
 
-    def __init__(self, p):
+    def build(self, p):
         n = len(p["B"])
-        self.a, self.b, self.c, self.d = p["A"], p["B"], p["C"], float(p["D"])
-        self.x0 = [float(v) for v in (p["initial"] or [0.0] * n)]
-        if len(self.a) != n or len(self.c) != n or len(self.x0) != n:
-            raise CompileError("A, B, C and initial are of one size")
-        self.states = tuple(f"x{i}" for i in range(n))
-        self.reads_now = frozenset({"u"}) if self.d != 0.0 else frozenset()
-
-    def initial(self):
-        return list(self.x0)
-
-    def step(self, x, u, dt):
-        return [
-            sum(a * xi for a, xi in zip(row, x, strict=True)) + b * u["u"]
-            for row, b in zip(self.a, self.b, strict=True)
-        ]
-
-    def give(self, x, u):
-        return {"y": sum(c * xi for c, xi in zip(self.c, x, strict=True)) + (self.d * u["u"] if self.d else 0.0)}
-
-    def sensitivity(self, x, u, dt):
-        return [list(row) for row in self.a]
+        return {
+            "A": p["A"],
+            "B": [[v] for v in p["B"]],
+            "C": [p["C"]],
+            "D": [[p["D"]]],
+            "initial": p["initial"] if p["initial"] is not None else [0.0] * n,
+            "inputs": ["u"],
+            "states": [f"x{i}" for i in range(n)],
+            "outputs": ["y"],
+        }
 
 
-MODELS = {"thermal_mass": ThermalMass, "state_space": StateSpace}
-
-
-def stepped(model, x, u, period, substeps):
-    for _ in range(substeps):
-        x = model.step(x, u, period / substeps)
-    return x
-
-
-MODEL_SETTINGS = {"ride_through": ("ticks", False, 0), "settle": ("ticks", False, None), "substeps": ("int", False, 1)}
+MODELS = {
+    "linear": Linear,
+    "thermal_mass": ThermalMass,
+    "thermal_rc2": ThermalRc2,
+    "first_order_process": FirstOrderProcess,
+    "second_order_process": SecondOrderProcess,
+    "mass_spring_damper": MassSpringDamper,
+    "dc_motor": DcMotor,
+    "state_space": StateSpace,
+}
+MODEL_SETTINGS = {"ride_through": ("ticks", False, 0), "settle": ("ticks", False, None)}
 
 
 class ModelBlock(Block):
@@ -723,14 +992,8 @@ class ModelBlock(Block):
 
     def __init__(self, *a):
         super().__init__(*a)
-        self.model = MODELS[self.model_type]({name: self.s[name] for name in MODELS[self.model_type].params})
-        if self.s["substeps"] < 1:
-            raise CompileError("substeps is at least 1")
-        if self.period / self.s["substeps"] > self.model.limit:  # rule 7
-            raise CompileError(
-                f"a step of {self.period / self.s['substeps']:g} s is longer than this model is stable at "
-                f"({self.model.limit:g} s): raise substeps"
-            )
+        params = {name: self.s[name] for name in MODELS[self.model_type].params}
+        self.model = MODELS[self.model_type](params, self.period)
         self.settle_given = self.s["settle"] is not None  # rule 8 needs the author's, on a loop
         if self.s["settle"] is None and self.model.tau is not None:
             self.s["settle"] = round_up(3 * self.model.tau / self.period)
@@ -781,7 +1044,7 @@ class ModelBlock(Block):
                 self.doubt = k
 
     def model_step(self, u):
-        return stepped(self.model, self.x, u, self.period, self.s["substeps"])
+        return self.model.step(self.x, u)
 
     def gap(self, k, n):
         self.gaps += 1
@@ -804,16 +1067,10 @@ class ModelBlock(Block):
         return True
 
 
-class ThermalMassBlock(ModelBlock):
-    model_type = "thermal_mass"
-    outputs = {"temp": NUMBER} | COUNTERS
-    settings = ThermalMass.params | MODEL_SETTINGS
-
-
-class StateSpaceBlock(ModelBlock):
-    model_type = "state_space"
-    outputs = {"y": NUMBER} | COUNTERS
-    settings = StateSpace.params | MODEL_SETTINGS
+MODEL_BLOCKS = {
+    kind: type(f"{model.__name__}Block", (ModelBlock,), {"model_type": kind, "settings": model.params | MODEL_SETTINGS})
+    for kind, model in MODELS.items()
+}
 
 
 # ---------------------------------------------------------------- the estimator
@@ -830,7 +1087,6 @@ class Estimator(Block):
         "gate": ("number", False, None),
         "sigma_max": ("map", False, None),
         "use_uncertain": ("bool", False, False),
-        "substeps": ("int", False, 1),
     }
 
     def __init__(self, *a):
@@ -839,9 +1095,7 @@ class Estimator(Block):
         kind = spec.pop("type", None)
         if kind not in MODELS:
             raise CompileError(f"model type {kind!r} is not a model")
-        self.model = MODELS[kind](read_settings("model", MODELS[kind].params, spec, None))
-        if self.s["substeps"] < 1 or self.period / self.s["substeps"] > self.model.limit:
-            raise CompileError("the step is longer than the model is stable at: raise substeps")
+        self.model = MODELS[kind](read_settings("model", MODELS[kind].params, spec, None), self.period)
         self.names = list(self.model.states)
         n = len(self.names)
 
@@ -887,12 +1141,9 @@ class Estimator(Block):
         self.last_u = {}
 
     def _predict(self, u):
-        n, sub = len(self.x), self.s["substeps"]
-        for _ in range(sub):  # the state and its covariance, a sub-step at a time
-            f = self.model.sensitivity(self.x, u, self.period / sub)
-            fp = [[sum(f[i][m] * self.p[m][j] for m in range(n)) for j in range(n)] for i in range(n)]
-            self.p = [[sum(fp[i][m] * f[j][m] for m in range(n)) for j in range(n)] for i in range(n)]
-            self.x = self.model.step(self.x, u, self.period / sub)
+        f = self.model.ad  # how the stepped state moves with the state it was stepped from
+        self.p = matmul(matmul(f, self.p), [list(col) for col in zip(*f, strict=True)])
+        self.x = self.model.step(self.x, u)
 
     def output(self, k, t, ins):
         n = len(self.names)
@@ -956,8 +1207,7 @@ CATALOGUE = {
     "since_true": SinceTrue,
     "latch": Latch,
     "integrate": Integrate,
-    "thermal_mass": ThermalMassBlock,
-    "state_space": StateSpaceBlock,
+    **MODEL_BLOCKS,
     "estimator": Estimator,
 }
 
@@ -1182,12 +1432,13 @@ class Engine:
             if not models:
                 continue  # 5 rule 6: no memory that fades, and no rule
             where = f"the loop of blocks {sorted(members)}"
-            if not all(self.blocks[b].settle_given for b in models):
-                raise CompileError(f"{where}: every model on a loop is given settle")
-            settles = {self.blocks[b].s["settle"] for b in models}
-            if len(settles) != 1:
-                raise CompileError(f"{where}: the models on a loop are all given the same settle")
-            settle = settles.pop()
+            if len(models) > 1:
+                raise CompileError(
+                    f"{where}: model blocks {models} read each other, a tick apart: write them as one linear model"
+                )
+            if not self.blocks[models[0]].settle_given:
+                raise CompileError(f"{where}: a model on a loop is given settle")
+            settle = self.blocks[models[0]].s["settle"]
             if any(isinstance(self.blocks[b], Estimator) for b in members):
                 raise CompileError(f"{where}: an estimator is not put on a loop that holds a model block")
             memory = {Delay: lambda d: d.s["ticks"], Window: lambda w: w.n, Lowpass: lambda f: f.s["settle"]}

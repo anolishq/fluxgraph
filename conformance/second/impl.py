@@ -4,13 +4,15 @@ Sections 3 to 9 and every block type of Appendix A. Units are ignored.
 Standard library only. Choices the text does not settle are listed in
 ASSUMPTIONS.md, for Amendment 1 (time and the host interface) in
 ASSUMPTIONS-amendment-1.md, for Amendment 2 (doubt through memory) in
-ASSUMPTIONS-amendment-2.md, and for Amendment 3 (gaps) in
-ASSUMPTIONS-amendment-3.md.
+ASSUMPTIONS-amendment-2.md, for Amendment 3 (gaps) in
+ASSUMPTIONS-amendment-3.md, and for Amendment 4 (models) in
+ASSUMPTIONS-amendment-4.md.
 
 Every time is a whole number of nanoseconds, held as an int (rule 6.2).
 """
 
 import copy
+import decimal
 import json
 import math
 import re
@@ -1252,156 +1254,398 @@ class Integrate(Block):
 
 
 # ------------------------------------------------------------------ models
+#
+# Every model is linear and is stepped exactly (rule 7.8.7):
+# x' = Ad.x + Bd.u, y = C.x + D.u. For a model in continuous time Ad and Bd
+# are worked out here, once, when the graph is compiled.
+
+_EXP_DIGITS = 100  # decimal digits carried while a matrix exponential is worked out
+_DOUBLE_MAX = 1.7976931348623157e308  # the largest double
+_FASTEST = 100000  # the most a row of A, summed, times the period may be
 
 
-class ThermalMassModel:
-    KEYS = ("thermal_mass", "heat_transfer", "initial")
-    inputs = ("power", "ambient")
-    outputs = ("temp",)
+def _expm(m):
+    """exp(m) for a square matrix of Decimals: the series for m / 2**s,
+    with s such that the scaled matrix is small, squared s times."""
+    n = len(m)
+    zero = decimal.Decimal(0)
 
-    def __init__(self, b, st):
-        self.c = s_num(b, st, "thermal_mass")
-        self.h = s_num(b, st, "heat_transfer")
-        if not self.c > 0:
-            raise b.err("setting 'thermal_mass' must be more than zero")
-        if not self.h > 0:
-            raise b.err("setting 'heat_transfer' must be more than zero")
-        self.t0 = s_num(b, st, "initial")
-        self.states = ("temp",)
-        self.direct = set()
-        self.tau = self.c / self.h
-        self.max_step = 2.785 * self.tau
+    def mul(p, q):
+        return [[sum((p[i][k] * q[k][j] for k in range(n)), zero) for j in range(n)] for i in range(n)]
 
-    def initial(self):
-        return [self.t0]
-
-    def step(self, x, u, d):
-        p, amb = u["power"], u["ambient"]
-
-        def f(temp):
-            return (p - self.h * (temp - amb)) / self.c
-
-        k1 = f(x[0])
-        k2 = f(x[0] + d / 2 * k1)
-        k3 = f(x[0] + d / 2 * k2)
-        k4 = f(x[0] + d * k3)
-        return [x[0] + d / 6 * (k1 + 2 * k2 + 2 * k3 + k4)]
-
-    def out(self, x, u):
-        return {"temp": x[0]}
-
-    def sens(self, d, n):
-        z = -d * self.h / self.c
-        return [[(1 + z + z**2 / 2 + z**3 / 6 + z**4 / 24) ** n]]
+    norm = max(sum((abs(v) for v in row), zero) for row in m)
+    s = 0
+    while norm > decimal.Decimal("0.5"):
+        norm /= 2
+        s += 1
+    scaled = [[v / (2**s) for v in row] for row in m]
+    res = [[decimal.Decimal(int(i == j)) for j in range(n)] for i in range(n)]
+    term = [list(row) for row in res]
+    tiny = decimal.Decimal(10) ** -(_EXP_DIGITS + 5)
+    k = 0
+    while True:
+        k += 1
+        term = [[v / k for v in row] for row in mul(term, scaled)]
+        res = [[res[i][j] + term[i][j] for j in range(n)] for i in range(n)]
+        if max(abs(v) for row in term for v in row) < tiny:
+            break
+    for _ in range(s):
+        res = mul(res, res)
+    return res
 
 
-class StateSpaceModel:
-    KEYS = ("A", "B", "C", "D", "initial")
-    inputs = ("u",)
-    outputs = ("y",)
+def _discretize(a, b, period_ns):
+    """Ad = exp(A.period), and Bd, the integral of exp(A.s) for s from
+    zero to the period, times B, as floats. With T the period, the
+    exponential of [[A.T, 1], [0, 0]] is [[Ad, G], [0, 1]], where G is the
+    integral of exp(A.T.s) for s from zero to one; Bd is T.G.B. B is kept
+    out of the exponential, so that its size does not touch Ad."""
+    n = len(a)
+    m = len(b[0]) if b else 0
+    zero = decimal.Decimal(0)
+    with decimal.localcontext() as ctx:
+        ctx.prec = _EXP_DIGITS
+        period = decimal.Decimal(period_ns) / decimal.Decimal(_NS)
+        big = []
+        for i in range(n):
+            big.append([decimal.Decimal(v) * period for v in a[i]] + [decimal.Decimal(int(i == j)) for j in range(n)])
+        for _ in range(n):
+            big.append([zero] * (2 * n))
+        e = _expm(big)
+        ad = [[e[i][j] for j in range(n)] for i in range(n)]
+        bd = [
+            [period * sum((e[i][n + k] * decimal.Decimal(b[k][j]) for k in range(n)), zero) for j in range(m)]
+            for i in range(n)
+        ]
+        # an entry that is more than a double holds (rule 7.8.7)
+        most = decimal.Decimal(_DOUBLE_MAX)
+        if any(abs(v) > most for row in ad + bd for v in row):
+            return None, None
+        ad = [[float(v) for v in row] for row in ad]
+        bd = [[float(v) for v in row] for row in bd]
+    return ad, bd
 
-    def __init__(self, b, st):
-        def vec(key, n, default=REQ):
-            if key not in st:
-                if default is REQ:
-                    raise b.err("missing required setting %r" % key)
-                return default
-            v = st[key]
-            if not isinstance(v, list) or (n is not None and len(v) != n):
-                raise b.err("setting %r must be a list of %s numbers" % (key, "n" if n is None else n))
-            res = []
-            for e in v:
-                f = _finite(e)
-                if f is None:
-                    raise b.err("setting %r must hold finite numbers" % key)
-                res.append(f)
-            return res
 
-        if "A" not in st:
-            raise b.err("missing required setting 'A'")
-        a = st["A"]
-        if not isinstance(a, list) or not a:
-            raise b.err("setting 'A' must be a list of n rows of n numbers")
-        n = len(a)
-        self.a = []
-        for row in a:
-            if not isinstance(row, list) or len(row) != n:
-                raise b.err("setting 'A' must be a list of n rows of n numbers")
-            r = []
-            for e in row:
-                f = _finite(e)
-                if f is None:
-                    raise b.err("setting 'A' must hold finite numbers")
-                r.append(f)
-            self.a.append(r)
-        self.n = n
-        self.b = vec("B", n)
-        self.c = vec("C", n)
-        self.d = s_num(b, st, "D", 0.0)
-        self.x0 = vec("initial", n, [0.0] * n)
-        self.states = tuple("x%d" % i for i in range(n))
-        self.direct = {"u"} if self.d != 0 else set()
-        self.tau = None
-        self.max_step = None
+def _fastness(a, period):
+    """The largest sum of the absolute values along a row of A, times the
+    period in seconds, in double arithmetic (rule 7.8.7): each row summed
+    from its first entry to its last."""
+    most = 0.0
+    for row in a:
+        acc = 0.0
+        for v in row:
+            acc += abs(v)
+        most = max(most, acc)
+    return most * period
+
+
+def _slowest(a, det):
+    """The slowest time constant of a model of one or two states: minus
+    one over the largest real part among the eigenvalues of A, or None
+    where a state does not decay. det is A's determinant for two states,
+    as the model's entry gives it from its settings (rule 7.8.6)."""
+    if len(a) == 1:
+        top = a[0][0]
+    else:
+        # h, half the sum of the diagonal
+        half = (a[0][0] + a[1][1]) / 2
+        if half * half <= det:
+            top = half  # a pair of complex eigenvalues, or two the same
+        elif half < 0:
+            # that way round, so that a slow rate beside a fast one is not
+            # lost in the subtraction
+            top = det / (half - math.sqrt(half * half - det))
+        else:
+            top = half + math.sqrt(half * half - det)  # not less than zero
+    if not top < 0:
+        return None
+    return -1.0 / top
+
+
+class Model:
+    """A state, a step over one period and the outputs (rule 4.9)."""
+
+    def __init__(self, inputs, states, outputs, ad, bd, c, d, x0, tau):
+        self.inputs = tuple(inputs)
+        self.states = tuple(states)
+        self.outputs = tuple(outputs)
+        self.ad = ad  # also the sensitivity of the stepped state (rule 4.9)
+        self.bd = bd
+        self.c = c
+        self.d = d
+        self.x0 = x0
+        self.tau = tau  # the slowest time constant, in seconds, or None
+        # an input is direct if any output reads it (rule 7.8.2)
+        self.direct = set(name for j, name in enumerate(self.inputs) if any(row[j] != 0 for row in d))
 
     def initial(self):
         return list(self.x0)
 
-    def step(self, x, u, d):
-        uu = u["u"]
+    def step(self, x, u):
         res = []
-        for i in range(self.n):
+        for i in range(len(x)):
             acc = 0.0
-            for j in range(self.n):
-                acc += self.a[i][j] * x[j]
-            res.append(acc + self.b[i] * uu)
+            for j in range(len(x)):
+                acc += self.ad[i][j] * x[j]
+            for j, name in enumerate(self.inputs):
+                acc += self.bd[i][j] * u[name]
+            res.append(acc)
         return res
 
     def out(self, x, u):
-        acc = 0.0
-        for i in range(self.n):
-            acc += self.c[i] * x[i]
-        if self.d != 0:
-            acc += self.d * u["u"]
-        return {"y": acc}
-
-    def sens(self, d, n):
-        return [list(r) for r in self.a]
-
-
-MODELS = {"thermal_mass": ThermalMassModel, "state_space": StateSpaceModel}
+        res = {}
+        for i, port in enumerate(self.outputs):
+            acc = 0.0
+            for j in range(len(x)):
+                acc += self.c[i][j] * x[j]
+            for j, name in enumerate(self.inputs):
+                if name in self.direct:
+                    acc += self.d[i][j] * u[name]
+            res[port] = acc
+        return res
 
 
-def _check_stable(b, model, substeps):
-    if model.max_step is not None:
-        if b.ctx.period / substeps > model.max_step:
-            raise b.err(
-                "the period over setting 'substeps' is longer than "
-                "the longest step the model is stable at (%r s)" % model.max_step
-            )
+def _continuous(b, inputs, states, outputs, a, bm, c, x0, d=None, named=True, det=None):
+    """A model in continuous time: dx/dt = A.x + B.u, y = C.x + D.u."""
+    if d is None:
+        d = [[0.0] * len(inputs) for _ in outputs]
+    if _fastness(a, b.ctx.period) > _FASTEST:
+        raise b.err(
+            "the model is too fast for the period: the largest sum of the absolute values along "
+            "a row of A, times the period, is more than %d" % _FASTEST
+        )
+    ad, bd = _discretize(a, bm, b.ctx.period_ns)
+    if ad is None:
+        # it grows too fast for the graph's period (rule 7.8.7)
+        raise b.err("the model grows so fast that its step over one period is more than a double holds")
+    return Model(inputs, states, outputs, ad, bd, c, d, x0, _slowest(a, det) if named else None)
 
 
-def _model_steps(model, substeps):
-    """How many steps per tick, and how long each."""
-    return substeps if model.max_step is not None or model.tau is not None else 1
+def s_matrix(b, st, key, rows, cols, default=REQ):
+    """A list of rows of finite numbers. rows or cols may be None: any."""
+    if key not in st:
+        if default is REQ:
+            raise b.err("missing required setting %r" % key)
+        return default
+    v = st[key]
+    if not isinstance(v, list) or (rows is not None and len(v) != rows):
+        raise b.err("setting %r must be a list of %s rows" % (key, "its" if rows is None else rows))
+    res = []
+    for row in v:
+        if not isinstance(row, list):
+            raise b.err("setting %r must be a list of rows of numbers" % key)
+        if cols is None:
+            cols = len(row)
+        if len(row) != cols:
+            raise b.err("setting %r: a row must hold %d numbers" % (key, cols))
+        r = []
+        for e in row:
+            f = _finite(e)
+            if f is None:
+                raise b.err("setting %r must hold finite numbers" % key)
+            r.append(f)
+        res.append(r)
+    return res
+
+
+def s_vector(b, st, key, n, default=REQ):
+    if key not in st:
+        if default is REQ:
+            raise b.err("missing required setting %r" % key)
+        return default
+    v = st[key]
+    if not isinstance(v, list) or len(v) != n:
+        raise b.err("setting %r must be a list of %d numbers" % (key, n))
+    res = []
+    for e in v:
+        f = _finite(e)
+        if f is None:
+            raise b.err("setting %r must hold finite numbers" % key)
+        res.append(f)
+    return res
+
+
+def s_names(b, st, key, n, stem, single):
+    """A list of n distinct names; left out, `single` for one and
+    stem0, stem1 and so on for several."""
+    if key not in st:
+        return [single] if n == 1 else ["%s%d" % (stem, i) for i in range(n)]
+    v = st[key]
+    if not isinstance(v, list) or len(v) != n or not all(isinstance(e, str) for e in v):
+        raise b.err("setting %r must be a list of %d names" % (key, n))
+    if len(set(v)) != n:
+        raise b.err("setting %r: the names must be distinct" % key)
+    return list(v)
+
+
+def s_range(b, st, key, default=REQ, positive=False, not_negative=False):
+    v = s_num(b, st, key, default)
+    if positive and not v > 0:
+        raise b.err("setting %r must be more than zero" % key)
+    if not_negative and v < 0:
+        raise b.err("setting %r must not be negative" % key)
+    return v
+
+
+_MODEL_OUTPUTS = ("elapsed", "doubtful", "gaps")
+
+
+def _linear(b, st):
+    a = s_matrix(b, st, "A", None, None)
+    n = len(a)
+    if n < 1 or any(len(row) != n for row in a):
+        raise b.err("setting 'A' must be a list of n rows of n numbers")
+    bm = s_matrix(b, st, "B", n, None)
+    m = len(bm[0])
+    c = s_matrix(b, st, "C", None, n)
+    p = len(c)
+    if m < 1 or p < 1:
+        raise b.err("a linear model has at least one input and one output")
+    d = s_matrix(b, st, "D", p, m, [[0.0] * m for _ in range(p)])
+    x0 = s_vector(b, st, "initial", n, [0.0] * n)
+    inputs = s_names(b, st, "inputs", m, "u", "u")
+    states = s_names(b, st, "states", n, "x", "x0")
+    outputs = s_names(b, st, "outputs", p, "y", "y")
+    for name in outputs:
+        if name in _MODEL_OUTPUTS:
+            raise b.err("setting 'outputs': %r is the name of a model output" % name)
+    return _continuous(b, inputs, states, outputs, a, bm, c, x0, d, named=False)
+
+
+def _thermal_mass(b, st):
+    cap = s_range(b, st, "thermal_mass", positive=True)
+    h = s_range(b, st, "heat_transfer", positive=True)
+    t0 = s_num(b, st, "initial")
+    return _continuous(b, ("power", "ambient"), ("temp",), ("temp",), [[-h / cap]], [[1 / cap, h / cap]], [[1.0]], [t0])
+
+
+def _thermal_rc2(b, st):
+    ca = s_range(b, st, "thermal_mass_a", positive=True)
+    cb = s_range(b, st, "thermal_mass_b", positive=True)
+    ha = s_range(b, st, "heat_transfer_a", not_negative=True)
+    hb = s_range(b, st, "heat_transfer_b", not_negative=True)
+    k = s_range(b, st, "coupling", not_negative=True)
+    x0 = [s_num(b, st, "initial_a"), s_num(b, st, "initial_b")]
+    a = [[-(ha + k) / ca, k / ca], [k / cb, -(hb + k) / cb]]
+    bm = [[1 / ca, ha / ca], [0.0, hb / cb]]
+    names = ("temp_a", "temp_b")
+    det = (ha * hb + k * (ha + hb)) / (ca * cb)
+    return _continuous(b, ("power", "ambient"), names, names, a, bm, [[1.0, 0.0], [0.0, 1.0]], x0, det=det)
+
+
+def _first_order_process(b, st):
+    tau = s_length(b, st, "tau")
+    if not tau > 0:
+        raise b.err("setting 'tau' must be more than zero")
+    gain = s_num(b, st, "gain", 1.0)
+    y0 = s_num(b, st, "initial", 0.0)
+    return _continuous(b, ("u",), ("y",), ("y",), [[-1 / tau]], [[gain / tau]], [[1.0]], [y0])
+
+
+def _second_order_process(b, st):
+    wn = s_range(b, st, "omega_n", positive=True)
+    zeta = s_range(b, st, "zeta", not_negative=True)
+    gain = s_num(b, st, "gain", 1.0)
+    x0 = [s_num(b, st, "initial", 0.0), s_num(b, st, "initial_rate", 0.0)]
+    a = [[0.0, 1.0], [-wn * wn, -2 * zeta * wn]]
+    names = ("y", "rate")
+    return _continuous(b, ("u",), names, names, a, [[0.0], [wn * wn * gain]], [[1.0, 0.0], [0.0, 1.0]], x0, det=wn * wn)
+
+
+def _mass_spring_damper(b, st):
+    mass = s_range(b, st, "mass", positive=True)
+    damping = s_range(b, st, "damping", not_negative=True)
+    stiffness = s_range(b, st, "stiffness", not_negative=True)
+    x0 = [s_num(b, st, "initial_position", 0.0), s_num(b, st, "initial_velocity", 0.0)]
+    a = [[0.0, 1.0], [-stiffness / mass, -damping / mass]]
+    names = ("position", "velocity")
+    return _continuous(
+        b, ("force",), names, names, a, [[0.0], [1 / mass]], [[1.0, 0.0], [0.0, 1.0]], x0, det=stiffness / mass
+    )
+
+
+def _dc_motor(b, st):
+    r = s_range(b, st, "resistance", not_negative=True)
+    ind = s_range(b, st, "inductance", positive=True)
+    # not negative, so that nothing in the determinant is subtracted
+    ke = s_range(b, st, "back_emf", not_negative=True)
+    kt = s_range(b, st, "torque_constant", not_negative=True)
+    inertia = s_range(b, st, "inertia", positive=True)
+    friction = s_range(b, st, "friction", not_negative=True)
+    x0 = [s_num(b, st, "initial_current", 0.0), s_num(b, st, "initial_speed", 0.0)]
+    a = [[-r / ind, -ke / ind], [kt / inertia, -friction / inertia]]
+    bm = [[1 / ind, 0.0], [0.0, -1 / inertia]]
+    c = [[0.0, 1.0], [1.0, 0.0], [kt, 0.0]]
+    det = (r * friction + ke * kt) / (ind * inertia)
+    return _continuous(
+        b, ("voltage", "load_torque"), ("current", "speed"), ("speed", "current", "torque"), a, bm, c, x0, det=det
+    )
+
+
+def _state_space(b, st):
+    """In discrete time: Ad and Bd themselves, at whatever period."""
+    a = s_matrix(b, st, "A", None, None)
+    n = len(a)
+    if n < 1 or any(len(row) != n for row in a):
+        raise b.err("setting 'A' must be a list of n rows of n numbers")
+    bd = [[v] for v in s_vector(b, st, "B", n)]
+    c = [s_vector(b, st, "C", n)]
+    d = [[s_num(b, st, "D", 0.0)]]
+    x0 = s_vector(b, st, "initial", n, [0.0] * n)
+    return Model(("u",), ["x%d" % i for i in range(n)], ("y",), a, bd, c, d, x0, None)
+
+
+# type -> (the model's own settings, what builds it)
+MODELS = {
+    "linear": (("A", "B", "C", "D", "initial", "inputs", "states", "outputs"), _linear),
+    "thermal_mass": (("thermal_mass", "heat_transfer", "initial"), _thermal_mass),
+    "thermal_rc2": (
+        (
+            "thermal_mass_a",
+            "thermal_mass_b",
+            "heat_transfer_a",
+            "heat_transfer_b",
+            "coupling",
+            "initial_a",
+            "initial_b",
+        ),
+        _thermal_rc2,
+    ),
+    "first_order_process": (("tau", "gain", "initial"), _first_order_process),
+    "second_order_process": (("omega_n", "zeta", "gain", "initial", "initial_rate"), _second_order_process),
+    "mass_spring_damper": (
+        ("mass", "damping", "stiffness", "initial_position", "initial_velocity"),
+        _mass_spring_damper,
+    ),
+    "dc_motor": (
+        (
+            "resistance",
+            "inductance",
+            "back_emf",
+            "torque_constant",
+            "inertia",
+            "friction",
+            "initial_current",
+            "initial_speed",
+        ),
+        _dc_motor,
+    ),
+    "state_space": (("A", "B", "C", "D", "initial"), _state_space),
+}
 
 
 class ModelBlock(Block):
-    MODEL = None
+    MODEL = None  # the model's type
     has_update = True
 
     def configure(self, in_map):
-        mst = {k: v for k, v in self.st.items() if k in self.MODEL.KEYS}
-        self.model = self.MODEL(self, mst)
+        keys, build = MODELS[self.MODEL]
+        self.model = build(self, {k: v for k, v in self.st.items() if k in keys})
         self.rt = s_counted(self, self.st, "ride_through", 0)
-        self.substeps = s_whole(self, self.st, "substeps", 1)
-        if self.substeps < 1:
-            raise self.err("setting 'substeps' must be at least 1")
         self.settle = s_counted(self, self.st, "settle", None)
         if self.settle is None and self.model.tau is not None:
+            # three of its slowest time constant (rule 7.8.6)
             self.settle = ceil_tol(3.0 * self.model.tau / self.ctx.period)
-        _check_stable(self, self.model, self.substeps)
-        self.nsteps = _model_steps(self.model, self.substeps)
         for name in self.model.inputs:
             self.in_ports[name] = (NUMBER, True, name in self.model.direct)
         for name in self.model.outputs:
@@ -1444,12 +1688,7 @@ class ModelBlock(Block):
         s["doubtful"] += n
 
     def _step(self, u):
-        s = self.s
-        d = self.ctx.period / self.nsteps
-        x = s["x"]
-        for _ in range(self.nsteps):
-            x = self.model.step(x, u, d)
-        s["x"] = x
+        self.s["x"] = self.model.step(self.s["x"], u)
 
     def output(self, k, t, ins):
         s = self.s
@@ -1507,18 +1746,17 @@ class ModelBlock(Block):
             s["doubtful"] += 1
 
 
-class ThermalMassBlock(ModelBlock):
-    MODEL = ThermalMassModel
-    SETTINGS = ThermalMassModel.KEYS + ("ride_through", "settle", "substeps")
-
-
-class StateSpaceBlock(ModelBlock):
-    MODEL = StateSpaceModel
-    SETTINGS = StateSpaceModel.KEYS + ("ride_through", "settle", "substeps")
+def _model_block(model_type):
+    """The block type that hosts one type of model."""
+    return type(
+        "ModelBlock_" + model_type,
+        (ModelBlock,),
+        {"MODEL": model_type, "SETTINGS": MODELS[model_type][0] + ("ride_through", "settle")},
+    )
 
 
 class Estimator(Block):
-    SETTINGS = ("model", "q", "p0", "measure", "gate", "sigma_max", "use_uncertain", "substeps")
+    SETTINGS = ("model", "q", "p0", "measure", "gate", "sigma_max", "use_uncertain")
 
     def _state_map(self, key, required):
         if key not in self.st:
@@ -1550,20 +1788,15 @@ class Estimator(Block):
             raise self.err("setting 'model' must be a map with a 'type'")
         if not isinstance(m["type"], str) or m["type"] not in MODELS:
             raise self.err("setting 'model': unknown model type %r" % (m["type"],))
-        cls = MODELS[m["type"]]
+        keys, build = MODELS[m["type"]]
         mst = {}
         for key, v in m.items():
             if key == "type":
                 continue
-            if key not in cls.KEYS:
+            if key not in keys:
                 raise self.err("setting 'model': unknown setting %r" % (key,))
             mst[key] = v
-        self.model = cls(self, mst)
-        self.substeps = s_whole(self, self.st, "substeps", 1)
-        if self.substeps < 1:
-            raise self.err("setting 'substeps' must be at least 1")
-        _check_stable(self, self.model, self.substeps)
-        self.nsteps = _model_steps(self.model, self.substeps)
+        self.model = build(self, mst)
         states = self.model.states
         q = self._state_map("q", True)
         p0 = self._state_map("p0", True)
@@ -1647,12 +1880,8 @@ class Estimator(Block):
         if k != 0:
             p = s["p"]
             if all(v is not None for v in s["last"].values()):
-                d = period / self.nsteps
-                f = self.model.sens(d, self.nsteps)
-                x = s["x"]
-                for _ in range(self.nsteps):
-                    x = self.model.step(x, s["last"], d)
-                s["x"] = x
+                f = self.model.ad  # the model's Ad (rule 7.9.2)
+                s["x"] = self.model.step(s["x"], s["last"])
                 fp = [[sum(f[i][m] * p[m][j] for m in range(n)) for j in range(n)] for i in range(n)]
                 p = [[sum(fp[i][m] * f[j][m] for m in range(n)) for j in range(n)] for i in range(n)]
                 s["p"] = p
@@ -1721,10 +1950,10 @@ BLOCK_TYPES = {
     "since_true": SinceTrue,
     "latch": Latch,
     "integrate": Integrate,
-    "thermal_mass": ThermalMassBlock,
-    "state_space": StateSpaceBlock,
     "estimator": Estimator,
 }
+for _model_type in MODELS:
+    BLOCK_TYPES[_model_type] = _model_block(_model_type)
 
 
 # ------------------------------------------------------------------ engine
@@ -2062,11 +2291,13 @@ class Engine:
             models = [b for b in members if isinstance(b, ModelBlock)]
             if not models:
                 continue
-            for b in models:
-                if "settle" not in b.st:
-                    raise b.err("setting 'settle' is missing, and the block is on a loop")
-                if b.settle != models[0].settle:
-                    raise b.err("setting 'settle' is not the same as that of block %r, on the same loop" % models[0].id)
+            if len(models) > 1:
+                raise models[0].err(
+                    "the model blocks %s are on one loop, a tick apart: write them as one model "
+                    "(`linear` takes any number of states)" % ", ".join(repr(b.id) for b in models)
+                )
+            if "settle" not in models[0].st:
+                raise models[0].err("setting 'settle' is missing, and the block is on a loop")
             settle = models[0].settle
             for b in members:
                 if isinstance(b, Estimator):

@@ -1,0 +1,11 @@
+# 7.8.7: the bound is on a model in continuous time. A discrete model's
+# matrices are its step, whatever their size: x' = 200000 x + u.
+rules: [7.8.7, A.state_space]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: state_space, in: {u: u}, settings: {A: [[200000]], B: [1], C: [1]}, out: {y: y}}
+calls:
+  - {u: 1, y: 0}
+  - {u: 1, y: 1}
+  - {u: 1, y: 200001}

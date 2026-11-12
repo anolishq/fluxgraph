@@ -19,10 +19,10 @@ the text says, not what it should say.
 | `compare.py` | Runs the two readings side by side on random inputs and call times and compares every output after every call. |
 
 ```bash
-python3 conformance/run.py            # 248 vectors: ALL AGREE
-python3 conformance/run.py --second   # 248 vectors: ALL AGREE
-python3 conformance/mutate.py         # 458 breakages: 458 noticed; every vector failed by one
-python3 conformance/compare.py        # 1687650 comparisons, 0 differences
+python3 conformance/run.py            # 294 vectors: ALL AGREE
+python3 conformance/run.py --second   # 294 vectors: ALL AGREE
+python3 conformance/mutate.py         # 528 breakages: 528 noticed; every vector failed by one
+python3 conformance/compare.py        # 1874474 comparisons, 0 differences
 ```
 
 The format of a vector is described at the top of `run.py`.
@@ -273,11 +273,91 @@ done, and a host that knows how long a restored graph was away says so.
   of the `loop-delay` vector among them, reads `not_ready` for good after
   one tick is passed over.
 
+## Amendment 4: models
+
+Review of the third revision showed two masses that were each stable at a
+period, joined, reaching 10⁹⁷ and saying `good`, and one mass at two and a
+half of its time constants a tick giving 42.05 where the answer is 0.67.
+The amendment makes every model linear and steps it exactly, as the
+solution of its equation with its inputs held, and refuses a loop of two
+model blocks.
+
+- Both failures were written down as they stood before any text was, and
+  are vectors now (`model-long-period`, `thermal-rc2`,
+  `refused-loop-two-models`).
+- The expected values of the new vectors are not worked by hand in round
+  numbers: an exponential does not come out round. Each is from the closed
+  form of its model's equation, written in the vector's header, and
+  computed from that form and from nothing in the reference. For
+  `thermal-rc2-uneven` that is by the eigenvectors of its matrix, which
+  is not how either reading steps.
+- 50 vectors are new, 3 of the earlier 248 are changed, and 4 were taken
+  out with the rules they tested (sub-steps, the stability limit, and
+  two models on one loop).
+- As first written from the amended text, the second reading agreed with
+  the reference on all 274 vectors there were then and on all 1,874,474
+  random comparisons. It works its exponentials in a hundred decimal
+  digits, where the reference uses doubles, so the two are not one method
+  twice.
+- That agreement was inside the range the vectors and the comparison
+  cover. An independent review went outside it, with its own arithmetic
+  of 120 digits as the answer, and found what agreement could not:
+  - every named model's matrices are right, and match the 1.x model's own
+    derivative to 1.7e-14;
+  - the reference's exponential lost accuracy in proportion to how fast
+    the model was against the period. A sensor of 1 mJ/K on a tank of
+    1 MJ/K at a period of an hour was 3e-8 out, and a spring of 10⁶ rad/s
+    at 1 s was 7e-4 out. Of 3,000 random models over twelve decades, 263
+    missed one part in 10⁹. The second reading had every one right;
+  - the default `settle` lost a slow rate beside a fast one in a
+    subtraction, and at the extreme said a model did not decay.
+- The text had promised one part in 10⁹ with no condition, which ordinary
+  double arithmetic cannot keep. It now promises it up to a bound, the
+  largest row of `A` summed and multiplied by the period being 100,000 at
+  most, and a graph past the bound is refused. The reference's
+  exponential was changed to square fewer times. Measured against 120
+  digits over 1,500 random models up to the bound, its worst error is
+  5e-10.
+- The second reading, brought up to that from the text alone over four
+  more rounds, found the two-state formula for `settle` still losing a
+  slow rate in the determinant, and a `dc_motor` whose two constants
+  differed in sign having or not having a `settle` by the last bit of a
+  product. A named model's determinant is now taken from its settings,
+  with nothing subtracted, and a motor's constants are not negative.
+- The review's second pass could not find a model inside the bound whose
+  step was more than 9.7e-11 out, and found two things the promise still
+  got wrong. A large `B` cost `Ad` its accuracy, in both readings at the
+  extreme, since both took the two from one exponential: with `B` at
+  10¹²⁰ both gave an `Ad` of 1 for a state that decays to 0.368. `B` is
+  kept out of the exponential now. And the promise is of one step: two
+  engines that agree on every step are a part in 10⁹ apart after a few
+  hundred ticks of an oscillator with no damping at the bound, which the
+  text now says. Nine clauses of the new rules were unpinned, the settle
+  formula that does not cancel among them, and each has a vector and a
+  breakage.
+- As last written the second reading agrees on all 294 vectors and all
+  1,874,474 comparisons.
+- Four rules were pinned by no vector: the estimator's `F·P·Fᵀ` (every
+  estimator vector had one state), a default `settle` that is not a whole
+  number of ticks, and the default for two of the named models. Each has
+  a vector and a breakage now. Each named model has a breakage for every
+  coefficient of its matrices, and the vectors were given settings that
+  tell one from another: no mass, inductance or gain is left at 1.
+
 ## What this does not cover
 
 - **A fault both readings share.** `compare.py` only compares them. The
   estimator's inputs, above, were one, and the first form of amendment 1's
   take-up rule was another.
+- **A place neither the vectors nor the comparison goes.** Two readings
+  agreeing says nothing of it. The reference's exponential was wrong for
+  stiff models while 1.87 million comparisons agreed.
+- **How long a `settle` of millions of ticks is, to the tick.** Two
+  vectors pin that a model with a slow rate beside a fast one has a
+  settle at all; none runs one to its end.
+- **Drift over many ticks.** No vector runs an oscillator for hundreds of
+  ticks at the bound, where two engines within the promise differ by more
+  than the vectors' tolerance.
 - **A threshold on a computed value.** Values are compared to one part in
   10⁹, and two implementations that agree to that can still fall on either
   side of a comparison, a deadband or a hysteresis.
