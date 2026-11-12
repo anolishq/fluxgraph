@@ -20,8 +20,9 @@ calls:
   - {x: 12, b: true, delayed: 12, held: 12, smooth: 12, hot: true, long: true, quiet: false, unset: false, lit: true, ramp: 2}
   - {$save: a}
   - {$restore: a}
-  # tick 3. delay: what it held is in doubt. deadband and low-pass: a first input. hysteresis: unchanged.
+  # tick 3, after a gap of no known length. delay: nothing to give. deadband and low-pass: a first input.
+  # hysteresis: unchanged.
   # held_for: started again. since_true: the clock is set. latch: unchanged. model: uncertain for 2 ticks, this one the first.
-  - {now: 50, gap: true, x: 9, b: true, delayed: {u: 12}, held: 9, smooth: 9, hot: true, long: false, quiet: false, unset: false, lit: true, ramp: {u: 3}}
+  - {now: 50, gap: true, x: 9, b: true, delayed: not_ready, held: 9, smooth: 9, hot: true, long: false, quiet: false, unset: false, lit: true, ramp: {u: 3}}
   - {now: 51, x: 9, b: true, delayed: 9, held: 9, smooth: 9, hot: true, long: false, quiet: false, unset: false, lit: true, ramp: {u: 4}}
   - {now: 52, x: 9, b: true, delayed: 9, held: 9, smooth: 9, hot: true, long: true, quiet: false, unset: false, lit: true, ramp: 5}

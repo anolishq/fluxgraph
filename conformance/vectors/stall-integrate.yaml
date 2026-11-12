@@ -1,0 +1,17 @@
+# 8.4, 8.6, 7.7: a stall is ticks nobody saw. A total adds each of them to
+# missed and to elapsed, and one to gaps; the second total, which allows 4 s
+# missed, is bad, and the third, which allows 5 s, is good. Ticks 0 and 1,
+# then a call 5 s late: 5 ticks are passed over and tick 7 runs.
+rules: [8.4, 8.6, 7.7.2, 7.7.3, 6.10]
+period: 1s
+max_catch_up: 3
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: i, type: integrate, in: {x: x}, out: {y: total, missed: missed, elapsed: elapsed, gaps: gaps}}
+  - {id: s, type: integrate, in: {x: x}, settings: {max_missed: 4s}, out: {y: strict}}
+  - {id: l, type: integrate, in: {x: x}, settings: {max_missed: 5s}, out: {y: loose}}
+calls:
+  - {now: 0, skipped: 0, x: 2, total: 2, missed: 0, elapsed: 1, gaps: 0, strict: 2, loose: 2}
+  - {now: 1, x: 2, total: 4, missed: 0, elapsed: 2, gaps: 0, strict: 4, loose: 4}
+  - {now: 7, gap: true, skipped: 5, tick: 7, time: 7, x: 2, total: 6, missed: 5, elapsed: 8, gaps: 1, strict: bad, loose: 6}
+  - {now: 8, x: 2, total: 8, missed: 5, elapsed: 9, gaps: 1, strict: bad, loose: 8}

@@ -1,0 +1,18 @@
+# 8.6, 7.8.4, 7.8.5: after a gap of no known length a model does not ride
+# through: nobody knows how long ago its last usable input was. It keeps
+# the value all the same, for an output that reads its input directly. The
+# first model is x' = x + u with a ride_through of 5 s; the second gives
+# y = x + u with x' = u. The input is bad from the gap's tick.
+rules: [8.6, 7.8.4, 7.8.5]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: state_space, in: {u: u}, settings: {A: [[1]], B: [1], C: [1], ride_through: 5s}, out: {y: y}}
+  - {id: d, type: state_space, in: {u: u}, settings: {A: [[0]], B: [1], C: [1], D: 1}, out: {y: yd}}
+calls:
+  - {u: 1, y: 0, yd: 1}
+  - {u: 1, y: 1, yd: 2}
+  - {$save: a}
+  - {$restore: a}
+  - {now: 50, gap: true, skipped: unknown, u: bad, y: 2, yd: {u: 2}}
+  - {now: 51, u: bad, y: 2, yd: {u: 2}}

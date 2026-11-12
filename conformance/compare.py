@@ -540,13 +540,18 @@ def main():
                             engine.restore(state)
                         last_now, start = None, rng.choice([start, 5 * SECOND])  # the clock may start again
                     elif call and op < 0.03:
+                        # the host may say how long it was away: under half a period, a few, or a great many
+                        away = rng.choice([None, None, 0, period // 3, period * 3 // 2, period * 7, period * 400])
+                        if away is not None and rng.random() < 0.3:
+                            away = rng.randint(0, 9 * period)
                         for engine in engines:
-                            engine.rebase()
+                            engine.rebase(away)
                         if rng.random() < 0.3:  # written, and then a second rebase
                             for name, kind in inputs.items():
                                 write_random(rng, engines, last, name, kind, start, period, 0.0)
+                            away = rng.choice([None, period * 5 // 2])
                             for engine in engines:
-                                engine.rebase()
+                                engine.rebase(away)
                         last_now, start = None, rng.choice([start, 5 * SECOND])
                     elif call and op < 0.033:
                         for engine, state in zip(engines, fresh, strict=True):
@@ -574,14 +579,15 @@ def main():
                                 lambda e=engine: e.tick(called - 1),
                                 lambda e=engine: e.write(next(iter(inputs)), "good", "text", now),
                                 lambda e=engine: e.write("not an input", "good", 1.0, now),
+                                lambda e=engine: e.rebase(-1),
                             ):
                                 try:
                                     attempt()
                                 except Exception:  # noqa: BLE001 - any refusal will do
                                     refusals += 1
-                        if refusals != 6:
+                        if refusals != 8:
                             found += 1
-                            first = first or f"run {run} call {call} now {now}: {refusals} of 6 refusals"
+                            first = first or f"run {run} call {call} now {now}: {refusals} of 8 refusals"
                     (ran_a, a), (ran_b, b) = engines[0].tick(now), engines[1].tick(now)
                     compared += 1
                     if ran_a != ran_b or (a is None) != (b is None) or (ran_a and engines[0].info != engines[1].info):

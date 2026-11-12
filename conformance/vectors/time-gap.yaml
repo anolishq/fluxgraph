@@ -1,6 +1,7 @@
 # 6.9, 6.10, 8.3, 8.4: a call that would run more ticks than max_catch_up
-# is a stall. One tick runs: the last that was due, numbered one more than
-# the last run. What stood goes on standing, and the call says it was a gap.
+# is a stall. One tick runs: the last that was due, under its own number.
+# What stood goes on standing, and the call says it was a gap and how
+# many ticks it passed over.
 rules: [6.9, 6.10, 8.3, 8.4]
 period: 1s
 max_catch_up: 3
@@ -15,8 +16,8 @@ calls:
   - {now: 0, x: 2, quiet: 7, total: 2, q: 7, v: not_ready, ticks: 1}
   - {now: 1, x: 2, total: 4, q: 7, v: not_ready, ticks: 2}
   - {now: 4, ran: 3, x: 2, total: 10, q: 7, v: bad, s: not_ready, ticks: 5}         # three ticks: not a gap
-  # six would be due: a stall. tick 5 runs, at the place of the last due tick. the write waiting is
+  # six would be due: a stall. tick 10 runs, the last due, and five are passed over. the write waiting is
   # taken up. `slow` has gone unwritten for 10 s, counted from tick 0, which the stall does not move.
-  - {now: 10.2, ran: 1, gap: true, tick: 5, time: 10, x: {v: 5, at: 10.1}, total: 15, q: 7, v: bad, s: bad, ticks: 6}
-  - {now: 11, tick: 6, time: 11, total: 20, q: 7, v: bad, s: bad, ticks: 7}   # later ticks follow at whole periods
+  - {now: 10.2, ran: 1, gap: true, skipped: 5, tick: 10, time: 10, x: {v: 5, at: 10.1}, total: 15, q: 7, v: bad, s: bad, ticks: 6}
+  - {now: 11, skipped: 0, tick: 11, time: 11, total: 20, q: 7, v: bad, s: bad, ticks: 7}   # later ticks follow at whole periods
   - {now: 11.4, ran: 0}

@@ -1,0 +1,15 @@
+# 6.11: a rebase whose length is less than zero, is not a whole number of
+# nanoseconds, or does not fit in 64 bits is refused, and changes nothing:
+# the write waiting is still seen.
+rules: [6.11, 8.5]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: i, type: integrate, in: {x: x}, out: {y: total, gaps: gaps}}
+calls:
+  - {now: 0, x: 2, total: 2, gaps: 0}
+  - {$write: [x, good, 3, 1]}
+  - {$refused_rebase: -1}
+  - {$refused_rebase_ns: 0.5}
+  - {$refused_rebase_ns: 9223372036854775808}
+  - {now: 1, total: 5, gaps: 0}

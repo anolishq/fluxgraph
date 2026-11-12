@@ -1,20 +1,17 @@
-# 8.4, 8.6, 7.8.8: a stall is a gap, and the tick before it is the loop's
-# doubt. The delay's held value is made uncertain, and is given as
-# uncertain while the loop is within settle, 3 ticks. The graph is that of
-# loop-delay. Ticks 0 to 2, then a call 98 s late.
+# 8.4, 8.6, 7.8.8: a stall is a gap, and the tick before the one it runs is
+# the loop's doubt: the plant is uncertain from that tick, for settle, 2
+# ticks. Ticks 0 and 1, then a call 8 s late: tick 10 runs, and 8 are
+# passed over.
 rules: [8.4, 8.6, 7.8.8]
 period: 1s
 max_catch_up: 3
 inputs: {r: {max_age: none}}
 blocks:
-  - {id: plant, type: state_space, in: {u: i}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 3s}, out: {y: y}}
-  - {id: acc, type: delay, in: {x: i}, settings: {initial: 0}, out: {y: p}}
-  - {id: ctl, type: formula, in: {p: acc.y, r: r, y: plant.y}, settings: {expr: "p + (r - y)"}, out: {y: i}}
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: y}}
+  - {id: ctl, type: formula, in: {r: r, y: plant.y}, settings: {expr: "r - y"}, out: {y: e}}
 calls:
-  - {now: 0, r: 2, y: 0, i: 2, p: 0}
-  - {now: 1, r: 2, y: 1, i: 3, p: 2}
-  - {now: 2, r: 2, y: 2, i: 3, p: 3}
-  - {now: 100, gap: true, r: 2, y: {u: 2.5}, i: {u: 2.5}, p: {u: 3}}       # tick 3
-  - {now: 101, r: 2, y: {u: 2.5}, i: {u: 2}, p: {u: 2.5}}
-  - {now: 102, r: 2, y: {u: 2.25}, i: {u: 1.75}, p: {u: 2}}
-  - {now: 103, r: 2, y: 2, i: 1.75, p: 1.75}                                # tick 6: settled
+  - {now: 0, r: 4, y: 0, e: 4}
+  - {now: 1, r: 4, y: 2, e: 2}
+  - {now: 10, gap: true, skipped: 8, tick: 10, r: 4, y: {u: 2}, e: {u: 2}}
+  - {now: 11, r: 4, y: {u: 2}, e: {u: 2}}
+  - {now: 12, r: 4, y: 2, e: 2}

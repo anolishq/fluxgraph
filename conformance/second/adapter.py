@@ -41,8 +41,8 @@ class Engine:
     def restore(self, saved):
         self._engine.restore(saved)
 
-    def rebase(self):
-        self._engine.rebase()
+    def rebase(self, away=None):
+        self._engine.rebase() if away is None else self._engine.rebase(away)
 
     def reset(self):
         self._engine.reset()

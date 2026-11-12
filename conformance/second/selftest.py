@@ -19,9 +19,10 @@ def ns(seconds):
     return int(round(seconds * S))
 
 
-def info(gap, tick, time, thrown=0, waiting=0):
-    """What a call that ran a tick reports (rule 6.10)."""
-    return {"gap": gap, "tick": tick, "time": time, "thrown": thrown, "waiting": waiting}
+def info(gap, tick, time, thrown=0, waiting=0, skipped=0):
+    """What a call that ran a tick reports (rule 6.10). `skipped` is the
+    ticks passed over at a gap, or None where nobody knows."""
+    return {"gap": gap, "skipped": skipped, "tick": tick, "time": time, "thrown": thrown, "waiting": waiting}
 
 
 def close(a, b):
@@ -151,21 +152,21 @@ def test_gap():
     e = Engine(integ_graph(max_catch_up=3))
     e.write("x", "good", 1.0, ns(0.0))
     check("gap y0", e.tick(ns(0.0))[1]["y"], ("good", 1.0))
-    # ticks 1 to 8 are due, more than 3: a stall. One tick runs, numbered 1,
+    # ticks 1 to 8 are due, more than 3: a stall. One tick runs, tick 8,
     # at 8 s. What stood goes on standing, 8 s old, under its 10 s maximum.
     # The total is unchanged by the gap, and good (section 8.6).
     ran, o = e.tick(ns(8.0))
     check("gap ran", ran, 1)
-    check("gap info", e.info, info(True, 1, 8 * S))
+    check("gap info", e.info, info(True, 8, 8 * S, skipped=7))
     check("gap y", o["y"], ("good", 2.0))
-    check("gap missed", o["missed"], ("good", 0.0))
+    check("gap missed", o["missed"], ("good", 7.0))  # the seven ticks passed over
     # three ticks are not more than three: ticks 2, 3, 4 at 9, 10, 11 s.
     # The value is 9 and 10 s old, usable, then 11 s old, bad.
     ran, o = e.tick(ns(11.0))
     check("gap three ran", ran, 3)
-    check("gap three info", e.info, info(False, 4, 11 * S))
+    check("gap three info", e.info, info(False, 11, 11 * S))
     check("gap three y", o["y"], ("good", 4.0))
-    check("gap three missed", o["missed"], ("good", 1.0))
+    check("gap three missed", o["missed"], ("good", 8.0))
 
 
 def test_stall_writes():
@@ -179,19 +180,19 @@ def test_stall_writes():
     e.write("x", "good", 7.0, ns(6.2))
     e.write("x", "good", 9.0, 8 * S)
     # ticks at 1..7 s are no more than half a period after 7.4 s: seven due,
-    # more than 3. One tick runs: number 1, at 7 s, the last that was due.
+    # more than 3. One tick runs: tick 7, at 7 s, the last that was due.
     # It is the call's last tick and may see writes up to 7.4 s: of those
     # the latest time (7.0, at 6.2 s) stands; 9.0, at 8 s, still waits.
     ran, o = e.tick(ns(7.4))
     check("stall ran", ran, 1)
-    check("stall info", e.info, info(True, 1, 7 * S, waiting=1))
+    check("stall info", e.info, info(True, 7, 7 * S, waiting=1, skipped=6))
     check("stall y", o["y"], ("good", 8.0))
-    check("stall missed", o["missed"], ("good", 0.0))
+    check("stall missed", o["missed"], ("good", 6.0))
     # later ticks follow at whole periods: tick 2 at 8 s, due at 7.5 s
     check("stall none due", e.tick(ns(7.5) - 1), (0, None))
     ran, o = e.tick(ns(7.5))
     check("stall next ran", ran, 1)
-    check("stall next info", e.info, info(False, 2, 8 * S))
+    check("stall next info", e.info, info(False, 8, 8 * S))
     check("stall next y", o["y"], ("good", 17.0))
 
 
@@ -482,7 +483,7 @@ def test_rebase():
     # one thrown away: had it waited, max_ahead would have thrown it here.
     ran, o = e.tick(40 * S)
     check("rb ran", ran, 1)
-    check("rb info", e.info, info(True, 2, 40 * S))
+    check("rb info", e.info, info(True, 2, 40 * S, skipped=None))
     check("rb y", o["y"], ("good", 2.0))
     check("rb c", o["c"], ("good", 1.0))
     # later ticks are at whole periods from it, and the sample is not new again
@@ -499,7 +500,7 @@ def test_rebase():
     e.write("x", "good", 4.0, 45 * S)
     e.rebase()
     ran, o = e.tick(45 * S)
-    check("rb2 info", e.info, info(True, 7, 45 * S))
+    check("rb2 info", e.info, info(True, 7, 45 * S, skipped=None))
     check("rb2 y", o["y"], ("not_ready", None))
     ran, o = e.tick(48 * S)
     check("rb2 ran", ran, 3)
@@ -514,7 +515,7 @@ def test_rebase():
     e.write("x", "bad", None, 50 * S + 1)
     ran, o = e.tick(49 * S)
     check("rb3 ran", ran, 1)
-    check("rb3 info", e.info, info(True, 12, 49 * S, thrown=2))
+    check("rb3 info", e.info, info(True, 12, 49 * S, thrown=2, skipped=None))
     check("rb3 y", o["y"], ("not_ready", None))
     check("rb3 y 51", e.tick(51 * S)[1]["y"], ("not_ready", None))
     # a second rebase before the call does away with what was written
@@ -523,7 +524,7 @@ def test_rebase():
     e.write("x", "good", 7.0, 5 * S)
     e.rebase()
     ran, o = e.tick(5 * S)
-    check("rb4 info", e.info, info(True, 15, 5 * S))
+    check("rb4 info", e.info, info(True, 15, 5 * S, skipped=None))
     check("rb4 y", o["y"], ("not_ready", None))
     # a restore: nothing stands from that moment either
     e = Engine(echo_graph())
@@ -533,17 +534,17 @@ def test_rebase():
     e.restore(saved)
     e.write("x", "good", 2.0, 40 * S)
     ran, o = e.tick(40 * S)
-    check("rs0 info", e.info, info(True, 1, 40 * S))
+    check("rs0 info", e.info, info(True, 1, 40 * S, skipped=None))
     check("rs0 y 40", o["y"], ("good", 2.0))
     # a state saved between a rebase and its call is as one saved before it
     e.rebase()
     saved = e.save()
     check("rs1 y", e.tick(90 * S)[1]["y"], ("not_ready", None))
-    check("rs1 info", e.info, info(True, 2, 90 * S))
+    check("rs1 info", e.info, info(True, 2, 90 * S, skipped=None))
     e.restore(saved)
     e.write("x", "good", 3.0, 7 * S)
     ran, o = e.tick(7 * S)
-    check("rs1 restored info", e.info, info(True, 2, 7 * S))
+    check("rs1 restored info", e.info, info(True, 2, 7 * S, skipped=None))
     check("rs1 restored y", o["y"], ("good", 3.0))
     # restoring a state saved before any tick: the writes waiting are done
     # with, the next call runs tick 0 and is not a gap
@@ -564,7 +565,7 @@ def test_rebase():
     e.write("x", "good", 5.0, 1 * S)
     e.restore(saved)
     ran, o = e.tick(1 * S)
-    check("rs info", e.info, info(True, 1, 1 * S))
+    check("rs info", e.info, info(True, 1, 1 * S, skipped=None))
     check("rs y", o["y"], ("not_ready", None))
 
 
@@ -686,8 +687,8 @@ def test_delay_window_rebase():
     e.rebase()
     e.write("x", "good", 3.0, 10 * S)
     o = e.tick(10 * S)[1]  # tick 2
-    check("dw info", e.info, info(True, 2, 10 * S))
-    check("dw dy 2", o["dy"], ("uncertain", 2.0))
+    check("dw info", e.info, info(True, 2, 10 * S, skipped=None))
+    check("dw dy 2", o["dy"], ("not_ready", None))
     check("dw c 2", o["c"], ("good", 0.0))
     # what the delay took in after the rebase carries its time again
     e.write("x", "good", 4.0, 11 * S)
@@ -711,7 +712,7 @@ def test_save_restore():
     e.restore(saved)
     ran, o = e.tick(ns(0.5))  # a gap: any now, one tick
     check("sr ran", ran, 1)
-    check("sr info", e.info, info(True, 2, ns(0.5)))
+    check("sr info", e.info, info(True, 2, ns(0.5), skipped=None))
     check("sr y", o["y"], ("good", 3.0))
     # the next tick is at 1.5, due once now is within half a period of it
     check("sr none due", e.tick(ns(0.9)), (0, None))
@@ -1004,10 +1005,10 @@ def test_integrate():
     # an uncertain true reset: everything to zero, then this tick's addition
     step("2", 2, ("good", 2.0), ("uncertain", True), (("uncertain", 2.0), 0, 0, 1, 0))
     step("3", 3, ("good", 2.0), ("bad", None), (("good", 4.0), 0, 0, 2, 0))
-    # a stall: tick 4 at 10 s. The total is unchanged by it, and good
-    step("4", 10, ("uncertain", 2.0), ("uncertain", False), (("uncertain", 6.0), 0, 1, 3, 1))
-    check("integ r gap info", e.info, info(True, 4, 10 * S))
-    step("5", 11, ("good", 2.0), ("good", False), (("good", 8.0), 0, 1, 4, 1))
+    # a stall: tick 10, six passed over. The total is unchanged by it, and good
+    step("4", 10, ("uncertain", 2.0), ("uncertain", False), (("uncertain", 6.0), 6, 1, 9, 1))
+    check("integ r gap info", e.info, info(True, 10, 10 * S, skipped=6))
+    step("5", 11, ("good", 2.0), ("good", False), (("good", 8.0), 6, 1, 10, 1))
     # a reset returns `gaps` to zero with the rest
     step("6", 12, ("uncertain", 2.0), ("good", True), (("uncertain", 2.0), 0, 1, 1, 0))
 
@@ -1107,16 +1108,16 @@ def test_timers():
     check("timers he 2", o["he"], ("good", 3.0))
     check("timers s 2", o["s"], ("good", True))
     check("timers se 2", o["se"], ("good", 3.0))
-    o = e.tick(10 * S)[1]  # a stall: tick 3
-    check("timers gap info", e.info, info(True, 3, 10 * S))
+    o = e.tick(10 * S)[1]  # a stall: tick 10; the clock is not set, the timer stops
+    check("timers gap info", e.info, info(True, 10, 10 * S, skipped=7))
     check("timers h gap", o["h"], ("good", False))
     check("timers he gap", o["he"], ("good", 1.0))
-    check("timers s gap", o["s"], ("good", False))
-    check("timers se gap", o["se"], ("good", 1.0))
+    check("timers s gap", o["s"], ("good", True))
+    check("timers se gap", o["se"], ("good", 11.0))
     o = e.tick(12 * S)[1]  # ticks 4 and 5
     check("timers h 5", o["h"], ("good", True))
     check("timers s 5", o["s"], ("good", True))
-    check("timers se 5", o["se"], ("good", 3.0))
+    check("timers se 5", o["se"], ("good", 13.0))
 
 
 def test_deadband_window():
@@ -1430,12 +1431,12 @@ def test_loops():
     step("10", 10, ("good", 0.0), "uncertain", 4)
     step("11", 11, None, "uncertain", 4)
     step("12", 12, None, "good", 4)
-    # a stall: tick 13, at 20 s. The tick before it is a doubt: uncertain
+    # a stall: tick 20, seven steps not taken. The tick before it is a doubt: uncertain
     # on ticks 13 and 14. The counters go on, and the gap is not counted.
-    step("13", 20, None, "uncertain", 4)
-    check("doubt gap info", e.info, info(True, 13, 20 * S))
-    step("14", 21, None, "uncertain", 4)
-    step("15", 22, None, "good", 4)
+    step("20", 20, None, "uncertain", 11)
+    check("doubt gap info", e.info, info(True, 20, 20 * S, skipped=7))
+    step("21", 21, None, "uncertain", 11)
+    step("22", 22, None, "good", 11)
     refused(
         "unstable",
         {
@@ -1534,16 +1535,16 @@ def test_model_loops():
     step(6, ("good", 0.0), "uncertain")
     step(7, None, "uncertain")
     step(8, None, "good")
-    # a stall: tick 9 at 20 s; the tick before it is the loop's doubt
+    # a stall: tick 20; the tick before it is the loop's doubt
     step(20, None, "uncertain")
-    check("masses gap info", e.info, info(True, 9, 20 * S))
+    check("masses gap info", e.info, info(True, 20, 20 * S, skipped=11))
     step(21, None, "uncertain")
     saved = e.save()
     step(22, ("bad", None), "good")  # tick 11 is a doubt, after the save
     # the loop's doubt is part of what a save holds; a restore is a gap
     e.restore(saved)
     e.write("p", "good", 0.0, 0)
-    step(0, None, "uncertain")  # tick 11: the doubt is tick 10
+    step(0, None, "uncertain")  # tick 22: the doubt is tick 21
     step(1, None, "uncertain")
     step(2, None, "good")
     refused("masses, one with no settle", two_masses("2s", None))
@@ -1822,21 +1823,21 @@ def test_round_three():
     #                               h       l       hf      st      m
     step("0", 0, 7.0, False, False, [(1, 0), (1, 0), (0, 0), (1, 0), (1, 0)])
     step("1", 1, 12.0, False, False, [(1, 0), (2, 0), (0, 0), (2, 0), (2, 0)])
-    # a stall: tick 2. The hysteresis and the latch go on and count it. The
+    # a stall: tick 10, eight passed over. The hysteresis and the latch go on and count it. The
     # timer starts, and the clock is set, at the gap's tick: one each.
-    step("2", 10, 7.0, True, False, [(2, 1), (3, 1), (1, 1), (1, 1), (3, 1)])
-    check("gaps 2 info", e.info, info(True, 2, 10 * S))
+    step("2", 10, 7.0, True, False, [(10, 1), (11, 1), (1, 1), (1, 1), (11, 1)])
+    check("gaps 2 info", e.info, info(True, 10, 10 * S, skipped=8))
     # tick 3: the hysteresis changes and the clock is set again, after the
     # gap: none. The timer's run still began at the gap's tick.
-    step("3", 11, 4.0, True, False, [(1, 0), (4, 1), (2, 1), (1, 0), (4, 1)])
+    step("3", 11, 4.0, True, False, [(1, 0), (12, 1), (2, 1), (1, 0), (12, 1)])
     # tick 4: the latch is cleared, after the gap; the timer stops
-    step("4", 12, 4.0, False, True, [(2, 0), (1, 0), (0, 0), (2, 0), (5, 1)])
+    step("4", 12, 4.0, False, True, [(2, 0), (1, 0), (0, 0), (2, 0), (13, 1)])
     # a second stall: tick 5. The hysteresis changes, and the latch is
     # cleared, at the gap's tick: each counts from it, and counts it.
-    step("5", 20, 12.0, False, True, [(1, 1), (1, 1), (0, 0), (1, 1), (6, 2)])
-    check("gaps 5 info", e.info, info(True, 5, 20 * S))
+    step("5", 20, 12.0, False, True, [(1, 1), (1, 1), (0, 0), (10, 1), (21, 2)])
+    check("gaps 5 info", e.info, info(True, 20, 20 * S, skipped=7))
     # tick 6: the timer starts a tick after the gap: none
-    step("6", 21, 12.0, True, False, [(2, 1), (2, 1), (1, 0), (1, 0), (7, 2)])
+    step("6", 21, 12.0, True, False, [(2, 1), (2, 1), (1, 0), (1, 0), (22, 2)])
     # a reset sets them to zero
     e.reset()
     step("reset", 0, 7.0, False, False, [(1, 0), (1, 0), (0, 0), (1, 0), (1, 0)])
@@ -1851,14 +1852,14 @@ def test_round_three():
     e = Engine(g)
     e.write("r", "good", False, 0)
     check("integ gap reset 0", e.tick(0)[1]["gaps"], ("good", 0.0))
-    o = e.tick(10 * S)[1]  # a stall, tick 1, and no reset
+    o = e.tick(10 * S)[1]  # a stall, tick 10, and no reset
     check("integ gap reset 1 gaps", o["gaps"], ("good", 1.0))
     check("integ gap reset 1 y", o["y"], ("good", 2.0))
     e.write("r", "good", True, 11 * S)
     o = e.tick(11 * S)[1]  # a reset a tick after the gap: none
     check("integ gap reset 2 gaps", o["gaps"], ("good", 0.0))
-    o = e.tick(20 * S)[1]  # a stall, tick 3, with the reset still true
-    check("integ gap reset 3 info", e.info, info(True, 3, 20 * S))
+    o = e.tick(20 * S)[1]  # a stall, tick 20, with the reset still true
+    check("integ gap reset 3 info", e.info, info(True, 20, 20 * S, skipped=8))
     check("integ gap reset 3 gaps", o["gaps"], ("good", 1.0))
     check("integ gap reset 3 y", o["y"], ("good", 1.0))
     o = e.tick(21 * S)[1]  # reset again, a tick after the gap
@@ -2109,6 +2110,550 @@ def test_round_four():
         o = e.tick(k * S)[1]
         check("r4 lowpass %d y" % k, o["y"][0], y)
         check("r4 lowpass %d lp" % k, o["lp"][0], lp)
+
+
+def one_block(block, in_type="number", max_catch_up=1):
+    """One input `x`, one block, every output published under its port's
+    name. A call more than `max_catch_up` ticks late is a stall."""
+    blk = dict(block, id="b")
+    g = {
+        "period": "1s",
+        "max_catch_up": max_catch_up,
+        "inputs": {"x": {"type": in_type, "max_age": "none"}},
+        "blocks": [blk],
+    }
+    e = Engine(g)
+    blk["out"] = {p: p for p in e._blocks["b"].out_ports}
+    return Engine(g)
+
+
+def put(e, now, state=None, value=None):
+    """Write x (if a state is given), call, and give the outputs."""
+    if state is not None:
+        e.write("x", state, value, now * S)
+    return e.tick(now * S)[1]
+
+
+def counts(label, o, **want):
+    for port, w in want.items():
+        check("%s %s" % (label, port), o[port], ("good", float(w)))
+
+
+def test_gap_length():
+    """Amendment 3: the tick a gap runs, and how many it passed over."""
+    g = {
+        "period": "1s",
+        "blocks": [
+            {
+                "id": "i",
+                "type": "integrate",
+                "in": {"x": 1},
+                "out": {"y": "y", "missed": "missed", "elapsed": "elapsed", "gaps": "gaps"},
+            }
+        ],
+    }
+    e = Engine(g)
+
+    def call(label, now, inf, y, missed, elapsed, gaps):
+        o = e.tick(now)[1]
+        check("len %s info" % label, e.info, inf)
+        check("len %s y" % label, o["y"], ("good", float(y)))
+        counts("len " + label, o, missed=missed, elapsed=elapsed, gaps=gaps)
+
+    call("0", 0, info(False, 0, 0), 1, 0, 1, 0)
+    call("1", 1 * S, info(False, 1, 1 * S), 2, 0, 2, 0)
+    # away 5 s: five ticks would have been due, 2 to 6. Tick 6 runs, at the
+    # call's now, and four are passed over: missed and elapsed take them in.
+    e.rebase(5 * S)
+    call("6", 100 * S, info(True, 6, 100 * S, skipped=4), 3, 4, 7, 1)
+    call("7", 101 * S, info(False, 7, 101 * S), 4, 4, 8, 1)
+    # a half rounds up: 1.5 s is two ticks, 8 and 9
+    e.rebase(1500000000)
+    call("9", 200 * S, info(True, 9, 200 * S, skipped=1), 5, 5, 10, 2)
+    # one ns less is one tick: none passed over
+    e.rebase(1499999999)
+    call("10", 300 * S, info(True, 10, 300 * S), 6, 5, 11, 3)
+    # less than half a period: none would have been due; the next tick runs
+    e.rebase(499999999)
+    call("11", 10 * S, info(True, 11, 10 * S), 7, 5, 12, 4)
+    e.rebase(0)
+    call("12", 20 * S, info(True, 12, 20 * S), 8, 5, 13, 5)
+    # refused, and nothing changes: the next call is no rebase
+    raises("len negative", lambda: e.rebase(-1))
+    raises("len fraction", lambda: e.rebase(1.5))
+    raises("len float", lambda: e.rebase(2.0 * S))
+    raises("len true", lambda: e.rebase(True))
+    raises("len text", lambda: e.rebase("1s"))
+    raises("len over 64 bits", lambda: e.rebase(2**63))
+    raises("len refused, so no rebase: backwards", lambda: e.tick(19 * S))
+    call("13", 21 * S, info(False, 13, 21 * S), 9, 5, 14, 5)
+    # of two before the call, the second counts
+    e.rebase(5 * S)
+    e.rebase()
+    call("14", 0, info(True, 14, 0, skipped=None), 10, 5, 15, 6)
+    e.rebase()
+    e.rebase(3 * S)
+    call("17", 0, info(True, 17, 0, skipped=2), 11, 7, 18, 7)
+    # a restore, and the host says how long: a gap of that length
+    saved = e.save()
+    call("18", 1 * S, info(False, 18, 1 * S), 12, 7, 19, 7)
+    e.restore(saved)
+    e.rebase(2 * S)
+    call("19", 50 * S, info(True, 19, 50 * S, skipped=1), 12, 8, 20, 8)
+    # a restore alone: nobody knows. One more than the last tick run, and
+    # nothing is added to a count but one to gaps
+    e.restore(saved)
+    call("18 again", 60 * S, info(True, 18, 60 * S, skipped=None), 12, 7, 19, 8)
+    # a state saved between a rebase and its call is as one saved before it
+    e.rebase(4 * S)
+    saved = e.save()
+    call("22", 0, info(True, 22, 0, skipped=3), 13, 10, 23, 9)
+    e.restore(saved)
+    call("19 again", 0, info(True, 19, 0, skipped=None), 13, 7, 20, 9)
+    # a restore after a rebase with a length: the length went with the
+    # rebase, and nobody knows (as assumed)
+    e.rebase(5 * S)
+    e.restore(saved)
+    call("19 once more", 0, info(True, 19, 0, skipped=None), 13, 7, 20, 9)
+    # a reset after a rebase with a length is a reset
+    e.rebase(9 * S)
+    e.reset()
+    call("reset", 5 * S, info(False, 0, 5 * S), 1, 0, 1, 0)
+    # and a rebase with a length before any tick is none
+    e.reset()
+    e.rebase(9 * S)
+    call("before any tick", 5 * S, info(False, 0, 5 * S), 1, 0, 1, 0)
+
+    # a stall: the tick that runs keeps its own number and time
+    g["max_catch_up"] = 3
+    e = Engine(g)
+    call("s0", 0, info(False, 0, 0), 1, 0, 1, 0)
+    call("s3", 3 * S, info(False, 3, 3 * S), 4, 0, 4, 0)  # three, not more
+    call("s7", 7 * S + 499999999, info(True, 7, 7 * S, skipped=3), 5, 3, 8, 1)
+    check("len s none due", e.tick(7 * S + 499999999), (0, None))
+    call("s8", 7 * S + 500000000, info(False, 8, 8 * S), 6, 3, 9, 1)
+
+
+def test_gap_blocks():
+    """Amendment 3, rule 8.6: each block does what the ticks nobody saw
+    would have done, had each been run with nothing usable to read."""
+    # --- delay: three ticks, with an initial value
+    e = one_block({"type": "delay", "in": {"x": "x"}, "settings": {"ticks": 3, "initial": 0}})
+    for k in range(3):
+        check("gd delay %d" % k, put(e, k, "good", k + 1.0)["y"], ("good", 0.0))
+    # it holds 1, 2, 3. Ticks 3 and 4 are passed over: it moves on two
+    # places, and at tick 5 gives its input of tick 2
+    o = put(e, 5, "good", 9.0)
+    check("gd delay info", e.info, info(True, 5, 5 * S, skipped=2))
+    check("gd delay 5", o["y"], ("good", 3.0))
+    check("gd delay 6", put(e, 6)["y"], ("not_ready", None))  # tick 3
+    check("gd delay 7", put(e, 7)["y"], ("not_ready", None))  # tick 4
+    check("gd delay 8", put(e, 8)["y"], ("good", 9.0))  # tick 5
+    # more passed over than it holds
+    check("gd delay 20", put(e, 20)["y"], ("not_ready", None))
+    check("gd delay 20 info", e.info, info(True, 20, 20 * S, skipped=11))
+    check("gd delay 22", put(e, 22)["y"], ("not_ready", None))
+    check("gd delay 23", put(e, 23)["y"], ("good", 9.0))  # tick 20
+    # nobody knows: everything it holds is not_ready, an initial value too
+    e = one_block({"type": "delay", "in": {"x": "x"}, "settings": {"ticks": 3, "initial": 0}})
+    check("gd delay unknown 0", put(e, 0, "good", 1.0)["y"], ("good", 0.0))
+    e.rebase()
+    for k in (1, 2, 3):
+        check("gd delay unknown %d" % k, put(e, k, "good", 4.0)["y"], ("not_ready", None))
+    check("gd delay unknown 4", put(e, 4)["y"], ("good", 4.0))
+    # a running value kept by a formula and a delay is not_ready after a
+    # gap as long as its delay, and goes on being so (7.11)
+    g = {
+        "period": "1s",
+        "max_catch_up": 1,
+        "blocks": [
+            {"id": "d", "type": "delay", "in": {"x": "n"}, "settings": {"initial": 0}},
+            {"id": "f", "type": "formula", "in": {"p": "d.y"}, "settings": {"expr": "p + 1"}, "out": {"y": "n"}},
+        ],
+    }
+    e = Engine(g)
+    check("gd counter 0", e.tick(0)[1]["n"], ("good", 1.0))
+    check("gd counter 1", e.tick(1 * S)[1]["n"], ("good", 2.0))
+    check("gd counter 3", e.tick(3 * S)[1]["n"], ("not_ready", None))
+    check("gd counter 4", e.tick(4 * S)[1]["n"], ("not_ready", None))
+
+    # --- window: 4 ticks, two needed
+    win = {"type": "window", "in": {"x": "x"}, "settings": {"window": "4s", "min_good": 0.5}}
+
+    def filled():
+        e = one_block(win)
+        for k in range(4):
+            o = put(e, k, "good", k + 1.0)
+        check("gd window filled", o["mean"], ("good", 2.5))
+        return e
+
+    # two passed over: the window at tick 6 is 4, -, -, 7
+    e = filled()
+    o = put(e, 6, "good", 7.0)
+    check("gd window 2 mean", o["mean"], ("good", 5.5))
+    check("gd window 2 count", o["count"], ("good", 2.0))
+    # three passed over: -, -, -, 7: one usable, and the rest not_ready
+    e = filled()
+    o = put(e, 7, "good", 7.0)
+    check("gd window 3 mean", o["mean"], ("not_ready", None))
+    check("gd window 3 count", o["count"], ("good", 1.0))
+    # a rebase of known length keeps what the window holds: away 2 s is
+    # ticks 4 and 5, one passed over: 3, 4, -, 7
+    e = filled()
+    e.rebase(2 * S)
+    o = put(e, 0, "good", 7.0)
+    check("gd window known info", e.info, info(True, 5, 0, skipped=1))
+    check("gd window known mean", o["mean"], ("good", 14.0 / 3))
+    check("gd window known count", o["count"], ("good", 3.0))
+    # nobody knows: none of its ticks holds a sample
+    e = filled()
+    e.rebase()
+    o = put(e, 0, "good", 7.0)
+    check("gd window unknown mean", o["mean"], ("not_ready", None))
+    check("gd window unknown count", o["count"], ("good", 1.0))
+
+    # --- deadband, ride_through of 3 ticks
+    dead = {"type": "deadband", "in": {"x": "x"}, "settings": {"step": 1, "ride_through": "3s"}}
+
+    def held():
+        e = one_block(dead)
+        check("gd deadband 0", put(e, 0, "good", 0.0)["y"], ("good", 0.0))
+        return e
+
+    # two passed over, within ride_through: it holds the 0
+    check("gd deadband 2", put(held(), 3, "good", 0.5)["y"], ("good", 0.0))
+    # and the tick that runs is the third unusable one in a row
+    check("gd deadband 2, bad", put(held(), 3, "bad")["y"], ("uncertain", 0.0))
+    # three passed over, and unusable at the tick that runs: the fourth
+    check("gd deadband 3, bad", put(held(), 4, "bad")["y"], ("bad", None))
+    check("gd deadband 3", put(held(), 4, "good", 0.5)["y"], ("good", 0.0))
+    # four passed over: it forgets, and the next usable input is a first one
+    check("gd deadband 4", put(held(), 5, "good", 0.5)["y"], ("good", 0.5))
+    # nobody knows: it forgets
+    e = held()
+    e.rebase()
+    check("gd deadband unknown", put(e, 0, "good", 0.5)["y"], ("good", 0.5))
+    # none passed over: it holds
+    e = held()
+    e.rebase(1 * S)
+    check("gd deadband none", put(e, 0, "good", 0.5)["y"], ("good", 0.0))
+    check("gd deadband none info", e.info, info(True, 1, 0))
+
+    # --- low-pass: it decays over the ticks it missed (rule 7.4.5)
+    a = math.exp(-1.0)
+    e = one_block({"type": "lowpass", "in": {"x": "x"}, "settings": {"tau": "1s", "ride_through": "3s"}})
+    check("gd lowpass 0", put(e, 0, "good", 0.0)["y"], ("good", 0.0))
+    check("gd lowpass ride", put(e, 3, "good", 1.0)["y"], ("good", 1 - a**3))
+    e = one_block({"type": "lowpass", "in": {"x": "x"}, "settings": {"tau": "1s"}})
+    check("gd lowpass 0", put(e, 0, "good", 0.0)["y"], ("good", 0.0))
+    check("gd lowpass forgot", put(e, 3, "good", 1.0)["y"], ("good", 1.0))
+
+    # --- hysteresis: stays as it was; the ticks passed over are doubtful
+    e = one_block({"type": "hysteresis", "in": {"x": "x"}, "settings": {"rise": 10, "fall": 5}})
+    counts("gd hyst 0", put(e, 0, "good", 12.0), elapsed=1, doubtful=0, gaps=0)
+    o = put(e, 4)
+    check("gd hyst 4", o["y"], ("good", True))
+    counts("gd hyst 4", o, elapsed=5, doubtful=3, gaps=1)
+    e.rebase()  # nobody knows: one more gap, and nothing else
+    o = put(e, 0, "good", 12.0)
+    check("gd hyst unknown", o["y"], ("good", True))
+    counts("gd hyst unknown", o, elapsed=6, doubtful=3, gaps=2)
+
+    # --- latch: doubtful goes up only while it is not set
+    e = one_block({"type": "latch", "in": {"set": "x"}}, "boolean")
+    counts("gd latch 0", put(e, 0, "good", False), elapsed=1, doubtful=0, gaps=0)
+    counts("gd latch 4", put(e, 4), elapsed=5, doubtful=3, gaps=1)
+    o = put(e, 5, "good", True)
+    check("gd latch 5", o["y"], ("good", True))
+    counts("gd latch 9", put(e, 9), elapsed=10, doubtful=3, gaps=2)
+
+    # --- held_for with hold: 5 s, hold_limit 3 s
+    hold = {"type": "held_for", "in": {"x": "x"}, "settings": {"time": "5s", "on_bad": "hold", "hold_limit": "3s"}}
+    e = one_block(hold, "boolean")
+    counts("gd hold 0", put(e, 0, "good", True), elapsed=1, doubtful=0, gaps=0)
+    # two passed over, within the limit: the timer runs on
+    o = put(e, 3)
+    check("gd hold 3", o["y"], ("good", False))
+    counts("gd hold 3", o, elapsed=4, doubtful=2, gaps=1)
+    put(e, 4)
+    check("gd hold 5", put(e, 5)["y"], ("good", False))
+    o = put(e, 6)  # started more than five ticks before
+    check("gd hold 6", o["y"], ("good", True))
+    counts("gd hold 6", o, elapsed=7, doubtful=2, gaps=1)
+    # four passed over, past the limit: it stops, and starts at tick 11
+    o = put(e, 11)
+    check("gd hold 11", o["y"], ("good", False))
+    counts("gd hold 11", o, elapsed=1, doubtful=0, gaps=1)
+    # the stretch is the unusable ticks before the gap, and those passed
+    # over, and the one that runs: 1 + 2 is within 3, and then 4 is not
+    e = one_block(hold, "boolean")
+    put(e, 0, "good", True)
+    counts("gd hold stretch 1", put(e, 1, "bad"), elapsed=2, doubtful=1, gaps=0)
+    o = put(e, 4)
+    check("gd hold stretch 4", o["y"], ("bad", None))
+    counts("gd hold stretch 4", o, elapsed=0, doubtful=0, gaps=0)
+    e = one_block(hold, "boolean")
+    put(e, 0, "good", True)
+    put(e, 1, "bad")
+    o = put(e, 3)  # one passed over: the stretch is 2, and 3 at this tick
+    check("gd hold stretch 3", o["y"], ("uncertain", False))
+    counts("gd hold stretch 3", o, elapsed=4, doubtful=3, gaps=1)
+    # nobody knows: the timer stops
+    e = one_block(hold, "boolean")
+    put(e, 0, "good", True)
+    e.rebase()
+    counts("gd hold unknown", put(e, 0, "good", True), elapsed=1, doubtful=0, gaps=1)
+    # a gap that passed over none adds one to gaps and does nothing else,
+    # whatever the table says (rule 8.6, round two): no timer stops
+    e = one_block({"type": "held_for", "in": {"x": "x"}, "settings": {"time": "1s", "on_bad": "reset"}}, "boolean")
+    put(e, 0, "good", True)
+    put(e, 1)
+    e.rebase(1 * S)
+    o = put(e, 0, "good", True)
+    check("gd reset none", o["y"], ("good", True))
+    counts("gd reset none", o, elapsed=3, doubtful=0, gaps=1)
+    e = one_block(
+        {"type": "held_for", "in": {"x": "x"}, "settings": {"time": "1s", "on_bad": "hold", "hold_limit": "1s"}},
+        "boolean",
+    )
+    put(e, 0, "good", True)
+    put(e, 1)
+    e.rebase(1 * S)
+    o = put(e, 0, "good", True)
+    check("gd hold none", o["y"], ("good", True))
+    counts("gd hold none", o, elapsed=3, doubtful=0, gaps=1)
+
+    # --- since_true: the clock is not set, so a long gap is a long quiet
+    since = {"type": "since_true", "in": {"x": "x"}, "settings": {"time": "3s", "on_bad": "assume_false"}}
+    e = one_block(since, "boolean")
+    check("gd since 0", put(e, 0, "good", True)["y"], ("good", False))
+    check("gd since 1", put(e, 1, "good", False)["y"], ("good", False))
+    o = put(e, 7)  # five passed over
+    check("gd since 7", o["y"], ("good", True))
+    counts("gd since 7", o, elapsed=8, doubtful=5, gaps=1)
+    # nobody knows: last true longer ago than `time`, until the clock is
+    # next set; the counts start at the gap's tick. Nothing stands at that
+    # tick, which assume_false takes as not true, uncertain.
+    e = one_block(since, "boolean")
+    check("gd since unknown 0", put(e, 0, "good", True)["y"], ("good", False))
+    e.rebase()
+    o = put(e, 0)
+    check("gd since unknown 1", o["y"], ("uncertain", True))
+    counts("gd since unknown 1", o, elapsed=1, doubtful=1, gaps=1)
+    o = put(e, 1, "good", False)
+    check("gd since unknown 2", o["y"], ("good", True))
+    counts("gd since unknown 2", o, elapsed=2, doubtful=1, gaps=1)
+    o = put(e, 2, "good", True)
+    check("gd since unknown 3", o["y"], ("good", False))
+    counts("gd since unknown 3", o, elapsed=1, doubtful=0, gaps=0)
+
+    # --- integrate: what a gap adds to `missed` counts against max_missed
+    e = one_block({"type": "integrate", "in": {"x": 1}, "settings": {"max_missed": "2s"}})
+    check("gd integ 0", put(e, 0)["y"], ("good", 1.0))
+    o = put(e, 3)
+    check("gd integ 3", o["y"], ("good", 2.0))
+    counts("gd integ 3", o, missed=2, elapsed=4, gaps=1)
+    o = put(e, 7)
+    check("gd integ 7", o["y"], ("bad", None))
+    counts("gd integ 7", o, missed=5, elapsed=8, gaps=2)
+
+    # --- a model: steps not taken, and riding through a gap
+    # d temp/dt = (10 - (temp - 20)) / 10: towards 30, by s per step
+    z = -0.1
+    s = 1 + z + z**2 / 2 + z**3 / 6 + z**4 / 24
+    t1 = 30 - 10 * s
+    t2 = 30 - 10 * s * s
+    mass = {
+        "type": "thermal_mass",
+        "in": {"power": "x", "ambient": 20},
+        "settings": {"thermal_mass": 10, "heat_transfer": 1, "initial": 20, "ride_through": "3s"},
+    }
+
+    def stepped():
+        e = one_block(mass)
+        check("gd model 0", put(e, 0, "good", 10.0)["temp"], ("good", 20.0))
+        return e
+
+    # ticks 1 and 2 are passed over. For each, in order, it steps on the
+    # held 10: both are within ride_through (round three). At tick 3 the
+    # power is unusable for the third tick in a row: held again. At tick
+    # 4, the fourth, it does not step.
+    e = stepped()
+    o = put(e, 3, "bad")
+    check("gd model 3", o["temp"], ("uncertain", 30 - 10 * s**3))
+    counts("gd model 3", o, elapsed=4, doubtful=2, gaps=1)
+    o = put(e, 4)
+    check("gd model 4", o["temp"], ("uncertain", 30 - 10 * s**4))
+    counts("gd model 4", o, elapsed=5, doubtful=3, gaps=1)
+    o = put(e, 5)
+    check("gd model 5", o["temp"], ("uncertain", 30 - 10 * s**4))
+    counts("gd model 5", o, elapsed=6, doubtful=4, gaps=1)
+    # five passed over: it steps for ticks 1, 2 and 3, and takes no step
+    # from tick 4, the first that is past ride_through
+    e = stepped()
+    o = put(e, 6, "bad")
+    check("gd model past", o["temp"], ("uncertain", 30 - 10 * s**4))
+    counts("gd model past", o, elapsed=7, doubtful=5, gaps=1)
+    check("gd model past, next", put(e, 7)["temp"], ("uncertain", 30 - 10 * s**4))
+    # usable again at the tick that runs: it steps on that
+    e = stepped()
+    put(e, 6, "good", 10.0)
+    check("gd model past, usable", put(e, 7)["temp"], ("uncertain", 30 - 10 * s**5))
+    # with no ride_through, no step is taken for a tick passed over
+    e = one_block(dict(mass, settings=dict(mass["settings"], ride_through="0s")))
+    put(e, 0, "good", 10.0)
+    o = put(e, 3, "good", 10.0)
+    check("gd model no ride", o["temp"], ("uncertain", t1))
+    counts("gd model no ride", o, elapsed=4, doubtful=2, gaps=1)
+    # a rebase of known length: away 2 s is ticks 1 and 2, one passed
+    # over, with a held step. Nothing stands at tick 2: held again.
+    e = stepped()
+    e.rebase(2 * S)
+    o = put(e, 0)
+    check("gd model known info", e.info, info(True, 2, 0, skipped=1))
+    check("gd model known 2", o["temp"], ("uncertain", t2))
+    counts("gd model known 2", o, elapsed=3, doubtful=1, gaps=1)
+    o = put(e, 1)
+    check("gd model known 3", o["temp"], ("uncertain", 30 - 10 * s**3))
+    counts("gd model known 3", o, elapsed=4, doubtful=2, gaps=1)
+    # nobody knows: it does not ride through, until the input is usable
+    e = stepped()
+    e.rebase()
+    o = put(e, 0)
+    check("gd model unknown 1", o["temp"], ("uncertain", t1))
+    counts("gd model unknown 1", o, elapsed=2, doubtful=0, gaps=1)
+    o = put(e, 1)
+    check("gd model unknown 2", o["temp"], ("uncertain", t1))
+    counts("gd model unknown 2", o, elapsed=3, doubtful=1, gaps=1)
+    o = put(e, 2, "good", 10.0)
+    check("gd model unknown 3", o["temp"], ("uncertain", t1))
+    o = put(e, 3, "bad")  # usable again at tick 3, so it rides through now
+    check("gd model unknown 4", o["temp"], ("uncertain", t2))
+    check("gd model unknown 5", put(e, 4)["temp"], ("uncertain", 30 - 10 * s**3))
+
+
+def test_gap_round_two():
+    """Amendment 3, round two: a gap that passed over none; a total after a
+    gap of no known length."""
+    # no model has a doubt where none was passed over
+    mass = {
+        "type": "thermal_mass",
+        "in": {"power": 0, "ambient": 20},
+        "settings": {"thermal_mass": 10, "heat_transfer": 1, "initial": 20, "settle": "2s"},
+    }
+    e = one_block(mass)
+    put(e, 0)
+    put(e, 1)
+    e.rebase(1 * S)  # one tick would have been due: it runs, none passed over
+    o = put(e, 0)
+    check("g2 model none info", e.info, info(True, 2, 0))
+    check("g2 model none", o["temp"], ("good", 20.0))
+    counts("g2 model none", o, elapsed=3, doubtful=0, gaps=1)
+    # with one passed over it has: a step not taken
+    e = one_block(mass)
+    put(e, 0)
+    put(e, 1)
+    e.rebase(2 * S)
+    o = put(e, 0)
+    check("g2 model one info", e.info, info(True, 3, 0, skipped=1))
+    check("g2 model one", o["temp"], ("uncertain", 20.0))
+    counts("g2 model one", o, elapsed=4, doubtful=1, gaps=1)
+    # nor has a loop
+    for away, want in ((499999999, "good"), (1 * S, "good"), (2 * S, "uncertain")):
+        e = Engine(two_masses())
+        e.write("p", "good", 0.0, 0)
+        e.tick(0)
+        e.tick(1 * S)
+        e.rebase(away)
+        e.write("p", "good", 0.0, 0)
+        o = e.tick(0)[1]
+        check("g2 loop %d a" % away, o["a"], (want, 20.0))
+        check("g2 loop %d b" % away, o["b"], (want, 20.0))
+
+    # an estimator: its variance grows by p0 at a gap, whatever n is. q is
+    # 1 a second.
+    est = {
+        "type": "estimator",
+        "in": {"u": 0, "z": "x"},
+        "settings": {
+            "model": {"type": "state_space", "A": [[1]], "B": [0], "C": [1]},
+            "q": {"x0": 1},
+            "p0": {"x0": 4},
+            "measure": {"z": {"of": "x0", "r": 1}},
+        },
+    }
+    # round three: by p0 at every gap, none passed over among them
+    for label, away, variance in (("none", (0,), 9.0), ("one", (2 * S,), 9.0), ("unknown", (), 9.0)):
+        e = one_block(est)
+        check("g2 est %s 0" % label, put(e, 0)["sigma_x0"], ("good", 2.0))
+        e.rebase(*away)
+        check("g2 est %s" % label, put(e, 0)["sigma_x0"], ("good", math.sqrt(variance)))
+
+    # a total with max_missed is bad after a gap of no known length, until
+    # a reset; nothing is added to `missed`
+    integ = {"type": "integrate", "in": {"x": 1, "reset": "x"}, "settings": {"max_missed": "2s"}}
+    e = one_block(integ, "boolean")
+    check("g2 integ 0", put(e, 0, "good", False)["y"], ("good", 1.0))
+    e.rebase()
+    o = put(e, 0, "good", False)
+    check("g2 integ unknown", o["y"], ("bad", None))
+    counts("g2 integ unknown", o, missed=0, elapsed=2, gaps=1)
+    check("g2 integ unknown, next", put(e, 1)["y"], ("bad", None))
+    o = put(e, 2, "good", True)
+    check("g2 integ reset", o["y"], ("good", 1.0))
+    counts("g2 integ reset", o, missed=0, elapsed=1, gaps=0)
+    # a reset at the gap's own tick
+    e.rebase()
+    o = put(e, 0, "good", True)
+    check("g2 integ reset at the gap", o["y"], ("good", 1.0))
+    counts("g2 integ reset at the gap", o, missed=0, elapsed=1, gaps=1)
+    # a length, however short, is not "nobody knows"
+    e = one_block(integ, "boolean")
+    put(e, 0, "good", False)
+    e.rebase(0)
+    o = put(e, 0, "good", False)
+    check("g2 integ zero", o["y"], ("good", 2.0))
+    counts("g2 integ zero", o, missed=0, elapsed=2, gaps=1)
+    # with no max_missed it is good after a gap of no known length
+    e = one_block({"type": "integrate", "in": {"x": 1}})
+    put(e, 0)
+    e.rebase()
+    check("g2 integ no max", put(e, 0)["y"], ("good", 2.0))
+
+
+def test_gap_round_three():
+    """Amendment 3, round three: a window with only_new keeps no sample
+    from before a rebase, whatever length the host gave (rule 8.5)."""
+    win = {"type": "window", "in": {"x": "x"}, "settings": {"window": "4s", "min_good": 0.25, "only_new": True}}
+
+    def filled():
+        e = one_block(win)
+        for k in range(4):
+            o = put(e, k, "good", k + 1.0)
+        check("g3 window filled", o["count"], ("good", 4.0))
+        return e
+
+    # a stall is on one clock: one passed over, and the window is 3, 4, -, 7
+    e = filled()
+    o = put(e, 5, "good", 7.0)
+    check("g3 window stall count", o["count"], ("good", 3.0))
+    check("g3 window stall mean", o["mean"], ("good", 14.0 / 3))
+    # a rebase, with a length, with a length of zero, or with none
+    for label, away in (("two", (2 * S,)), ("zero", (0,)), ("unknown", ())):
+        e = filled()
+        e.rebase(*away)
+        o = put(e, 0, "good", 7.0)
+        check("g3 window %s count" % label, o["count"], ("good", 1.0))
+        check("g3 window %s mean" % label, o["mean"], ("good", 7.0))
+    # a window without only_new keeps what it holds through a rebase that
+    # passed over none: 2, 3, 4, 7
+    e = one_block({"type": "window", "in": {"x": "x"}, "settings": {"window": "4s", "min_good": 0.25}})
+    for k in range(4):
+        put(e, k, "good", k + 1.0)
+    e.rebase(0)
+    o = put(e, 0, "good", 7.0)
+    check("g3 window plain count", o["count"], ("good", 4.0))
+    check("g3 window plain mean", o["mean"], ("good", 4.0))
 
 
 def test_estimator():

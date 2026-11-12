@@ -3,8 +3,9 @@
 Sections 3 to 9 and every block type of Appendix A. Units are ignored.
 Standard library only. Choices the text does not settle are listed in
 ASSUMPTIONS.md, for Amendment 1 (time and the host interface) in
-ASSUMPTIONS-amendment-1.md, and for Amendment 2 (doubt through memory) in
-ASSUMPTIONS-amendment-2.md.
+ASSUMPTIONS-amendment-1.md, for Amendment 2 (doubt through memory) in
+ASSUMPTIONS-amendment-2.md, and for Amendment 3 (gaps) in
+ASSUMPTIONS-amendment-3.md.
 
 Every time is a whole number of nanoseconds, held as an int (rule 6.2).
 """
@@ -590,8 +591,9 @@ class Block:
     def reset(self):
         self.s = {}
 
-    def gap(self, g):
-        pass
+    def gap(self, g, n):
+        """Before tick g runs at a gap: n ticks were passed over, or n is
+        None and nobody knows how many (rule 8.6)."""
 
     def rebase(self):
         """Forget every sample time the block remembers (rule 8.5)."""
@@ -701,12 +703,13 @@ class Delay(Block):
             first = (NR, None, None)
         else:
             first = (GOOD, self.initial, None)
-        if not hasattr(self, "first"):
-            self.first = first  # one object for the engine's life: a gap tells an initial value by it
-        self.s = {"buf": [self.first] * self.ticks}
+        self.s = {"buf": [first] * self.ticks}
 
-    def gap(self, g):
-        self.s["buf"] = [(UNC, e[1], e[2]) if e[0] == GOOD and e is not self.first else e for e in self.s["buf"]]
+    def gap(self, g, n):
+        # it moves on, taking in not_ready for each tick nobody saw; where
+        # nobody knows how many, that is everything it holds
+        n = self.ticks if n is None else min(n, self.ticks)
+        self.s["buf"] = self.s["buf"][n:] + [(NR, None, None)] * n
 
     def rebase(self):
         # the values it holds carry no sample time from then on (rule 8.5)
@@ -749,11 +752,19 @@ class Window(Block):
         # (True, value, state) for a sample, (False, None, state) for none.
         self.s = {"buf": [], "last": None}
 
-    def gap(self, g):
-        self.s["buf"] = []
+    def gap(self, g, n):
+        if n is None:
+            self.s["buf"] = []  # none of its ticks holds a sample
+        else:
+            # the ticks passed over hold no sample, and count as not_ready
+            self.s["buf"] = (self.s["buf"] + [(False, None, NR)] * min(n, self.n))[-self.n :]
 
     def rebase(self):
         self.s["last"] = None
+        if self.only_new:
+            # it cannot tell a sample from before the rebase from the same
+            # one written again after it: it keeps none (rule 8.5)
+            self.s["buf"] = []
 
     def output(self, k, t, ins):
         s = self.s
@@ -853,9 +864,15 @@ class Deadband(Block):
     def reset(self):
         self.s = {"held": None, "m": 0}  # held: the value, or None
 
-    def gap(self, g):
-        self.s["held"] = None
-        self.s["m"] = 0
+    def gap(self, g, n):
+        s = self.s
+        if s["held"] is None:
+            return
+        if n is not None and s["m"] + n <= self.rt:
+            s["m"] += n  # it rides through the ticks passed over
+        else:
+            s["held"] = None
+            s["m"] = 0
 
     def output(self, k, t, ins):
         s = self.s
@@ -891,10 +908,16 @@ class Lowpass(Block):
     def reset(self):
         self.s = {"y": None, "m": 0, "doubt": None}
 
-    def gap(self, g):
-        self.s["y"] = None
-        self.s["m"] = 0
-        self.s["doubt"] = None
+    def gap(self, g, n):
+        s = self.s
+        if s["y"] is None:
+            return
+        if n is not None and s["m"] + n <= self.rt:
+            s["m"] += n  # it rides through, and decays over them later (rule 7.4.5)
+        else:
+            s["y"] = None
+            s["m"] = 0
+            s["doubt"] = None
 
     def output(self, k, t, ins):
         s = self.s
@@ -944,9 +967,12 @@ class Hysteresis(Block):
         # run, doubtful, gaps: counted since its value last changed
         self.s = {"on": self.initial, "run": 0, "doubtful": 0, "gaps": 0, "gap_at": None}
 
-    def gap(self, g):
+    def gap(self, g, n):
         self.s["gaps"] += 1
         self.s["gap_at"] = g
+        if n is not None:
+            self.s["run"] += n
+            self.s["doubtful"] += n
 
     def output(self, k, t, ins):
         s = self.s
@@ -997,13 +1023,25 @@ class HeldFor(Block):
 
     def reset(self):
         # doubtful: ticks since the timer started on which x was not good
-        self.s = {"start": None, "m": 0, "doubtful": 0, "gap_at": None}
+        self.s = {"start": None, "m": 0, "doubtful": 0, "gaps": 0, "gap_at": None}
 
-    def gap(self, g):
-        self.s["start"] = None
-        self.s["m"] = 0
-        self.s["doubtful"] = 0
-        self.s["gap_at"] = g
+    def gap(self, g, n):
+        s = self.s
+        s["gap_at"] = g
+        if s["start"] is None:
+            return
+        if n == 0:
+            s["gaps"] += 1  # none passed over: nothing but one to gaps
+            return
+        if n is not None and self.on_bad == "hold" and s["m"] + n <= self.limit:
+            # the unusable stretch grows by n, and the timer runs on
+            s["m"] += n
+            s["doubtful"] += n
+            s["gaps"] += 1
+            return
+        s["start"] = None
+        s["m"] = 0
+        s["doubtful"] = 0
 
     def _counters(self, k, res):
         s = self.s
@@ -1011,10 +1049,7 @@ class HeldFor(Block):
         run = 0 if s["start"] is None else k - s["start"] + 1
         res["elapsed"] = out(GOOD, run * period)
         res["doubtful"] = out(GOOD, s["doubtful"] * period)
-        # a gap stops the timer, so the only gap a run can hold is one at
-        # the tick it started
-        started_at_gap = s["start"] is not None and s["start"] == s["gap_at"]
-        res["gaps"] = out(GOOD, 1.0 if started_at_gap else 0.0)
+        res["gaps"] = out(GOOD, 0.0 if s["start"] is None else float(s["gaps"]))
         return res
 
     def output(self, k, t, ins):
@@ -1029,6 +1064,7 @@ class HeldFor(Block):
             if s["start"] is None:
                 s["start"] = k
                 s["doubtful"] = 0
+                s["gaps"] = 1 if s["gap_at"] == k else 0
             if x[0] != GOOD:
                 s["doubtful"] += 1
             return self._counters(k, {"y": out(x[0], k - s["start"] > self.n)})
@@ -1057,13 +1093,21 @@ class SinceTrue(Block):
 
     def reset(self):
         # doubtful, gaps: counted since the clock was set
-        self.s = {"clock": None, "doubtful": 0, "gaps": 0, "gap_at": None}
+        # old: after a gap of no known length, the input was last true
+        # longer ago than `time`, until the clock is next set
+        self.s = {"clock": None, "doubtful": 0, "gaps": 0, "gap_at": None, "old": False}
 
-    def gap(self, g):
-        self.s["clock"] = g
-        self.s["doubtful"] = 0
-        self.s["gaps"] = 1
-        self.s["gap_at"] = g
+    def gap(self, g, n):
+        s = self.s
+        s["gap_at"] = g
+        if n is None:
+            s["old"] = True
+            s["clock"] = g  # its counts start again at the gap's tick
+            s["doubtful"] = 0
+            s["gaps"] = 1
+        else:
+            s["doubtful"] += n  # the clock is not set
+            s["gaps"] += 1
 
     def output(self, k, t, ins):
         s = self.s
@@ -1072,6 +1116,7 @@ class SinceTrue(Block):
             s["clock"] = k
         if usable(x[0]) and x[1]:
             s["clock"] = k
+            s["old"] = False
             s["doubtful"] = 0
             s["gaps"] = 1 if s["gap_at"] == k else 0
         if x[0] != GOOD:
@@ -1082,7 +1127,7 @@ class SinceTrue(Block):
             "doubtful": out(GOOD, s["doubtful"] * period),
             "gaps": out(GOOD, float(s["gaps"])),
         }
-        value = (k - s["clock"]) > self.n
+        value = s["old"] or (k - s["clock"]) > self.n
         if usable(x[0]):
             res["y"] = out(x[0], value)
         elif self.on_bad == "unknown":
@@ -1105,9 +1150,13 @@ class Latch(Block):
         # run, doubtful, gaps: counted since it was last cleared
         self.s = {"set": False, "run": 0, "doubtful": 0, "gaps": 0, "gap_at": None}
 
-    def gap(self, g):
+    def gap(self, g, n):
         self.s["gaps"] += 1
         self.s["gap_at"] = g
+        if n is not None:
+            self.s["run"] += n
+            if not self.s["set"]:
+                self.s["doubtful"] += n
 
     def output(self, k, t, ins):
         s = self.s
@@ -1155,11 +1204,17 @@ class Integrate(Block):
         self.max_missed = s_counted(self, self.st, "max_missed", None)
 
     def reset(self):
-        self.s = {"total": 0.0, "run": 0, "missed": 0, "unc": 0, "gaps": 0, "gap_at": None}
+        # over: a gap of no known length, which is more than any max_missed
+        self.s = {"total": 0.0, "run": 0, "missed": 0, "unc": 0, "gaps": 0, "gap_at": None, "over": False}
 
-    def gap(self, g):
+    def gap(self, g, n):
         self.s["gaps"] += 1
         self.s["gap_at"] = g
+        if n is not None:
+            self.s["run"] += n
+            self.s["missed"] += n
+        elif self.max_missed is not None:
+            self.s["over"] = True
 
     def output(self, k, t, ins):
         s = self.s
@@ -1180,7 +1235,7 @@ class Integrate(Block):
                 s["unc"] += 1
         else:
             s["missed"] += 1
-        if self.max_missed is not None and s["missed"] > self.max_missed:
+        if s["over"] or (self.max_missed is not None and s["missed"] > self.max_missed):
             st = BAD
         elif x[0] == UNC or reset_unc:
             st = UNC
@@ -1366,10 +1421,35 @@ class ModelBlock(Block):
             "doubtful": 0,  # ticks whose step was a doubt
         }
 
-    def gap(self, g):
-        # the tick before the gap's is a doubt (section 8.6)
-        self.s["doubt"] = _later(self.s["doubt"], g - 1)
-        self.s["gaps"] += 1
+    def gap(self, g, n):
+        s = self.s
+        s["gaps"] += 1
+        if n == 0:
+            return  # none passed over: nothing but one to gaps
+        # the tick before the one that runs is a doubt (rule 8.6)
+        s["doubt"] = _later(s["doubt"], g - 1)
+        if n is None:
+            for name in self.model.inputs:
+                s["m"][name] = self.rt + 1  # it does not ride through (rule 7.8.4)
+            return
+        # for each tick passed over, in order: a step on the last usable
+        # value of every input while each is within ride_through, and no
+        # step from the first tick where one is not (rule 8.6)
+        for _ in range(n):
+            for name in self.model.inputs:
+                s["m"][name] += 1
+            if all(s["last"][name] is not None and s["m"][name] <= self.rt for name in self.model.inputs):
+                self._step(s["last"])
+        s["run"] += n
+        s["doubtful"] += n
+
+    def _step(self, u):
+        s = self.s
+        d = self.ctx.period / self.nsteps
+        x = s["x"]
+        for _ in range(self.nsteps):
+            x = self.model.step(x, u, d)
+        s["x"] = x
 
     def output(self, k, t, ins):
         s = self.s
@@ -1421,11 +1501,7 @@ class ModelBlock(Block):
                 else:
                     can_step = False
         if can_step:
-            d = self.ctx.period / self.nsteps
-            x = s["x"]
-            for _ in range(self.nsteps):
-                x = self.model.step(x, u, d)
-            s["x"] = x
+            self._step(u)
         if doubt or not can_step:
             s["doubt"] = k
             s["doubtful"] += 1
@@ -1554,7 +1630,7 @@ class Estimator(Block):
             "used": {m[0]: None for m in self.measures},
         }
 
-    def gap(self, g):
+    def gap(self, g, n):
         for i in range(len(self.p0)):
             self.s["p"][i][i] += self.p0[i]
 
@@ -2021,6 +2097,7 @@ class Engine:
         self._origin_t = 0  # time of tick 0, or of the last rebase's tick
         self._last_now = None
         self._rebase = False  # the next call is a rebase (rule 8.3)
+        self._away = None  # how long the host says the graph was away, if it does
         self._standing = {}  # name -> (state, value, time)
         self._waiting = {}  # name -> [(state, value, time)], in the order made
         self._thrown = 0  # writes thrown away since the last call that ran a tick
@@ -2058,14 +2135,19 @@ class Engine:
         self._standing = {}
         self._waiting = {}
         self._rebase = True
+        self._away = None
 
-    def rebase(self):
-        """The host says that its clock has stepped (rule 8.3)."""
+    def rebase(self, away=None):
+        """The host says that its clock has stepped (rule 8.3), and may say
+        how long the graph was away (rule 8.5)."""
+        if away is not None and not (_is_time(away) and away >= 0):
+            raise ValueError("the length of a rebase is a whole number of nanoseconds, not less than zero")
         self._waiting = {}
         if self._last_k is not None:
             # nothing stands from this moment (rule 8.5)
             self._standing = {}
             self._rebase = True
+            self._away = away  # of two before the call, the second counts
 
     def write(self, name, state, value, at):
         if name not in self.inputs:
@@ -2103,6 +2185,7 @@ class Engine:
             raise ValueError("now is a whole number of nanoseconds")
         period = self._period_ns
         gap = False
+        skipped = 0
         if self._last_k is not None and not self._rebase and now < self._last_now:
             raise ValueError("now is earlier than the last call's")
         # stamped ahead (rule 6.8): at every call, a waiting write whose
@@ -2119,14 +2202,24 @@ class Engine:
         elif self._rebase:
             # a rebase: one tick, at `now`, whatever `now` is (rule 8.5)
             gap = True
-            g = self._last_k + 1
+            if self._away is None:
+                # nobody knows how many ticks were passed over
+                skipped = None
+                g = self._last_k + 1
+            else:
+                # the ticks that would have been due in that time: the
+                # last of them runs, and the rest are passed over
+                due = (2 * self._away + period) // (2 * period)
+                skipped = max(due - 1, 0)
+                g = self._last_k + 1 + skipped
             self._anchor_k, self._anchor_t = g, now
             self._origin_t = now
             for b in self._blocks.values():
                 b.rebase()
-                b.gap(g)
-            for lp in self._loops:
-                lp.s["doubt"] = _later(lp.s["doubt"], g - 1)
+                b.gap(g, skipped)
+            if skipped != 0:
+                for lp in self._loops:
+                    lp.s["doubt"] = _later(lp.s["doubt"], g - 1)
             ticks = [(g, now)]
         else:
             last_t = self._time(self._last_k)
@@ -2139,18 +2232,22 @@ class Engine:
                 return (0, None)
             if due > self._max_catch_up:
                 # a stall: one tick, the last that was due (rule 8.4)
+                # under its own number, at its own time; the due ticks
+                # before it are passed over
                 gap = True
-                g = self._last_k + 1
+                skipped = due - 1
+                g = self._last_k + due
                 t = last_t + due * period
                 self._anchor_k, self._anchor_t = g, t
                 for b in self._blocks.values():
-                    b.gap(g)
+                    b.gap(g, skipped)
                 for lp in self._loops:
                     lp.s["doubt"] = _later(lp.s["doubt"], g - 1)
                 ticks = [(g, t)]
             else:
                 ticks = [(self._last_k + j, last_t + j * period) for j in range(1, due + 1)]
         self._rebase = False
+        self._away = None
         sig = None
         for i, (k, t) in enumerate(ticks):
             # the last tick of a call may see what the host has in hand
@@ -2160,6 +2257,7 @@ class Engine:
         self._last_now = now
         self.info = {
             "gap": gap,
+            "skipped": skipped,
             "tick": ticks[-1][0],
             "time": ticks[-1][1],
             "thrown": self._thrown,

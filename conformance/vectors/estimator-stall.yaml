@@ -1,0 +1,19 @@
+# 8.6: at a stall an estimator's variance grows by p0, here 4, as at a
+# rebase. The model does not move and q is 0. No measurement is written.
+rules: [8.6, 7.9.1]
+period: 1s
+max_catch_up: 1
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: state_space, A: [[1]], B: [0], C: [1]}
+      q: {x0: 0}
+      p0: {x0: 4}
+      measure: {z: {of: x0, r: 1}}
+    out: {sigma_x0: sigma}
+calls:
+  - {now: 0, u: 0, sigma: 2}
+  - {now: 5, gap: true, skipped: 4, u: 0, sigma: 2.8284271247461903}

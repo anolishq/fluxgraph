@@ -19,10 +19,10 @@ the text says, not what it should say.
 | `compare.py` | Runs the two readings side by side on random inputs and call times and compares every output after every call. |
 
 ```bash
-python3 conformance/run.py            # 225 vectors: ALL AGREE
-python3 conformance/run.py --second   # 225 vectors: ALL AGREE
-python3 conformance/mutate.py         # 392 breakages: 392 noticed; every vector failed by one
-python3 conformance/compare.py        # 1688065 comparisons, 0 differences
+python3 conformance/run.py            # 248 vectors: ALL AGREE
+python3 conformance/run.py --second   # 248 vectors: ALL AGREE
+python3 conformance/mutate.py         # 458 breakages: 458 noticed; every vector failed by one
+python3 conformance/compare.py        # 1687650 comparisons, 0 differences
 ```
 
 The format of a vector is described at the top of `run.py`.
@@ -215,6 +215,64 @@ model block is one block with one `settle`.
   `second/ASSUMPTIONS-amendment-2.md`. None of them is a difference from
   the reference.
 
+## Amendment 3: gaps
+
+A block was not told how long a gap was, so a total counted one period
+for a stall of any length. The amendment makes a gap ticks nobody saw.
+The tick a stall runs keeps its own number, each block does to what it
+remembers what that many ticks with nothing usable to read would have
+done, and a host that knows how long a restored graph was away says so.
+
+- 24 vectors are new and 6 of the earlier 225 are changed. One was taken
+  out and replaced (`gap-since-true`, by `since-true-after-gaps`).
+- As first written from the amended text, the second reading agreed with
+  the reference on all 236 vectors there were then and on all 1,687,650
+  random comparisons. The comparison now gives some rebases a length:
+  none, zero, under half a period, a period and a half, a few periods,
+  four hundred.
+- Writing it turned up 13 places where the text left a choice and 5 where
+  it was wrong. Three changed a rule.
+  - A total with `max_missed` was `bad` after an hour's stall and `good`
+    after a restore of no stated length. Nobody knowing is more than any
+    `max_missed`, and it is now `bad` there until a reset.
+  - A rebase that passed over no tick stopped a timer with `reset` and
+    not one with `hold`, and gave a model a doubt. A gap that passes over
+    no tick now does nothing to what a block remembers.
+  - The estimator did not do what the ticks would have done, and the text
+    did not say so. It says so now.
+- An independent review then compared a stall of N ticks against running
+  N ticks with every input `bad`, block by block: 744,000 comparisons over
+  20 blocks, and 224,640 over chains and loops. State and counters were
+  the same but for what the text states, and one thing it did not: a model
+  with `ride_through` took no step for the ticks passed over, where a run
+  would have stepped on what it held. It now steps for those within
+  `ride_through`.
+- The review reproduced a fault the amendment had opened. A rebase forgets
+  sample times, and a host then writes what it holds with the time of the
+  rebase's call. A window with `only_new` that kept its samples across a
+  rebase counted one sample again each time, and an estimator at a rebase
+  that passed over no tick used one sample four times and went `good`. A
+  window with `only_new` now keeps nothing from before a rebase, and an
+  estimator's variance grows at every one.
+- Twelve rules of the amendment were pinned by no vector, each shown by a
+  broken copy of the reference that passed every vector. Each has a
+  vector and a breakage now.
+- Brought up to the result from the text alone, the second reading agreed
+  on all 245 vectors there were then and all 1,687,650 comparisons, as
+  written.
+- The review's second pass reran its findings and found them closed, and
+  ran a stall against a run again: nothing differs now but what the text
+  states. It found the text claiming more than is so for the estimator:
+  the variance growth at a rebase does not stop a sample written again
+  from sharpening the estimate where the variance had already grown well
+  past `p0`. The text now says that, and lists it. Four clauses of the new
+  rules were unpinned, and each has a vector and a breakage now.
+- One thing the review confirmed is left as it is, and listed in section
+  7.11 of the proposal: a delay gives `not_ready` for a tick nobody saw,
+  so a formula that keeps a running value through a delay, the integral
+  of the `loop-delay` vector among them, reads `not_ready` for good after
+  one tick is passed over.
+
 ## What this does not cover
 
 - **A fault both readings share.** `compare.py` only compares them. The
@@ -229,12 +287,8 @@ model block is one block with one `settle`.
 - **Units** (section 10), which both readings ignore.
 - **Refusing a saved state from a different graph** (rule 8.2). The vector
   format has one graph per file.
-- **That a restore puts the tick's number back.** Every block treats a
-  restore as a gap, so no output can show it.
 - **That a save holds a loop's doubt.** A restore is always followed by a
   gap, which sets the doubt itself, so no output can show it either.
-- **A stall as distinct from a restore, for a loop.** Both are gaps and
-  the reference has one path for them. `loop-stall` runs the stall.
 - **A window on a settled loop turned back by a later doubt.** The vector
   `loop-window-stays-good` pins it and the tick-by-tick second reading
   failed it, but no entry in `mutate.py` breaks it: the reference has no

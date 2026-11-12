@@ -165,8 +165,9 @@ class Block:
         d = self.loop_doubt
         return self.loop_settle is not None and (d is None or not d < k <= d + self.loop_settle)
 
-    def gap(self, k):
-        """Section 8 rule 6: time went by unseen; k is the gap's tick."""
+    def gap(self, k, n):
+        """Section 8 rule 6: ticks went by unseen. k is the tick about to run; n how many did not, or None if
+        nobody knows, which is more than anything a block counts."""
 
     def forget_times(self):
         """Section 8 rule 5: a rebase. The clock may be another clock: forget every sample time."""
@@ -239,8 +240,9 @@ class Delay(Block):
         if len(self.past) > self.s["ticks"]:
             self.past.popleft()
 
-    def gap(self, k):
-        self.past = collections.deque(Val(UNCERTAIN, v.v, v.at) if v.state == GOOD else v for v in self.past)
+    def gap(self, k, n):
+        for _ in range(self.s["ticks"] if n is None else min(n, self.s["ticks"])):
+            self.update(k, {"x": Val(NOT_READY)})
 
     def forget_times(self):
         self.past = collections.deque(Val(v.state, v.v) for v in self.past)
@@ -309,11 +311,14 @@ class Window(Block):
             out["slope"] = Val(state, sum((ti - mt) * (y - my) for ti, y in zip(ts, ys, strict=True)) / den)
         return out
 
-    def gap(self, k):
-        self.buf.clear()
+    def gap(self, k, n):
+        for _ in range(self.n if n is None else min(n, self.n)):
+            self.buf.append(Val(NOT_READY))
 
     def forget_times(self):
         self.last_at = None
+        if self.s["only_new"]:  # it cannot tell a sample from before the rebase from one written again after
+            self.buf.clear()
 
 
 class Deadband(Block):
@@ -340,8 +345,9 @@ class Deadband(Block):
         self.held = None
         return {"y": Val(x.state)}
 
-    def gap(self, k):
-        self.held = None
+    def gap(self, k, n):
+        if self.held is not None and (n is None or k - 1 - self.seen > self.s["ride_through"]):
+            self.held = None
 
 
 class Lowpass(Block):
@@ -379,8 +385,9 @@ class Lowpass(Block):
             self.doubt = k
         return {"y": Val(UNCERTAIN if x.state == UNCERTAIN or settling else GOOD, self.y)}
 
-    def gap(self, k):
-        self.y, self.doubt = None, None
+    def gap(self, k, n):
+        if self.y is not None and (n is None or k - 1 - self.seen > self.s["ride_through"]):
+            self.y, self.doubt = None, None
 
 
 class Counted(Block):
@@ -405,8 +412,14 @@ class Counted(Block):
             "gaps": Val(GOOD, float(self.gaps)),
         }
 
-    def gap(self, k):
+    def gap(self, k, n):
         self.gaps, self.gap_at = self.gaps + 1, k
+        if n and self.since is not None and self.unseen():
+            self.doubtful += n  # on a tick nobody saw, no input was good
+
+    def unseen(self):
+        """Whether a tick with its input not good would have been counted as doubtful."""
+        return True
 
 
 COUNTERS = {"elapsed": NUMBER, "doubtful": NUMBER, "gaps": NUMBER}
@@ -476,9 +489,12 @@ class HeldFor(Counted):
                 y = Val(UNCERTAIN, k - self.since > self.s["time"])
         return {"y": y} | self.counters(k, x.state != GOOD)
 
-    def gap(self, k):
-        super().gap(k)
-        self.since, self.stretch = None, 0
+    def gap(self, k, n):
+        if n != 0:  # a gap that passed over no tick does nothing to it
+            self.stretch = self.stretch + n if n is not None and self.s["on_bad"] == "hold" else None
+            if self.stretch is None or self.stretch > self.s["hold_limit"]:
+                self.since, self.stretch = None, 0  # the timer stops, as on an unusable input
+        super().gap(k, n)
 
 
 class SinceTrue(Counted):
@@ -488,20 +504,25 @@ class SinceTrue(Counted):
     ports = {"x": (BOOLEAN, True, True)}
     outputs = {"y": BOOLEAN} | COUNTERS
 
+    long_ago = False  # after a gap of no known length: the input was last true longer ago than `time`
+
     def output(self, k, t, ins):
         x = ins["x"]
+        if usable(x) and x.v:
+            self.long_ago = False
         if self.since is None or (usable(x) and x.v):
             self.count_from(k)  # the clock is set
-        late = k - self.since > self.s["time"]
+        late = self.long_ago or k - self.since > self.s["time"]
         if usable(x):
             y = Val(x.state, late)
         else:
             y = Val(UNCERTAIN, late) if self.s["on_bad"] == "assume_false" else Val(x.state)
         return {"y": y} | self.counters(k, x.state != GOOD)
 
-    def gap(self, k):
-        super().gap(k)
-        self.since = None  # the clock is set to the gap's tick, when it runs
+    def gap(self, k, n):
+        super().gap(k, n)
+        if n is None:
+            self.since, self.long_ago = None, True  # the counts start again at the gap's tick
 
 
 class Latch(Counted):
@@ -534,6 +555,9 @@ class Latch(Counted):
             y = Val(s.state)
         return {"y": y} | self.counters(k, not was and s.state != GOOD)
 
+    def unseen(self):
+        return not self.on
+
 
 class Integrate(Block):
     """Section 7.7."""
@@ -548,12 +572,13 @@ class Integrate(Block):
             raise CompileError("per is more than zero")
         self.total, self.ran, self.missed, self.doubtful, self.gaps = 0.0, 0, 0, 0, 0
         self.gap_at = None  # the tick of the last gap
+        self.lost = False  # it has missed nobody knows how much: more than max_missed, if that is given
 
     def output(self, k, t, ins):
         x, r = ins["x"], ins.get("reset")
         resetting = r is not None and usable(r) and r.v
         if resetting:
-            self.total, self.ran, self.missed, self.doubtful = 0.0, 0, 0, 0
+            self.total, self.ran, self.missed, self.doubtful, self.lost = 0.0, 0, 0, 0, False
             self.gaps = int(self.gap_at == k)  # a gap at the tick it counts from is counted
         self.ran += 1
         if usable(x):
@@ -562,7 +587,7 @@ class Integrate(Block):
         else:
             self.missed += 1
         limit = self.s["max_missed"]
-        if limit is not None and self.missed > limit:  # rule 2
+        if limit is not None and (self.missed > limit or self.lost):  # rule 2
             y = Val(BAD)
         elif x.state == UNCERTAIN or (resetting and r.state == UNCERTAIN):
             y = Val(UNCERTAIN, self.total)
@@ -576,8 +601,11 @@ class Integrate(Block):
             "gaps": Val(GOOD, float(self.gaps)),
         }
 
-    def gap(self, k):
+    def gap(self, k, n):
         self.gaps, self.gap_at = self.gaps + 1, k
+        if n:
+            self.ran, self.missed = self.ran + n, self.missed + n
+        self.lost = self.lost or n is None
 
 
 # ---------------------------------------------------------------- models (4 rule 9)
@@ -741,7 +769,7 @@ class ModelBlock(Block):
             if usable(v):
                 u[name], self.last[name] = v.v, (v.v, k)
                 uncertain = uncertain or v.state == UNCERTAIN
-            elif name in self.last and k - self.last[name][1] <= self.s["ride_through"]:  # rule 4
+            elif name in self.last and k - self.last[name][1] <= self.s["ride_through"]:  # rule 4, by tick number
                 u[name], held = self.last[name][0], True
         stepped = len(u) == len(self.model.inputs)
         if stepped:
@@ -755,9 +783,24 @@ class ModelBlock(Block):
     def model_step(self, u):
         return stepped(self.model, self.x, u, self.period, self.s["substeps"])
 
-    def gap(self, k):
-        self.doubt = k - 1  # uncertain from the gap's tick
+    def gap(self, k, n):
         self.gaps += 1
+        if n == 0:
+            return False  # no tick was passed over, and no step was missed
+        self.doubt = k - 1  # uncertain from the gap's tick
+        if n is None:  # nobody knows how long: too long to ride through
+            self.last = {name: (value, -math.inf) for name, (value, _) in self.last.items()}
+            return True
+        self.doubtful += n  # each a step on a held value, or one not taken
+        for j in range(k - n, k):  # rule 4, for the ticks nobody saw: a held step while every input is within reach
+            held = [
+                name
+                for name in self.model.inputs
+                if name in self.last and j - self.last[name][1] <= self.s["ride_through"]
+            ]
+            if len(held) < len(self.model.inputs):
+                break
+            self.x = self.model_step({name: self.last[name][0] for name in held})
         return True
 
 
@@ -892,8 +935,8 @@ class Estimator(Block):
             out[name], out[f"sigma_{name}"] = Val(state, self.x[i]), Val(state, sigma)
         return out
 
-    def gap(self, k):
-        for i in range(len(self.names)):
+    def gap(self, k, n):
+        for i in range(len(self.names)):  # at every gap, one that passed over no tick among them
             self.p[i][i] += self.p0[i]
 
     def forget_times(self):
@@ -1188,7 +1231,7 @@ class Engine:
         self.last_now = None
         self.standing = {}  # input -> (state, value, time): the write last taken up
         self.pending = {name: [] for name in self.inputs}  # the writes not yet taken up, as made
-        self.rebasing = False
+        self.rebasing, self.away = False, None
         self.thrown = 0  # writes thrown away since the last call that ran a tick
         self.loop_doubt = dict.fromkeys(self.loop_settle)  # 7.8 rule 8: each loop's doubt, a tick
         self.info = None  # what the last call that ran a tick has to say (6 rule 10)
@@ -1205,13 +1248,19 @@ class Engine:
         self.blocks, self.k, self.loop_doubt = copy.deepcopy(state)
         self.rebase()
 
-    def rebase(self):
-        """The host's clock has stepped, or a state was restored: the next call is a gap, at any time."""
+    def rebase(self, away=None):
+        """The host's clock has stepped, or a state was restored: the next call is a gap, at any time.
+
+        `away`: how long the graph did not run, in nanoseconds from the time of the last tick it ran, if the
+        host knows (8 rule 5).
+        """
+        if away is not None and (isinstance(away, bool) or not isinstance(away, int) or not 0 <= away < 2**63):
+            raise ValueError("the length of a rebase is a whole number of nanoseconds, not negative")
         self.pending = {name: [] for name in self.inputs}  # 8 rule 5: what was written before is done with
         self.standing = {}  # and nothing stands, from now: a write on the new clock is not judged by the old
         if self.zero is None and self.k == 0:
             return  # nothing has run: the next call runs tick 0, and is no gap
-        self.last_now, self.rebasing = None, True
+        self.last_now, self.rebasing, self.away = None, True, away
 
     def write(self, name, state, value=None, at=None):
         """The host writes an input: a state, a value, and a time (6 rule 7). Refusals are rule 11."""
@@ -1284,9 +1333,13 @@ class Engine:
             self.thrown += len(writes) - len(self.pending[name])
         if self.zero is None:  # rule 5
             self.zero = self.since = now
-        gap = False
+        gap, skipped = False, 0
         if self.rebasing:  # 8 rule 5: one tick, at the call's time, on what may be another clock
             self.rebasing, gap, due = False, True, 1
+            skipped = None  # nobody knows, unless the host said how long it was away
+            if self.away is not None:  # the ticks that were due in that time, less the one that now runs
+                skipped = max(0, (2 * self.away + self.period) // (2 * self.period) - 1)
+                self.k += skipped
             self.zero, self.since = now - self.k * self.period, now
             for block in self.blocks.values():
                 block.forget_times()
@@ -1298,18 +1351,19 @@ class Engine:
                 self.info = None
                 return 0, None
             if due > self.max_catch_up:  # 8 rule 4: a stall. One tick, the last that was due
-                gap = True
-                self.zero += (due - 1) * self.period
+                gap, skipped = True, due - 1
+                self.k += skipped  # the ticks before it were not run, and keep their numbers
                 due = 1
         if gap:
             for bid, block in self.blocks.items():  # 8 rule 6
-                if block.gap(self.k) and bid in self.loop_of:  # a model's doubt is its loop's
+                if block.gap(self.k, skipped) and bid in self.loop_of:  # a model's doubt is its loop's
                     self.loop_doubt[self.loop_of[bid]] = self.k - 1
         out = None
         for i in range(due):
             out = self._run(last=i == due - 1)
         self.info = {
             "gap": gap,
+            "skipped": skipped,  # the ticks a gap passed over, or None if nobody knows
             "tick": self.k - 1,
             "time": self.zero + (self.k - 1) * self.period,
             "thrown": self.thrown,  # since the last call that ran a tick

@@ -44,9 +44,10 @@ Times in a vector are in seconds, written as decimals. The runner passes
 them to the engine as whole nanoseconds.
 
 A row with a single key starting with `$` is an operation on the engine:
-{$save: name}, {$restore: name}, {$reset: true}, {$rebase: true},
-{$write: [name, state, value, time]} for a write with no call after it, and
-{$refused_write: [name, state, value, time]} for a write that must be refused.
+{$save: name}, {$restore: name}, {$reset: true}, {$rebase: true} or {$rebase: seconds},
+{$write: [name, state, value, time]} for a write with no call after it,
+{$refused_write: [name, state, value, time]} for a write that must be refused,
+and {$refused_rebase: seconds} or {$refused_rebase_ns: nanoseconds} for a length that must be refused.
 """
 
 from __future__ import annotations
@@ -63,7 +64,7 @@ impl = reference  # the implementation under test; --second swaps it
 
 HERE = Path(__file__).resolve().parent
 TOLERANCE = 1e-9
-ROW_KEYS = {"now", "ran", "first", "refused", "gap", "tick", "time", "thrown", "waiting"}
+ROW_KEYS = {"now", "ran", "first", "refused", "gap", "skipped", "tick", "time", "thrown", "waiting"}
 
 
 def show(val):
@@ -132,11 +133,19 @@ def run(path):
                 engine.restore(saved[row["$restore"]])
             elif "$reset" in row:
                 engine.reset()
-            elif "$rebase" in row:
-                engine.rebase()
+            elif "$rebase" in row:  # {$rebase: true}, or {$rebase: 90}: the host says it was away for 90 s
+                engine.rebase(None if row["$rebase"] is True else ns(row["$rebase"]))
             elif "$write" in row:  # {$write: [name, state, value, time]}: a write with no call after it
                 name, state, value, at = row["$write"]
                 engine.write(name, state, value, ns(at))
+            elif "$refused_rebase" in row or "$refused_rebase_ns" in row:  # a length that must be refused
+                compared += 1
+                given = row.get("$refused_rebase_ns")  # as it is, where it is not a whole number of nanoseconds
+                try:
+                    engine.rebase(ns(row["$refused_rebase"]) if given is None else given)
+                    differences.append(f"after call {calls - 1}: the rebase {next(iter(row.values()))} was accepted")
+                except Exception:  # noqa: S110 - any refusal will do; its wording is not specified
+                    pass
             elif "$refused_write" in row:  # {$refused_write: [name, state, value, time]}: it must be refused
                 compared += 1
                 name, state, value, at = row["$refused_write"]
@@ -174,6 +183,8 @@ def run(path):
             info = engine.info
             if info["gap"] != row.get("gap", False):
                 differences.append(f"{where}: gap is {info['gap']}, the vector says {row.get('gap', False)}")
+            if "skipped" in row and info["skipped"] != (None if row["skipped"] == "unknown" else row["skipped"]):
+                differences.append(f"{where}: skipped is {info['skipped']}, the vector says {row['skipped']}")
             if "tick" in row and info["tick"] != row["tick"]:
                 differences.append(f"{where}: the last tick is {info['tick']}, the vector says {row['tick']}")
             if "time" in row and info["time"] != ns(row["time"]):

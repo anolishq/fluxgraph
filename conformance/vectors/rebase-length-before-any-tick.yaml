@@ -1,0 +1,11 @@
+# 8.5: a rebase before any tick has run does away with the writes waiting
+# and nothing else, with a length as without: the next call runs tick 0
+# and is not a gap.
+rules: [8.5]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: i, type: integrate, in: {x: x}, out: {y: total, gaps: gaps}}
+calls:
+  - {$rebase: 5}
+  - {now: 100, skipped: 0, tick: 0, time: 100, x: 2, total: 2, gaps: 0}
