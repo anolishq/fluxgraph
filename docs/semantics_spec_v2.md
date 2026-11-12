@@ -1,6 +1,6 @@
 # FluxGraph semantics, version 2 (proposal)
 
-**Status:** proposal, third revision, with two amendments. Not in force.
+**Status:** proposal, third revision, with three amendments. Not in force.
 [semantics_spec.md](semantics_spec.md) stays the normative contract for
 FluxGraph 1.x until this is accepted, at which point this document replaces
 it and the library becomes 2.0.
@@ -58,13 +58,17 @@ time. **Amendments so far:**
    that holds a model is treated as one block. What that gives up is listed
    at the end of section 7.
 
+3. *Gaps* (section 8, and rules 6.9 and 6.10). A gap is ticks nobody saw,
+   and a block is told how many. The tick a stall runs keeps its own
+   number, and each block does to what it remembers what that many ticks
+   with nothing usable to read would have done: a total adds them to what
+   it has missed, a counter to what was doubtful, a window holds no sample
+   for them, a delay moves on. A host that knows how long a restored graph
+   was away says so. Where nobody knows, the gap is longer than anything a
+   block counts.
+
 Still to be amended, and known to be wrong as they stand:
 
-- how a gap acts on each block (section 8). A block is not told how long
-  the gap was, so that a total or a timer counts one period for a stall of
-  any length; and short of `max_catch_up` a pause of any length is run as
-  ordinary ticks on what stood, with nothing to say so but inputs growing
-  old;
 - how models are stepped (section 7.8, rules 1 to 4 and 7);
 - when an estimator's outputs are `good` (section 7.9).
 
@@ -248,9 +252,11 @@ call for reads what the host has in hand.
    step: the engine cannot tell a step from a stall. `now` is read after
    the last sample the host means the call to see, since a sample stamped
    after `now` waits for the next tick.
-5. The first call runs tick 0, and the time of tick 0 is that `now`. Each
-   tick after it is one period later than the one before, except across a
-   gap (section 8), which moves them.
+5. The first call runs tick 0, and the time of tick 0 is that `now`. Until
+   a rebase, tick `k` is `k` periods after tick 0. A stall (section 8)
+   passes over ticks, which keep their numbers and their times and are
+   never run. A rebase puts the tick it runs at the call's `now`, on the
+   clock the host then passes, and later ticks at whole periods from it.
 6. A call runs, in order, every tick not yet run whose time is no more than
    half a period after `now`. A tick exactly half a period after is run. If
    none is due the call runs no tick, says so, and gives nothing else. The
@@ -311,9 +317,14 @@ call for reads what the host has in hand.
    stands and a different value stands in its place; a block that compares
    sample times (rule 3.7) does not take it for a new sample.
 9. A graph has a setting, `max_catch_up`, 100 unless given. When a call
-   would run more ticks than that, it is a **gap** (section 8).
+   would run more ticks than that, it is a **gap** (section 8): the last
+   of them runs, and the rest are passed over. Catching up is for a host
+   that is late by a tick or two. It runs each tick on what stood at that
+   tick's time, judged by its age, and an input's maximum age is what
+   keeps a long pause from being run on old values.
 10. A call that ran a tick gives: the number of ticks it ran; whether it
-    was a gap; the number and the time of the last tick it ran; how many
+    was a gap, and if so how many ticks it passed over, or that nobody
+    knows; the number and the time of the last tick it ran; how many
     writes have been thrown away (rule 8) since the last call that ran a
     tick; how many writes still wait; and that tick's outputs. The outputs
     of the ticks before the last are not given.
@@ -326,7 +337,9 @@ call for reads what the host has in hand.
     - a usable write with no value, or one whose value is not of the
       input's type; and a write whose state is not one of the four;
     - a write or a call whose time is not a whole number, or does not fit
-      in 64 bits, signed.
+      in 64 bits, signed;
+    - a `rebase` whose length is not a whole number of nanoseconds, is
+      less than zero, or does not fit in 64 bits, signed.
 12. Calls and writes are made one at a time. A host with several threads
     sees to that itself.
 
@@ -351,11 +364,16 @@ host's clock.
   the order they were taken. One with a time earlier than what stands is
   thrown away; one that is only out of order with a write still waiting
   may stand for a tick before the later one does.
-- **After a gap** (section 8), look to whatever it counts on: a gap is
-  reported to the host, and each block that counts gives `gaps`. A total
-  or a detector that ran across one is `good`. A timer the gap stopped
-  shows nothing of it once it starts again: the call's report is the only
-  word of that.
+- **After a gap** (section 8), look to whatever it counts on: a gap and
+  its length are reported to the host, and each block that counts gives
+  `gaps` and adds the ticks passed over to what it missed or doubted. A
+  total or a detector that ran across one is `good`. A timer the gap
+  stopped shows nothing of it once it starts again: the call's report is
+  the only word of that.
+- **Say how long, after a restore.** A host that restores a state knows,
+  from a clock of its own, how long the graph was away. Passed to `rebase`,
+  that makes the restore a gap of that length. Without it nobody knows,
+  and a total restored after a day shows one gap and nothing missed.
 
 What this still leaves out:
 
@@ -369,8 +387,15 @@ What this still leaves out:
   half a period off them runs no tick on some calls and two on others, for
   good. Nothing here moves the ticks to where the host now is, short of a
   rebase, which clears the inputs as well.
-- **The limit on catching up is in ticks**, so it is a second of invented
-  history at a period of 10 ms and four minutes at 2.5 s.
+- **The limit on catching up is in ticks**, so it is a second at a period
+  of 10 ms and four minutes at 2.5 s. Just under it the ticks are run on
+  what stood; just over it they are passed over. For a block whose
+  inputs have grown too old to use the two agree, and they differ by what
+  stood until then. A block that reads only constants, or an input with no
+  maximum age, would have gone on working through ticks that were run,
+  and does not through ticks passed over: a model so fed steps as `good`
+  through the one, and on held values, counted as `doubtful`, through the
+  other.
 - **A period that is not a whole number of nanoseconds**, such as a
   sixtieth of a second, cannot be written.
 - **Different rates.** Everything runs at one period.
@@ -427,7 +452,11 @@ block's own rule.
 `good`. `elapsed` counts whole ticks, the present one among them, since
 the event the block names, and `doubtful` counts those of them on which
 the input the block names was not `good`. So `doubtful` is never more than
-`elapsed`, and the first tick counted gives an `elapsed` of one period.
+`elapsed`, and the first tick counted gives an `elapsed` of one period. A
+tick a gap passed over (section 8) is a tick, and one on which no input
+was `good`: `elapsed` counts it, and `doubtful` does wherever it would
+have counted a tick with its input unusable. A gap of no known length has
+no ticks to count.
 `gaps` is a number, a count, and always `good`: the gaps (section 8) whose
 tick is the one `elapsed` counts from, or a later one. Every block that
 gives `elapsed` gives `gaps`, and where `elapsed` is zero because nothing
@@ -504,8 +533,9 @@ its doubt with it.
    (rule 6.3), and at least 1.
 3. With fewer usable samples than are needed, every output but `count`
    takes the worst state among its ticks that hold none. A tick from before
-   the graph started, or from before a gap, holds none and counts as
-   `not_ready`.
+   the graph started, or one a gap passed over (rule 8.6), holds none and
+   counts as `not_ready`. After a gap of no known length that is every
+   tick before the one that runs.
 4. With as many usable samples as are needed, but fewer `good` ones, its
    outputs are `uncertain`, and its statistics are of its usable samples.
 5. With as many `good` samples as are needed, its outputs are `good`, and
@@ -613,7 +643,10 @@ Each takes a boolean. None of them remembers a doubt.
    state.
 
    `elapsed` and `doubtful` count from the tick the clock was last set;
-   `doubtful` is of its input.
+   `doubtful` is of its input. After a gap of no known length (rule 8.6)
+   the input was last true longer ago than `time`: until the clock is next
+   set the output's value is true, with the state the rule above gives it,
+   and the counts start at the gap's tick.
 3. **Latch.** False until its input `set` is first usable and true, then
    true. It has an input `reset` that need not be connected. At a tick, the
    first of these that applies:
@@ -641,7 +674,10 @@ lacks.
    input is usable. The value at a tick includes that tick's addition, so a
    constant 1 from tick 0 gives `k + 1` periods at tick `k`.
 2. The total is the first of these that applies: `bad`, once `missed` is
-   more than `max_missed`, if that is given, until a reset; `uncertain`, on
+   more than `max_missed`, if that is given, until a reset, and `bad`
+   likewise after a gap of no known length (rule 8.6), which is more than
+   any `max_missed`, though `missed` cannot say so and only `gaps` shows
+   it; a reset at the gap's own tick ends that as any reset does; `uncertain`, on
    a tick where its input is `uncertain`, or where `reset` is `uncertain`
    and true; `good`. On a tick where its input is unusable the total is
    `good`: it has a value, and `missed` says what it lacks.
@@ -675,7 +711,9 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
 3. With every input usable the model steps.
 4. With an input unusable, the model steps on that input's last usable
    value if that was no more than `ride_through` ago, counted as in rule
-   7.4.3. Otherwise it does not step.
+   7.4.3, ticks a gap passed over among them. Otherwise it does not step.
+   After a gap of no known length it does not, until the input is usable
+   again. It keeps the value for rule 5.
 5. **A model never gives up its state.** Its outputs are always usable,
    unless rule 3.6 makes one `bad`. Where its outputs read a direct input
    that is unusable, they are worked out on that input's last usable value,
@@ -696,7 +734,8 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    which counts the ticks on which it stepped on an `uncertain` or a held
    value or did not step; and `gaps`. The step of tick `k` is taken in the
    second phase, so at tick `k` `doubtful` counts the steps of the ticks
-   before `k`, one tick behind `elapsed`. A gap adds nothing to it.
+   before `k`, one tick behind `elapsed`. A tick a gap passed over is a
+   step on a held value or a step not taken (rule 8.6), and is counted.
 7. A model says the longest step it is stable at. A graph whose period,
    divided by the block's `substeps` setting, is longer than that is
    refused. With `substeps` of `n` the state is stepped `n` times per tick,
@@ -735,17 +774,16 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    - at a tick where the loop is not within `settle` of its doubt, what a
      delay, a window or a low-pass in it took in as `uncertain` at an
      earlier tick becomes `good`, and stays so: a later doubt of the loop
-     does not turn it back. That is every such value the block holds, a
-     value a gap made `uncertain` in a delay among them, and not only the
-     one it gives at that tick. A delay gives such a value as `good`; a window
+     does not turn it back. That is every such value the block holds, and
+     not only the one it gives at that tick. A delay gives such a value as `good`; a window
      holds such a sample as a `good` one from then on; a low-pass's doubt
      is cleared. What each takes in at the tick itself is as its own rule
      says. This is so for a reader outside the loop too;
    - a window on the loop that needs more than one sample gives
-     `not_ready` while it fills, which is an output that is not usable. If
-     a block of the loop is connected to it, the loop is in doubt from the
-     start, and after a gap for one tick more than `settle` for each tick
-     the window takes to fill;
+     `not_ready` while it has fewer, which is an output that is not usable.
+     If a block of the loop is connected to it, the loop is in doubt from
+     the start, and after a gap that left the window short, for one tick
+     more than `settle` for each tick it takes to fill;
    - the other blocks in it follow their own rules.
 
 So two thermal masses that each take the other's temperature are two
@@ -865,25 +903,38 @@ to write the stricter thing.
   `uncertain` thousand added, a timer started or a clock set by an
   `uncertain` true, a hysteresis switched by an `uncertain` input, a
   low-pass with a `settle` of zero. `doubtful` counts the tick.
-- **A gap makes only two things `uncertain`**: what a delay holds, and a
-  model with `settle`. It empties a window, and starts a low-pass, a
-  deadband and the timers again. Every other block is `good` across it. A
-  hysteresis, a latch, a total and a model with no `settle` are `good`
-  across an hour's stall, and `since_true` says `good` and false after
-  one, as if its input had just been true. `gaps` says there was one.
+- **A gap makes only a model with `settle` `uncertain`.** Every other
+  block does what the ticks nobody saw would have done to it. A window
+  short of samples and a delay with nothing to give are `not_ready`, a
+  total past `max_missed` is `bad`, and the rest are `good` on the far
+  side. A hysteresis, a latch, a total within `max_missed` and a model
+  with no `settle` are `good` across an hour's stall; `doubtful`, `missed`
+  and `gaps` say an hour and one gap.
+- **`since_true` is `good` and true after a long gap**, with either
+  `on_bad`: nobody saw its input, and a tick nobody saw does not set its
+  clock. An alarm on "nothing for ten minutes" fires after a ten-minute
+  stall. `doubtful` says how much of the quiet nobody saw, and after a gap
+  of no known length only `gaps` does.
+- **A delay gives `not_ready` for a tick nobody saw.** A formula that
+  keeps a running value through a delay reads `not_ready` after any gap as
+  long as its delay, and goes on reading it. A total is an `integrate`,
+  which keeps its value and counts what it missed.
 - **A loop's `settle` is its author's word for every path in it.** A total
   kept by a formula and a delay on a loop with a model block is `good`
   once the loop has settled, with an `uncertain` addition still in it. A
   delay, window or low-pass on such a loop gives `good` to readers outside
   the loop on the same terms.
 - **A loop of formulas and delays with no model block has no `settle`**
-  (rule 5.6). One `uncertain` value taken in, or one gap, leaves it
-  `uncertain` for as long as that value goes round, which for a running
-  total or a peak hold is for good; one unusable value goes round for good
-  unless a block of the loop has a fallback or rides through. A model
-  block on the cycle ends both, since its outputs are always usable.
+  (rule 5.6). One `uncertain` value taken in leaves it `uncertain` for as
+  long as that value goes round, which for a running total or a peak hold
+  is for good; one unusable value, or the `not_ready` a delay gives after
+  a gap, goes round for good unless a block of the loop has a fallback or
+  rides through. A model block on the cycle ends both, since its outputs
+  are always usable.
 - **The estimator** is `good` on an `uncertain` measurement it was told to
-  use (rule 7.9.5). Section 7.9 is still to be amended.
+  use (rule 7.9.5), and takes a measurement written again after a rebase
+  as a new one: where its variance had already grown well past `p0`, the
+  one sample sharpens it twice. Section 7.9 is still to be amended.
 - **Only a window has a tolerance for doubtful samples.** One `uncertain`
   sample in every `settle` ticks keeps a low-pass, and any low-pass or
   model after it, `uncertain` for good. That includes the value another
@@ -905,7 +956,9 @@ to write the stricter thing.
 2. A graph can write its state out and take it back, so that a host can
    save a running graph and restore it. A state saved from one graph is
    refused by a graph that is not the same.
-3. A **gap** is time the graph did not see. There are two kinds.
+3. A **gap** is ticks nobody saw: they were due, and were not run. One
+   tick runs at a gap, and the ticks before it are **passed over**. There
+   are two kinds.
    - A **stall**: a call that would run more than `max_catch_up` ticks. The
      clock is the same clock, and the ticks stay where they were.
    - A **rebase**: the first call after a restore, or after the host has
@@ -913,14 +966,22 @@ to write the stricter thing.
      clock altogether, and the call may carry any `now`.
 
    Restoring a state saved before any tick had run is a reset, and neither.
-4. At a stall, one tick runs: the last one that was due. Its number is one
-   more than that of the last tick run, its time is that due tick's, and
-   later ticks follow it at whole periods. It is the last tick of its call,
-   and may see what such a tick may (rule 6.8). What stood goes on
-   standing, as old as it is.
-5. At a rebase, one tick runs. Its number is one more than that of the last
-   tick run, its time is the call's `now`, and later ticks are at whole
-   periods from it. Before it runs:
+4. At a stall, one tick runs: the last one that was due, under its own
+   number and at its own time. The due ticks before it are passed over:
+   one fewer than were due. It is the last tick of its call, and may see
+   what such a tick may (rule 6.8). What stood goes on standing, as old as
+   it is.
+5. At a rebase, one tick runs, at the call's `now`, and later ticks are at
+   whole periods from it. **The host may say how long the graph was
+   away**: `rebase` takes a length, counted from the time of the last tick
+   run. The ticks that would have been due in that time, by rule 6.6, are
+   that length divided by the period and rounded to the nearest whole
+   number, a half rounding up. The last of them is the tick that runs, and
+   the rest are passed over; if none would have been due, none is passed
+   over and the next tick runs. With no length, nobody knows how many were
+   passed over, and the tick that runs is numbered one more than the last
+   tick run. A length of zero is a length. A restore puts back "nobody
+   knows", whatever `rebase` said before it. Before it runs:
    - nothing stands on any input, and that is so from the moment the state
      was restored or the host said its clock had stepped: every write then
      waiting was done with, and what the host writes after that waits as
@@ -933,44 +994,69 @@ to write the stricter thing.
      with `only_new` takes the next usable sample, and an estimator
      considers the next measurement, as if they had seen none; an estimator
      has used none, so its `since_<port>` is `not_ready`; and the values a
-     delay holds at that moment lose their sample times.
+     delay holds at that moment lose their sample times. A block that
+     compares sample times cannot tell a sample from before the rebase
+     from the same one written again after it, whatever length the host
+     gave. So a window with `only_new` keeps no sample from before a
+     rebase, and an estimator's variance grows (rule 6) at every rebase.
+     That growth is a stand-in and not a bound: a value written again
+     after a rebase is taken as a new measurement all the same.
 
    `rebase` before any tick has run, since the engine was made or last
    reset, does away with the writes waiting, and nothing else: the next
    call runs tick 0 and is not a gap. Restoring a state saved before any
    tick had run is a reset (rule 3). A second `rebase` before the call does away
-   with what was written since the first. A reset after a `rebase` is a
+   with what was written since the first, and its length, or its having
+   none, is the one that counts. A reset after a `rebase` is a
    reset, and the next call is not a gap. A state saved between a `rebase`
    and the call that follows it is as one saved before the `rebase`.
-6. At either kind, before the tick runs, every block is told, and does what
-   this table says. The call says it was a gap (rule 6.10).
+6. At either kind, before the tick runs, every block is told how many
+   ticks were passed over, or that nobody knows. **Each block does to what
+   it remembers what that many ticks would have done, had each been run
+   with nothing usable on any of its inputs.** The ticks are not run: no
+   output is given for them, and a block does this from the number alone.
+   Where nobody knows the number, it is more than anything the block
+   counts, and nothing is added to a count but one to `gaps`. Where the
+   number is zero, as after a rebase whose length is under a period and a
+   half, a block does nothing but add one to `gaps`, whatever the table
+   says: no timer stops and no model has a doubt. What rule 5 says of a
+   rebase holds all the same: nothing stands, every sample time is
+   forgotten, a window with `only_new` is emptied and an estimator's
+   variance grows. The call says it was a gap, and how many (rule 6.10).
 
-| Block | At a gap |
-| --- | --- |
-| `formula`, `all_good` | Nothing: no memory |
-| `delay` | Every `good` value it has taken in and not yet given becomes `uncertain`. An initial value it has yet to give is not changed |
-| `window` | Emptied; the ticks before the gap hold no sample |
-| `deadband`, `lowpass` | Forgets what it held, and a low-pass its doubt; the next usable input is a first input |
-| `hysteresis` | Stays as it was. Its counters go on, and `gaps` goes up by one |
-| `held_for` | The timer stops |
-| `since_true` | The clock is set to the gap's tick |
-| `latch` | Unchanged. Its counters go on, and `gaps` goes up by one |
-| `integrate` | The total is unchanged, and `gaps` goes up by one |
-| Model block | The tick before the gap's is a doubt (rule 7.8.6), its loop's if it is on one: with `settle` it is `uncertain` from the gap's tick |
-| `estimator` | Each state's variance grows by its `p0` |
+| Block | Told that `n` ticks were passed over | Told that nobody knows |
+| --- | --- | --- |
+| `formula`, `all_good` | Nothing: no memory | The same |
+| `delay` | It moves on `n` places, taking in `not_ready` for each, so that what it gives is still its input of `ticks` ago | Everything it holds is `not_ready`, an initial value not yet given among them |
+| `window` | Those `n` ticks hold no sample, and count as `not_ready` | None of its ticks holds a sample |
+| `deadband`, `lowpass` | If the last tick passed over is within `ride_through` of its last usable input, it holds what it held, and a low-pass decays over the ticks it missed (rule 7.4.5). Otherwise it forgets, a low-pass its doubt too | It forgets |
+| `hysteresis` | Stays as it was. `doubtful` goes up by `n` | Stays as it was |
+| `held_for` | With `reset` the timer stops. With `hold` the unusable stretch grows by `n`: within `hold_limit` the timer runs on and `doubtful` goes up by `n`, and past it the timer stops | The timer stops |
+| `since_true` | The clock is not set, with either `on_bad`. `doubtful` goes up by `n` | The input was last true longer ago than `time` (rule 7.6.2), and its counts start again at the gap's tick |
+| `latch` | Unchanged. `doubtful` goes up by `n` if it is not set | Unchanged |
+| `integrate` | The total is unchanged. `missed` and `elapsed` go up by `n` | The total is unchanged. With `max_missed` given it is `bad` until a reset: what it missed is more than that |
+| Model block | For each of those ticks, in order, it steps on the last usable value of every input while each is within `ride_through` (rule 7.8.4), and takes no step from the first tick where one is not. `doubtful` goes up by `n`. The tick before the one that runs is a doubt (rule 7.8.6), its loop's if it is on one: with `settle` it is `uncertain` from the tick that runs | The same doubt. It takes no step, and does not ride through (rule 7.8.4) |
+| `estimator` | Each state's variance grows by its `p0`, whatever `n` is, zero among it. This is not what `n` ticks would have done, and stands until section 7.9 is amended | The same |
 
-Every block that gives `gaps` adds one to it at a gap. Where a block's
-count starts again at the gap's tick, as `since_true`'s does and as that
-of a hysteresis that changes or a latch that is cleared on that tick
-does, or at a later tick, as `held_for`'s does, `gaps` starts again with
-it, at one if the gap's tick is the tick it counts from. Counters, and the doubt of a loop, are
-part of what a save holds, and a rebase does not set them to zero beyond
-what the table says. A reset does. A gap adds nothing to a model's
-`doubtful`.
+`elapsed`, which counts ticks, takes in the `n` passed over with no more
+said. Every block that gives `gaps` adds one to it at a gap of either
+kind. Where a block's count starts again at the tick the gap runs, as
+that of a `since_true` told nobody knows does, and as that of a
+hysteresis that changes or a latch that is cleared on that tick does, or
+at a later tick, as `held_for`'s does, `gaps` starts again with it, at one
+if that tick is the tick it counts from. Counters, and the doubt of a
+loop, are part of what a save holds, and a rebase does not set them to
+zero beyond what the table says. A reset does.
 
-Nothing else changes at a gap. An estimator keeps its state and its counts,
-and a model keeps the last usable value of each input. At a stall, which is
-on one clock, a block keeps the sample times it remembers.
+This is each block's own reckoning and not a run of the graph. A latch
+fed by a formula that would have been true on a tick nobody saw is not
+set by it, and a fallback gives nothing for one.
+
+Nothing else changes at a gap. An estimator keeps its state and its
+counts, and a model keeps the last usable value of each input for rule
+7.8.5. At a stall, which is on one clock, a block keeps the sample times
+it remembers. At a rebase with a length a delay both moves on and loses
+the sample times of what it still holds.
 
 **Open.** What "the same graph" means: the same text, or the same blocks,
 settings and period, and in either case the same layout of state in the
@@ -1180,7 +1266,8 @@ and refused without it. `min_good` is required with `only_new: true`.
   `good`.
 - **`delay`.** At tick `k` its output is its input at tick `k - ticks`:
   value, state and sample time, as a reader of that input saw them then
-  (but see rule 7.8.8 for a delay in a loop that holds a model). Before that tick exists, its output is `initial` and `good`, with
+  (but see rule 7.8.8 for a delay in a loop that holds a model). For a
+  tick a gap passed over it is `not_ready` (rule 8.6). Before tick 0, its output is `initial` and `good`, with
   no sample time, or `not_ready` if no initial value is given. Its type is
   its input's, and an initial value of the other type is refused. An
   initial value is `good` because it is the author's statement of where a
