@@ -1,6 +1,6 @@
 # FluxGraph semantics, version 2 (proposal)
 
-**Status:** proposal, third revision, with three amendments. Not in force.
+**Status:** proposal, third revision, with four amendments. Not in force.
 [semantics_spec.md](semantics_spec.md) stays the normative contract for
 FluxGraph 1.x until this is accepted, at which point this document replaces
 it and the library becomes 2.0.
@@ -67,9 +67,18 @@ time. **Amendments so far:**
    was away says so. Where nobody knows, the gap is longer than anything a
    block counts.
 
-Still to be amended, and known to be wrong as they stand:
+4. *Models* (rule 4.9, section 7.8 and Appendix A). Every model is
+   linear, and is stepped exactly: its step over a period is the solution
+   of its equation with its inputs held, worked out when the graph is
+   compiled. There is no step a model is unstable at, and no sub-steps.
+   One general block, `linear`, takes the matrices of any linear model,
+   and the six models 1.x has in continuous time are each a named case of
+   it. A loop holds one model block and no more: two that read each other
+   are a tick apart, which can make a sound network unstable, and are
+   written as one.
 
-- how models are stepped (section 7.8, rules 1 to 4 and 7);
+Still to be amended, and known to be wrong as it stands:
+
 - when an estimator's outputs are `good` (section 7.9).
 
 ## 1. Why a second version
@@ -189,11 +198,12 @@ evaluation, implicit solvers, vector values.
 8. An input that is not required may be left unconnected. The block type
    says what that means.
 9. A **model** is not a block. It is a state, a rule that steps the state
-   over a length of time given its inputs, a rule that gives its outputs
-   from its state and inputs, and the **sensitivity** of the stepped state
-   to the state it was stepped from. A block hosts a model (section 7.8),
-   and so does an estimator (section 7.9). A 1.x model becomes a model in
-   this sense.
+   over one period given its inputs, and a rule that gives its outputs
+   from its state and inputs. Both rules are linear (rule 7.8.7), so the
+   **sensitivity** of the stepped state to the state it was stepped from
+   is the step's own matrix. A block hosts a model (section 7.8), and so
+   does an estimator (section 7.9). A 1.x model becomes a model in this
+   sense.
 
 **Open.**
 
@@ -724,11 +734,26 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    unlike a low-pass, riding through is a doubt: the held value has gone
    into its state. A doubt from the second phase of tick `k` is tick `k`.
    - With `settle`, its outputs are `uncertain` for `settle` after its
-     doubt, and otherwise `good`. `settle` is three of the model's slowest
-     time constant, rounded up to whole ticks, unless given.
-   - A model whose memory does not fade has no such constant. With no
-     `settle` given, its outputs are `good`, and its counters say what it
-     has been through.
+     doubt, and otherwise `good`. For a named model in continuous time
+     `settle` is three of its slowest time constant, rounded up to whole
+     ticks, unless given. That constant is one over the least rate at
+     which its state decays: minus one over the largest real part among
+     all the eigenvalues of its `A`. For a model that swings as it decays
+     that is the constant of the envelope. A named model has one state or
+     two. For two, with `h` half the sum of `A`'s diagonal and `d` its
+     determinant: where `h²` is no more than `d` the largest real part is
+     `h`; otherwise, with `h` less than zero, it is `d / (h - √(h² - d))`.
+     Both are worked so that a slow rate beside a fast one is not lost in
+     a subtraction, and `d` is taken from the model's settings, as its
+     entry in Appendix A gives it, and not from `A`'s entries. Where the
+     two rates are many orders apart the last ticks of a `settle` of
+     millions still depend on rounding.
+   - A named model with any state that does not decay, where that
+     largest real part is zero or more, such as a mass on a spring with no
+     damping, has no such constant. Neither `linear` nor `state_space` is
+     given one, and in that alone a named model differs from the `linear`
+     that spells it out. With no `settle` given, such a model's outputs
+     are `good`, and its counters say what it has been through.
 
    It gives `elapsed`, which counts from the first tick; `doubtful`,
    which counts the ticks on which it stepped on an `uncertain` or a held
@@ -736,18 +761,60 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    second phase, so at tick `k` `doubtful` counts the steps of the ticks
    before `k`, one tick behind `elapsed`. A tick a gap passed over is a
    step on a held value or a step not taken (rule 8.6), and is counted.
-7. A model says the longest step it is stable at. A graph whose period,
-   divided by the block's `substeps` setting, is longer than that is
-   refused. With `substeps` of `n` the state is stepped `n` times per tick,
-   each of one `n`-th of a period, on the same inputs.
+7. **Every model is linear, and is stepped exactly.** A model in
+   continuous time is `dx/dt = A·x + B·u`, with outputs `y = C·x + D·u`,
+   where `x` is its states, `u` its inputs and `y` its outputs. Its step
+   over one period is the solution of that equation with every input held
+   at its value for the whole period:
+   `x' = Ad·x + Bd·u`, where `Ad = exp(A·period)` and `Bd` is the integral
+   of `exp(A·s)·B` for `s` from zero to the period. `Ad` and `Bd` depend on
+   the model and the period and on nothing else, so the engine works them
+   out when the graph is compiled. How it does so is its own affair: what
+   is specified is the result, to within rounding, and the vectors compare
+   to one part in 10⁹ (rule 11.5). That is a promise of `Ad` and of `Bd`,
+   which is of one step: over many ticks a state that does not decay
+   carries each step's rounding forward, and two engines that agree on
+   every step drift apart in an oscillator with no damping by about one
+   part in 10⁹ in a few hundred ticks at the bound below, and far more
+   slowly well inside it. The promise does not depend on the size of `B`:
+   `Bd` is the integral of `exp(A·s)` over the period, times `B`. **It is
+   promised up to a bound on how fast the model is against the period,
+   and a graph past it is refused.**
+   The bound is on the largest sum of the absolute values along a row of
+   `A`, times the period, which may be 100,000 at most. In ordinary
+   double arithmetic the exponential of a matrix loses accuracy in
+   proportion to that number, and past the bound an engine cannot keep the
+   promise without arithmetic of more digits. A model refused for it has a
+   state far faster than the period, which is not a state at that period
+   and is left out; or has entries that are large for the units its states
+   are in, since the sum depends on them, and is rescaled. A named model's
+   units are fixed, so one that is refused for them is written as `linear`.
+   For the two named models of the second order the row holds the square
+   of the rate (`omega_n²`, or `stiffness / mass`), so the bound falls on
+   that: a resonance of 50 Hz with little damping is within it at a period
+   of 1 s and past it at 2.5 s. The sum is of
+   `A` alone, in double arithmetic, and a graph within rounding of the
+   bound, or of what a double holds, may be taken either way. So a model's answer does not depend on the period
+   beyond what holding its inputs costs, no step is too long for a model
+   that does not grow, and there are no sub-steps. A model that grows so
+   fast that an entry of `Ad` or `Bd` at the graph's period is more than a
+   double holds is refused. One that is accepted and grows can still pass
+   that some ticks on, and its outputs are then `bad` (rule 3.6).
+   A model in discrete time (`state_space`) gives `Ad` and `Bd`
+   themselves, and they mean what they mean at whatever period the graph
+   has.
 8. **A loop.** The blocks of a graph that can each reach every other
    through inputs, direct or deferred, are a **loop**. A block that reads
    its own output is one by itself. A loop that holds a model block is
    treated as one block with fading memory, and `settle` is its author's
    statement of how long that memory is, along every path in it:
-   - every model block in it has `settle` written in the graph, and they
-     are all the same number of ticks. A model's own time constant is not
-     the loop's. The graph is refused otherwise;
+   - it holds one model block and no more. Two model blocks that read
+     each other are a tick apart, and a network that is sound can be
+     unstable so split, however exactly each is stepped. The graph is
+     refused, and the error names them and says to write them as one
+     model: `linear` takes any number of states;
+   - the model block has `settle` written in the graph. A model's own time
+     constant is not the loop's. The graph is refused otherwise;
    - what else remembers in it is held against that `settle`: the graph is
      refused if the `ticks` of its delays, the lengths of its windows and
      the `settle`s of its low-passes, written or not, all in ticks, add up
@@ -768,7 +835,7 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    - a doubt at tick `k` is seen from tick `k + 1`. At tick `k` itself the
      loop is judged by its latest doubt before `k`, so an earlier doubt
      that has not run out is not forgotten for a tick;
-   - each model in it is `uncertain` for `settle` after the loop's doubt,
+   - the model in it is `uncertain` for `settle` after the loop's doubt,
      in place of its own in rule 6, and otherwise as rule 5 says. Its
      counters are its own;
    - at a tick where the loop is not within `settle` of its doubt, what a
@@ -786,23 +853,31 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
      more than `settle` for each tick it takes to fill;
    - the other blocks in it follow their own rules.
 
-So two thermal masses that each take the other's temperature are two
-blocks with deferred inputs, and compile, as one loop. One bad sample to
-one of them makes it miss a step and both `uncertain` for `settle`.
-Neither goes `bad`, and neither waits for the other. A plant driven
+So two thermal masses that each take the other's temperature are refused
+as two blocks, and are one `thermal_rc2` or one `linear` block. Take two
+of 10 J/K losing 1 W/K each, with formulas that give each a power of 3 W
+for each degree the other is above it, at a period of 5 s. The pair's
+difference is multiplied by about -1.75 a tick, however exactly each is
+stepped, and within eighty ticks they pass 10¹⁹ and say `good`; the one
+block gives the true answer at any period. A plant driven
 through a controller by a setpoint that is `uncertain` on every tick is
 `uncertain` on every tick after the first: what it gives at a tick is its
 state from the tick before.
 
 **Open.**
 
-- **Stability of blocks together.** Rule 7 is per block. Two blocks that
-  are each stable at a period can be unstable coupled. Settled by: whether
-  the compiler can bound it, or whether it is the author's to check.
-- **Which integration each model uses.** 1.x offers forward Euler and
-  fourth-order Runge-Kutta per model. The two examples in Appendix A fix
-  one each. Settled by: going through the 1.x models against their
-  analytical validation.
+- **A model that is not linear.** The catalogue has none, and 1.x had
+  none. One whose equation is not linear has no exact step, and would
+  bring back a rule for how it is stepped and how far that can be
+  trusted. Settled by: the first model that needs it.
+- **A loop of two model blocks that is sound.** Two plants with a
+  controller between them, say. Refused now, and could be allowed where
+  the compiler can show the pair stable. Settled by: the first graph that
+  needs one.
+- **A model and a controller together.** A loop of one model and a
+  formula is a sampled controller, and can be unstable as a real one can.
+  That is the graph's behaviour and not a fault of the step, and nothing
+  here checks it.
 
 ### 7.9 The estimator
 
@@ -816,8 +891,7 @@ measurement reads one state.
 2. **Predict.** On every tick after tick 0 it steps the model one period,
    from the tick before to this one, and the covariance with it:
    `P = F·P·Fᵀ`, plus `q` times the period on each state's own variance.
-   `F` is the model's sensitivity over the period, at the state before the
-   step. The step is on the model inputs **as they were at the tick
+   `F` is the model's `Ad` (rule 7.8.7). The step is on the model inputs **as they were at the tick
    before**, as a model block's is (rule 7.8.1): for each, its value then,
    or if it was unusable then, the last usable value it had had. If some
    model input had never been usable by then, it does not step the model on
@@ -1142,7 +1216,8 @@ and what a declared unit has to say.
    test.
 4. A second implementation, written from this document as it stands and
    nothing else, passes the same vectors.
-5. Values are compared to within one part in 10⁹. Where a rule turns on
+5. Values are compared to within one part in 10⁹ of the value, or of 1
+   where the value is smaller than 1. Where a rule turns on
    exact equality, a vector uses values that are exact in binary.
 6. The two implementations are also run side by side on random inputs and
    call times, at clock values small and large, with stalls, saves,
@@ -1163,10 +1238,12 @@ checks that run them.
 | A model's output is its state after the step | Its state at the tick (rule 7.8.1) |
 | Signal: a number and a unit | A typed value, a state, a sample time |
 | Unwritten signal reads 0.0 | Unwritten signal is `not_ready`, unless its input declares an initial value |
-| Stability limit checked per model | Kept, per block, with sub-steps (rule 7.8.7) |
+| Stability limit checked per model | Gone: a model is stepped exactly, and no step is too long (rule 7.8.7) |
 | Rules and commands | Open (section 4) |
 | Unknown keys ignored by the loaders | Refused |
-| Thermal, process, mechanical and motor models | Kept as models |
+| Thermal, process, mechanical and motor models | Kept as models, each a case of `linear` (Appendix A) |
+| Model settings named with their units (`tau_s`, `resistance_ohm`) | Named without; a length of time is written with its unit |
+| Model settings' ranges | Wider in places: a `thermal_rc2` node may lose nothing to the ambient, and a `dc_motor` may have no resistance, back emf or torque |
 | The transforms | Kept as block types |
 | Delay in seconds | Delay in ticks; lengths of time are whole periods |
 | Noise from the standard library's generator | A generator this document will have to name, so that a vector can cover it |
@@ -1201,22 +1278,31 @@ what the vectors pin down.
 | `since_true` | `x`: boolean | `time`, `on_bad` | `y`: boolean; `elapsed`, `doubtful`, `gaps` |
 | `latch` | `set`: boolean; `reset`: boolean, optional | none | `y`: boolean; `elapsed`, `doubtful`, `gaps` |
 | `integrate` | `x`: number; `reset`: boolean, optional | `per` (1 s), `max_missed` (none) | `y`, `missed`, `doubtful`, `elapsed`, `gaps` |
-| `thermal_mass` | `power`, `ambient`: number, deferred | `thermal_mass`, `heat_transfer`, `initial`, and the model settings | `temp`; `elapsed`, `doubtful`, `gaps` |
-| `state_space` | `u`: number | `A`, `B`, `C`, `D` (0), `initial` (zeros), and the model settings | `y`; `elapsed`, `doubtful`, `gaps` |
-| `estimator` | the model's inputs, and one per measurement | `model`, `q`, `p0`, `measure`, `gate` (none), `sigma_max` (none), `use_uncertain` (false), `substeps` (1) | see 7.9.6 |
+| `linear` | one per column of `B`, named by `inputs` | `A`, `B`, `C`, `D` (zeros), `initial` (zeros), `inputs`, `states`, `outputs`, and the model settings | one per row of `C`, named by `outputs`; and the model outputs |
+| `thermal_mass` | `power`, `ambient` | `thermal_mass`, `heat_transfer`, `initial`, and the model settings | `temp`; and the model outputs |
+| `thermal_rc2` | `power`, `ambient` | `thermal_mass_a`, `thermal_mass_b`, `heat_transfer_a`, `heat_transfer_b`, `coupling`, `initial_a`, `initial_b`, and the model settings | `temp_a`, `temp_b`; and the model outputs |
+| `first_order_process` | `u` | `tau`, `gain` (1), `initial` (0), and the model settings | `y`; and the model outputs |
+| `second_order_process` | `u` | `omega_n`, `zeta`, `gain` (1), `initial` (0), `initial_rate` (0), and the model settings | `y`, `rate`; and the model outputs |
+| `mass_spring_damper` | `force` | `mass`, `damping`, `stiffness`, `initial_position` (0), `initial_velocity` (0), and the model settings | `position`, `velocity`; and the model outputs |
+| `dc_motor` | `voltage`, `load_torque` | `resistance`, `inductance`, `back_emf`, `torque_constant`, `inertia`, `friction`, `initial_current` (0), `initial_speed` (0), and the model settings | `speed`, `current`, `torque`; and the model outputs |
+| `state_space` | `u` | `A`, `B`, `C`, `D` (0), `initial` (zeros), and the model settings | `y`; and the model outputs |
+| `estimator` | the model's inputs, and one per measurement | `model`, `q`, `p0`, `measure`, `gate` (none), `sigma_max` (none), `use_uncertain` (false) | see 7.9.6 |
 
 A setting with a value in brackets may be left out and takes that value.
 `settle` is written as a length of time, like any other counted length. An
 input is required and direct unless the table or the block's rule says
 otherwise. An output is a number unless the table says otherwise. `formula`
 and `all_good` take one or more inputs under any names. The **model
-settings** are `ride_through` (0), `settle` (rule 7.8.6) and `substeps` (1).
+settings** are `ride_through` (0) and `settle` (rule 7.8.6), and the
+**model outputs** are `elapsed`, `doubtful` and `gaps`. A model block's
+input is a number, and is deferred unless the model's outputs read it
+(rule 7.8.2).
 
-Ranges, outside which a graph is refused: `ticks` and `substeps` a whole
-number, at least 1; `window` at least one period; `min_good` more than 0 and
-at most 1; `step`, `ride_through`, `settle`, `time`, `hold_limit`,
-`max_missed`, `q` and `gate` not negative; `per`, `tau`,
-`thermal_mass`, `heat_transfer`, `p0` and `r` more than zero; `rise` more
+Ranges, outside which a graph is refused: `ticks` a whole number, at least
+1; `window` at least one period; `min_good` more than 0 and at most 1;
+`step`, `ride_through`, `settle`, `time`, `hold_limit`, `max_missed`, `q`
+and `gate` not negative; `per`, `tau`, `p0` and `r` more than zero; a
+model's settings as its entry below says; `rise` more
 than `fall`; every number, `initial` and fallback finite; `on_bad` one of
 the choices its block gives. `hold_limit` is required with `on_bad: hold`
 and refused without it. `min_good` is required with `only_new: true`.
@@ -1289,21 +1375,63 @@ and refused without it. `min_good` is required with `only_new: true`.
 - **`latch`.** Section 7.6 rule 3.
 - **`integrate`.** Section 7.7. On a usable tick it adds `x × period / per`.
   `missed` is in seconds.
-- **`thermal_mass`.** One state, `temp`, starting at `initial`.
-  `d temp / dt = (power - heat_transfer × (temp - ambient)) / thermal_mass`,
-  stepped by the classical fourth-order Runge-Kutta rule with its inputs
-  held over the step. Its slowest time constant is `thermal_mass /
-  heat_transfer`, and the longest step it is stable at is 2.785 of them.
-  Its output is its state, so both inputs are deferred. Its sensitivity
-  over a step of length `d` is `1 + z + z²/2 + z³/6 + z⁴/24`, with
-  `z = -d × heat_transfer / thermal_mass`; over a period of several
-  sub-steps, that to the power of their number.
-- **`state_space`.** Discrete, one input and one output. `A` is a list of
-  `n` rows of `n` numbers, `B` and `C` lists of `n`. Its step is
-  `x = A·x + B·u` and its output `y = C·x + D·u`. `u` is direct when `D` is
-  not zero and deferred when it is. Its states are named `x0`, `x1` and so
-  on, in the order of `B`. It has no slowest time constant and is stable at
-  any step, and `substeps` does not apply to it. Its sensitivity is `A`.
+- **`linear`.** Any linear model in continuous time (rule 7.8.7):
+  `dx/dt = A·x + B·u`, `y = C·x + D·u`. `A` is a list of `n` rows of `n`
+  numbers; `B` a list of `n` rows, one number per input; `C` a list of
+  rows, one per output, of `n` numbers; `D`, if given, a row per output of
+  one number per input. `initial` is a number per state. `inputs`,
+  `states` and `outputs` are lists of names; left out, a single one is
+  `u`, `x0` or `y`, and several are `u0`, `u1`, `x0`, `x1`, `y0`, `y1` and
+  so on. There is at least one state, one input and one output. The
+  names in each list are distinct, the three lists do not have to differ
+  from each other, and an output is not named
+  as a model output is. An input is direct if any output reads it, which
+  is where its column of `D` is not all zero. The matrices are in the
+  units of seconds. A graph is refused where the sizes do not agree.
+- **The named models** are each `linear` with its matrices written out
+  from a few physical settings. Each lists its states in the order of
+  `A`'s rows and its inputs in the order of `B`'s columns. An output is a
+  state unless it says otherwise, so every input is deferred.
+  - **`thermal_mass`.** State `temp`, from `initial`. Inputs `power`,
+    `ambient`. `d temp/dt = (power - heat_transfer·(temp - ambient)) /
+    thermal_mass`. `thermal_mass` and `heat_transfer` more than zero.
+  - **`thermal_rc2`.** Two masses joined by a conductance, the first
+    heated. States `temp_a`, `temp_b`, from `initial_a`, `initial_b`.
+    Inputs `power`, `ambient`.
+    `d temp_a/dt = (power - heat_transfer_a·(temp_a - ambient) -
+    coupling·(temp_a - temp_b)) / thermal_mass_a`, and
+    `d temp_b/dt = (-heat_transfer_b·(temp_b - ambient) +
+    coupling·(temp_a - temp_b)) / thermal_mass_b`. The masses more than
+    zero; `coupling` and the two `heat_transfer`s not negative. `A`'s
+    determinant is `(heat_transfer_a·heat_transfer_b +
+    coupling·(heat_transfer_a + heat_transfer_b)) / (thermal_mass_a·thermal_mass_b)`.
+  - **`first_order_process`.** State `y`. Input `u`.
+    `dy/dt = (gain·u - y) / tau`. `tau` is written as a length of time, and
+    is more than zero.
+  - **`second_order_process`.** States `y`, `rate`, from `initial`,
+    `initial_rate`. Input `u`. `dy/dt = rate`, and
+    `d rate/dt = omega_n²·(gain·u - y) - 2·zeta·omega_n·rate`. `omega_n` is
+    in radians a second and more than zero; `zeta` is not negative. `A`'s
+    determinant is `omega_n²`.
+  - **`mass_spring_damper`.** States `position`, `velocity`. Input
+    `force`. `d position/dt = velocity`, and `d velocity/dt = (force -
+    damping·velocity - stiffness·position) / mass`. `mass` more than zero;
+    `damping` and `stiffness` not negative. `A`'s determinant is
+    `stiffness / mass`.
+  - **`dc_motor`.** States `current`, `speed`. Inputs `voltage`,
+    `load_torque`. `d current/dt = (voltage - resistance·current -
+    back_emf·speed) / inductance`, and `d speed/dt =
+    (torque_constant·current - friction·speed - load_torque) / inertia`.
+    Outputs `speed`, `current`, and `torque`, which is
+    `torque_constant·current`. `inductance` and `inertia` more than zero;
+    `resistance`, `friction`, `back_emf` and `torque_constant` not
+    negative, so that nothing in the determinant is subtracted. `A`'s determinant is
+    `(resistance·friction + back_emf·torque_constant) / (inductance·inertia)`.
+- **`state_space`.** Discrete, one input and one output, as 1.x has it. `A`
+  is a list of `n` rows of `n` numbers, `B` and `C` lists of `n`. Its step
+  is `x = A·x + B·u` and its output `y = C·x + D·u`, at whatever period the
+  graph has. `u` is direct when `D` is not zero and deferred when it is.
+  Its states are named `x0`, `x1` and so on, in the order of `B`.
 - **`estimator`.** Section 7.9.
   - `model` is a map with `type`, a model's type, and that model's own
     settings (not the model settings above).
