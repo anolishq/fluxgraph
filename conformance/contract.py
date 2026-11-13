@@ -14,6 +14,7 @@ starts below zero.
 
   python3 conformance/contract.py              the reference
   python3 conformance/contract.py --second     the second implementation
+  python3 conformance/contract.py --cpp        the C++ core, through FLUXGRAPH_V2_DRIVER
   python3 conformance/contract.py --depth 5    longer sequences (default 4)
 
 What is checked:
@@ -525,11 +526,17 @@ def main():
     global impl
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--second", action="store_true", help="check the second implementation")
+    parser.add_argument("--cpp", action="store_true", help="check the C++ core, through its driver")
     parser.add_argument("--depth", type=int, default=4, help="steps in a sequence (default 4)")
     args = parser.parse_args()
     if args.second:
         from second import adapter
 
+        impl = adapter
+    if args.cpp:
+        from cpp import adapter
+
+        adapter.start()
         impl = adapter
     total = 0
     for period, base in ((10**9, 1_700_000_000 * 10**9 + 123), (10**8, -(10**8) - 1)):

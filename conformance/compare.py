@@ -16,9 +16,12 @@ again from a low value. What is compared after every call:
 how many ticks it ran, what it says of itself, and the state and value of
 every published output.
 
-  python3 conformance/compare.py
+  python3 conformance/compare.py [--cpp]
 
-Exits 1 on any difference. Stdlib only.
+Exits 1 on any difference. Stdlib only. With --cpp the reference is set
+against the C++ core, through the driver FLUXGRAPH_V2_DRIVER names, and
+not against the second implementation: a graph that uses a block type the
+core has not built yet is skipped and counted.
 
 This is a comparison of two readings, and a fault they share passes it.
 """
@@ -649,7 +652,13 @@ def same(a, b):
 
 
 def main():
-    total = differences = 0
+    other = second
+    if "--cpp" in sys.argv[1:]:
+        from cpp import adapter as other
+
+        other.start()
+    not_built = getattr(other, "NotBuilt", ())  # raised for a graph with a block type not built yet
+    total = differences = skipped = ran = 0
     print(f"{'graph':42s} {'period':>6s} {'clock':>6s} {'compared':>9s}  differences")
     for base, origin in ((1000, 100), (100, 100), (37, 100), (1000, 1_700_000_000), (100, 1_700_000_000)):
         period = base * 10**6  # nanoseconds
@@ -663,12 +672,20 @@ def main():
                 if name in INITIAL.get(label, {}):
                     declared[name]["initial"] = INITIAL[label][name]
             graph = {"period": f"{base}ms", "max_catch_up": 20, "max_waiting": 3, "inputs": declared, "blocks": blocks}
+            if not_built:
+                try:
+                    other.Engine(graph)
+                except not_built:
+                    skipped += 1
+                    print(f"{label:42s} {base / 1000:5g}s {origin:6.1e} {'-':>9s}  skipped")
+                    continue
+            ran += 1
             compared = found = 0
             first = None
             for run in range(RUNS):
                 rng = random.Random(1000 * index + run + base + origin)
                 quiet = rng.choice([0.1, 0.1, 0.5])  # how often an input is left unwritten
-                engines = [reference.Engine(graph), second.Engine(graph)]
+                engines = [reference.Engine(graph), other.Engine(graph)]
                 start, tick, last_now, saved, last = origin * SECOND, 0, None, None, {}
                 fresh = [engine.save() for engine in engines]  # a state saved before any tick
                 for call in range(CALLS):
@@ -746,6 +763,8 @@ def main():
             print(f"{label:42s} {base / 1000:5g}s {origin:6.1e} {compared:9d}  {found}")
             if first:
                 print(f"    first: {first}")
+    if not_built:
+        print(f"\n{ran} graphs run, {skipped} skipped (block types not built)", end="")
     print(f"\n{total} comparisons, {differences} differences")
     sys.exit(1 if differences else 0)
 
