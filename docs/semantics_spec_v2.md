@@ -1,6 +1,6 @@
 # FluxGraph semantics, version 2 (proposal)
 
-**Status:** proposal, third revision, with five amendments. Not in force.
+**Status:** proposal, third revision, with six amendments. Not in force.
 [semantics_spec.md](semantics_spec.md) stays the normative contract for
 FluxGraph 1.x until this is accepted, at which point this document replaces
 it and the library becomes 2.0.
@@ -53,8 +53,8 @@ time. **Amendments so far:**
    never `good` on a tick where a value it used is `uncertain`; a block
    with declared, finite memory is `uncertain` for that long after it took
    in something doubtful; a window's tolerance covers an uncertain sample
-   as it covers a missing one; a block whose memory has no end reports
-   `good` or `bad` and gives counters a graph can test; and a feedback loop
+   as it covers a missing one; a block whose memory has no end takes its
+   state from what it reads now and gives counters a graph can test; and a feedback loop
    that holds a model is treated as one block. What that gives up is listed
    at the end of section 7.
 
@@ -79,18 +79,32 @@ time. **Amendments so far:**
 
 5. *The estimator* (section 7.9). Its process noise is discretised
    exactly, as its model is, and its model inputs are deferred. A
-   measurement is of any output of the model. A refused measurement makes
+   measurement is of any output of the model that reads no input
+   directly. A refused measurement makes
    its tick `uncertain`, and a run of them longer than the author allows
    widens the variance and takes the next: a gate can no longer lock an
    estimator out. Its author states a test of whether its innovations are
    as large as it expects, or says there is none. An `uncertain`
-   measurement is used with a variance of its own, or not at all, and
-   makes its tick `uncertain`. At a gap of known length it predicts
-   across it.
+   measurement is used with a variance of its own, and makes its tick
+   `uncertain`, or is not used at all. At a gap of known length it
+   predicts across it.
+
+6. *The whole text, read cold* (throughout). An input's `initial` stands
+   in until the first rebase and not after it, and after a rebase a host
+   writes again only the inputs that have no maximum age: an old sample
+   is not made new. Rounding up to whole ticks is exact and has no
+   tolerance, but for a named model's `settle`. Every time and length
+   fits in 64 bits, and a call that would take a tick past that is
+   refused. A block id and the names a block is given hold no dot, and an
+   estimator's outputs have a name each. A model block's outputs are
+   judged together. The summaries that had drifted from the rules they
+   summarise are put right, and section 7.11 lists more of what is given
+   up.
 
 Nothing is left on the list of what is known to be wrong as it stands.
-What each amendment gives up is at the end of section 7, and what is
-still open is under each section.
+What each amendment gives up is at the end of section 7, and for time
+and the host at the end of section 6; what is still open is under each
+section.
 
 ## 1. Why a second version
 
@@ -126,7 +140,9 @@ give a block:
 
 Version 2 breaks the 1.x graph format, the C++ interfaces for models and
 transforms, and the server protocol. Nothing in 1.x is kept for
-compatibility. The maths of the existing models and transforms carries over.
+compatibility. The maths of the existing models carries over, a tick later
+(rule 7.8.1) and stepped exactly (rule 7.8.7). Section 12 says what becomes
+of each transform.
 
 Not goals of 2.0: blocks at different rates, a variable step, parallel
 evaluation, implicit solvers, vector values.
@@ -151,13 +167,17 @@ evaluation, implicit solvers, vector values.
    third type, a vector of numbers of fixed length, is reserved and not
    defined here.
 6. No usable value is not finite. A block output that would be is `bad`,
-   whatever the block. The block's state is not put right for it.
+   whatever the block. The block's state is not put right for it. An
+   output whose working passes through a value that is not finite may be
+   `bad` though its true value is finite, as the mean of two samples of
+   10³⁰⁸ is: a statistic is worked as a plain sum in double arithmetic.
 7. A signal may carry a **sample time**: the time, on the host's clock,
    that its value was taken.
    - An input from outside carries the time it was written with.
    - A `formula` output carries the sample time of the input its
      `sample_of` setting names. A formula with exactly one signal input
-     and no `sample_of` carries that input's.
+     and no `sample_of` carries that input's. Inputs are counted by port:
+     one signal connected to two ports is two.
    - A `delay` output carries the sample time of what it gives.
    - Every other block output carries the time of the tick.
    - A signal that is not usable carries none, and neither does a value a
@@ -254,18 +274,28 @@ runs as many ticks of one fixed length as fit. A tick the host did not call
 for reads its inputs as they stood at its own time, and the tick it did
 call for reads what the host has in hand.
 
-1. A graph has one **period**, fixed when it is compiled. Every block runs
-   once per tick.
+1. A graph has one **period**, more than zero and fixed when it is
+   compiled. Every block runs once per tick.
 2. **A time is a whole number of nanoseconds.** That is so for the clock
    the host passes, for the time a write carries, and for every length of
    time the engine keeps: the period, a counted length, a maximum age and
-   `max_ahead`. One of those that is not a whole number of nanoseconds is
-   refused. No comparison of times has a tolerance, because none needs one.
+   `max_ahead`. One of those that is not a whole number of nanoseconds, or
+   does not fit in 64 bits, signed, is refused. No comparison of times has
+   a tolerance, because none needs one. A sum or a difference of times is
+   the true one: an age is how far apart two times are, however far that
+   is, and an engine whose whole numbers are 64 bits wide sees that none
+   wraps.
 3. Every length of time a block counts (a window, a timer, a limit) is a
    whole number of periods, and a graph where one is not is refused. Inside
    a block, time is counted in ticks. Where a rule rounds a number of ticks
-   or of samples up to a whole number, a value within 10⁻⁹ of a whole
-   number is that number. An input's maximum age is not counted, and may
+   or of samples up to a whole number, the number is worked exactly from
+   what the graph file gives, and there is no tolerance: a `min_good` of
+   0.7 over ten ticks needs seven, and one of 0.7000000001 needs eight. A
+   decimal is read as a double and then taken as the shortest decimal
+   that reads back as that double, so one written with more digits than a
+   double keeps is the nearest it does keep. A named model's
+   `settle` is the one number that is not exact, and rule 7.8.6 says how
+   it is rounded. An input's maximum age is not counted, and may
    be any whole number of nanoseconds. A setting that only scales a value
    (`tau`, `per`) is not a time the engine keeps: it is written as a length
    and may be any length at all.
@@ -338,7 +368,8 @@ call for reads what the host has in hand.
    later time displaces a failed read. A write with the same time as what
    stands and a different value stands in its place; a block that compares
    sample times (rule 3.7) does not take it for a new sample.
-9. A graph has a setting, `max_catch_up`, 100 unless given. When a call
+9. A graph has a setting, `max_catch_up`, 100 unless given and at least
+   1. When a call
    would run more ticks than that, it is a **gap** (section 8): the last
    of them runs, and the rest are passed over. Catching up is for a host
    that is late by a tick or two. It runs each tick on what stood at that
@@ -360,6 +391,8 @@ call for reads what the host has in hand.
       input's type; and a write whose state is not one of the four;
     - a write or a call whose time is not a whole number, or does not fit
       in 64 bits, signed;
+    - a call that would run a tick whose number or whose time does not fit
+      in 64 bits, signed;
     - a `rebase` whose length is not a whole number of nanoseconds, is
       less than zero, or does not fit in 64 bits, signed.
 12. Calls and writes are made one at a time. A host with several threads
@@ -377,11 +410,17 @@ host's clock.
   catch-up ticks on those samples. A host that keeps only its latest sample
   and hands that over before the call runs them on what stood before the
   stall: the engine cannot see what it was never given.
-- **Write inputs that were sampled together with the same time, before the
-  same call.** They then come to stand at the same tick. Two inputs
-  stamped a few milliseconds apart come to stand a tick apart whenever a
-  tick's time falls between the two stamps, and nothing here lets a host
-  commit several writes as one.
+- **Give the inputs of one scan one time, and write them before the same
+  call.** A loop that reads several devices in turn has no one moment. It
+  picks one, the end of the scan say, and stamps every sample of the scan
+  with it; they then come to stand at the same tick. Stamped each at its
+  own moment, two inputs a few milliseconds apart come to stand a tick
+  apart at a catch-up tick whose time falls between the two stamps. That
+  tick pairs the new sample of one with the old sample of the other, a
+  block with memory acts on it, a latch on their difference say, and the
+  host is not given that tick's outputs. The last tick of a call sees
+  both. Nothing here lets a host commit several writes as one, beyond
+  giving them one time.
 - **Read `now` after sampling** (rule 4), and write each input's samples in
   the order they were taken. One with a time earlier than what stands is
   thrown away; one that is only out of order with a write still waiting
@@ -390,12 +429,17 @@ host's clock.
   its length are reported to the host, and each block that counts gives
   `gaps` and adds the ticks passed over to what it missed or doubted. A
   total or a detector that ran across one is `good`. A timer the gap
-  stopped shows nothing of it once it starts again: the call's report is
-  the only word of that.
+  stopped shows nothing of it once it starts again at a later tick: the
+  call's report is the only word of that.
 - **Say how long, after a restore.** A host that restores a state knows,
   from a clock of its own, how long the graph was away. Passed to `rebase`,
   that makes the restore a gap of that length. Without it nobody knows,
   and a total restored after a day shows one gap and nothing missed.
+- **After a restore or a stepped clock, call `rebase` and then write.**
+  `rebase` does away with every write waiting, and counts none of them as
+  thrown away. Then write again each input that has no maximum age, with
+  the time of the call to come (rule 8.5). An input with a maximum age is
+  written when it is next sampled.
 
 What this still leaves out:
 
@@ -416,8 +460,15 @@ What this still leaves out:
   stood until then. A block that reads only constants, or an input with no
   maximum age, would have gone on working through ticks that were run,
   and does not through ticks passed over: a model so fed steps as `good`
-  through the one, and on held values, counted as `doubtful`, through the
-  other.
+  through the one, and through the other steps on held values within its
+  `ride_through`, or not at all, counted as `doubtful`.
+- **What a catch-up tick gave.** A call gives the outputs of its last tick
+  and of no other. What a tick before it did is seen only in what it left
+  in a block's memory.
+- **Which input a write was thrown away on.** The counts are for the whole
+  graph, and a write gives nothing back. A device whose clock is a few
+  seconds behind has every sample read as too old, and looks like one that
+  has stopped.
 - **A period that is not a whole number of nanoseconds**, such as a
   sixtieth of a second, cannot be written.
 - **Different rates.** Everything runs at one period.
@@ -443,7 +494,8 @@ that decides by itself, or a branch it did not take (rules 7.1.2 and
 `count` and the counters read states and not values, and are always `good`.
 A value a block took in at an earlier tick is not one it uses at this
 tick: what the block remembers of it is the block's own rule. There is
-one exception to rule D, named where it is made: a delay, window or
+one exception to what the next paragraph says of memory, named where it is
+made: a delay, window or
 low-pass on a loop that holds a model block, once the loop has settled
 (rule 7.8.8).
 
@@ -455,7 +507,7 @@ how long that memory is.
   something doubtful, and no longer.
 - **Memory with no end**: which way a hysteresis last switched, whether a
   latch is set, a running total, how long a timer has run. The block
-  reports `good` or `bad` by what it has in front of it now, and gives
+  takes its state from what it reads now, and gives
   **counters** that a graph can test: how long it has been going
   (`elapsed`), how much of that time its input was not `good`
   (`doubtful`), and how many gaps there were in it (`gaps`). `good` does
@@ -463,7 +515,8 @@ how long that memory is.
 - **A tolerance** the graph's author declared (a window's `min_good`, a
   total's `max_missed`) is the author's statement of what is acceptable.
   Within it an output is `good`. A `ride_through` is not one: a block
-  riding through says `uncertain` while it does.
+  riding through says `uncertain` while it does, but for a model block
+  with no `settle` (rule 7.8.6), whose `doubtful` counts the ticks.
 
 **Settle.** Where a block is `uncertain` "for `settle` after a doubt" at
 tick `d`, it is so on the `settle` ticks after `d`: ticks `d + 1` to
@@ -472,8 +525,8 @@ block's own rule.
 
 **Counters.** `elapsed` and `doubtful` are numbers, in seconds, and always
 `good`. `elapsed` counts whole ticks, the present one among them, since
-the event the block names, and `doubtful` counts those of them on which
-the input the block names was not `good`. So `doubtful` is never more than
+the event the block names, and `doubtful` counts those of them that the block's own rule names: for
+most, the ticks on which its input was not `good`. So `doubtful` is never more than
 `elapsed`, and the first tick counted gives an `elapsed` of one period. A
 tick a gap passed over (section 8) is a tick, and one on which no input
 was `good`: `elapsed` counts it, and `doubtful` does wherever it would
@@ -522,8 +575,10 @@ At a tick whose time is `t`, an input is the first of these that applies.
 
 1. If nothing stands:
    - `uncertain`, with its declared initial value and no sample time, if
-     it declares one and the graph has run for no more than the maximum
-     age;
+     it declares one, the graph has run for no more than the maximum age,
+     and there has been no rebase since the engine was made or last reset.
+     An initial value stands in for the first measurement and for nothing
+     later: after a rebase an input with nothing written has no value;
    - otherwise `not_ready`, until the graph has run for more than the
      maximum age, and `bad` from then on.
 
@@ -555,8 +610,9 @@ its doubt with it.
    (rule 6.3), and at least 1.
 3. With fewer usable samples than are needed, every output but `count`
    takes the worst state among its ticks that hold none. A tick from before
-   the graph started, or one a gap passed over (rule 8.6), holds none and
-   counts as `not_ready`. After a gap of no known length that is every
+   the graph started, one a gap passed over (rule 8.6), or one whose sample
+   a rebase took out of a window with `only_new` (rule 8.5), holds none
+   and counts as `not_ready`. After a gap of no known length that is every
    tick before the one that runs.
 4. With as many usable samples as are needed, but fewer `good` ones, its
    outputs are `uncertain`, and its statistics are of its usable samples.
@@ -740,7 +796,9 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    unless rule 3.6 makes one `bad`. Where its outputs read a direct input
    that is unusable, they are worked out on that input's last usable value,
    or on zero if it has had none, and are `uncertain`. Where they read a
-   direct input that is `uncertain`, rule D makes them so.
+   direct input that is `uncertain`, rule D makes them so. A model block's
+   outputs are judged together: on such a tick every output of the block
+   is `uncertain`, one that reads no input among them.
 6. Its **doubt** is the latest tick at which it stepped on an `uncertain`
    value, stepped on a held value (rule 4), or did not step. For a model,
    unlike a low-pass, riding through is a doubt: the held value has gone
@@ -748,7 +806,11 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    - With `settle`, its outputs are `uncertain` for `settle` after its
      doubt, and otherwise `good`. For a named model in continuous time
      `settle` is three of its slowest time constant, rounded up to whole
-     ticks, unless given. That constant is one over the least rate at
+     ticks, unless given. This number is worked in double arithmetic and
+     is not exact (rule 6.3): with `r` three of the constant over the
+     period, it is the least whole number not less than `r - 10⁻⁹`. Where
+     rounding could put `r` on either side of that, a graph may be taken
+     either way, and its author writes `settle`. That constant is one over the least rate at
      which its state decays: minus one over the largest real part among
      all the eigenvalues of its `A`. For a model that swings as it decays
      that is the constant of the envelope. A named model has one state or
@@ -807,8 +869,8 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    of 1 s and past it at 2.5 s. The sum is of
    `A` alone, in double arithmetic, and a graph within rounding of the
    bound, or of what a double holds, may be taken either way. So a model's answer does not depend on the period
-   beyond what holding its inputs costs, no step is too long for a model
-   that does not grow, and there are no sub-steps. A model that grows so
+   beyond what holding its inputs costs, no step is unstable, and there are no sub-steps: a step is too long
+   only for the arithmetic, at the bound above. A model that grows so
    fast that an entry of `Ad` or `Bd` at the graph's period is more than a
    double holds is refused. One that is accepted and grows can still pass
    that some ticks on, and its outputs are then `bad` (rule 3.6).
@@ -861,8 +923,8 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    - a window on the loop that needs more than one sample gives
      `not_ready` while it has fewer, which is an output that is not usable.
      If a block of the loop is connected to it, the loop is in doubt from
-     the start, and after a gap that left the window short, for one tick
-     more than `settle` for each tick it takes to fill;
+     the start, and after a gap that left the window short, until `settle`
+     after the last tick on which it was short;
    - the other blocks in it follow their own rules.
 
 So two thermal masses that each take the other's temperature are refused
@@ -916,8 +978,8 @@ each measurement reads one output of the model.
    covariance is `P + N`.
 3. **Correct.** Then, on every tick, for each measurement in the order they
    are declared: it is **considered** if its sample time is later than
-   the sample time last considered on that port, and it is `good`, or it
-   is `uncertain` and the port gives `r_uncertain`. A measurement with no
+   the sample time last considered on that port, and it is either `good`,
+   or `uncertain` on a port that gives `r_uncertain`. A measurement with no
    sample time is never considered. Its variance is the port's `r` if it
    is `good` and `r_uncertain` if it is `uncertain`. **A measurement
    carries the time of a sample**: its port is connected to an input, or
@@ -994,15 +1056,18 @@ each measurement reads one output of the model.
    - `since_<port>`: the time from the sample time of the measurement last
      used to the tick, and not less than zero, `good`; `not_ready` until one
      has been used.
+
+   Each output has a name of its own. A graph where two would have one
+   name, as with states named `x` and `sigma_x`, is refused.
 9. **At a gap** (rule 8.6). Told that `n` ticks were passed over, it
    predicts `n` times more, each as rule 2, on the model inputs it last
    had: that is what those ticks would have done. What is specified is
    the result of `n` predictions and not that they are made one by one;
-   the same goes for a model block's steps in rule 8.6. Told that nobody
-   knows, each state's variance grows by its `p0`, once. At a rebase,
-   whatever its length, each state's variance grows by its `p0` as well,
-   once, after the predictions for the ticks passed over and before the
-   one for the tick that runs: it compares sample times, and cannot tell
+   the same goes for a model block's steps in rule 8.6. At a rebase,
+   whether or not anybody knows its length, each state's variance grows
+   by its `p0`, once in all, after the predictions for the ticks passed
+   over, where their number is known, and before the one for the tick
+   that runs: it compares sample times, and cannot tell
    a measurement from before the rebase from the same one written again
    (rule 8.5). A graph whose `N` holds more than a double does is
    refused, as for `Ad` (rule 7.8.7).
@@ -1050,7 +1115,7 @@ substituted value, inside the graph as well as outside it. An output made
 ### 7.11 What this gives up
 
 Each of these is a value called `good` that rests on something the block
-no longer remembers. Each is deliberate, and each has a counter, or a way
+no longer remembers. Each is deliberate, and most have a counter, or a way
 to write the stricter thing.
 
 - **A latch set by an `uncertain` true is `good` and true from the next
@@ -1081,9 +1146,27 @@ to write the stricter thing.
 - **A block with no fading memory is `good` on the tick after it took in
   an `uncertain` value**, with that value in it: a total with an
   `uncertain` thousand added, a timer started or a clock set by an
-  `uncertain` true, a hysteresis switched by an `uncertain` input, a
-  low-pass with a `settle` of zero. `doubtful` counts the tick.
-- **A gap makes only a model with `settle` `uncertain`.** Every other
+  `uncertain` true, a hysteresis switched by an `uncertain` input.
+  `doubtful` counts the tick. A low-pass with a `settle` of zero is the
+  same, and has no counter.
+- **A model block with no `settle` is `good` while it rides through**, on
+  steps taken from a held value. `doubtful` counts them.
+- **A latch that is set is `good` and true while `set` is `bad`**, and its
+  `doubtful` does not count those ticks: it counts only while the latch is
+  not set.
+- **An `uncertain` true on a total's `reset` sets it and its counts to
+  zero.** The total is `uncertain` on that tick and `good` from the next,
+  with nothing to say it was reset on doubt. Give it `r and ok`, as for a
+  latch.
+- **An `uncertain` measurement on a port with no `r_uncertain` is passed
+  by**, and the estimator stays `good`. `since_<port>` shows how long it
+  has gone without one.
+- **A formula's logic and its choices are `good` beside an operand that is
+  not.** `a or b` with `a` true and `good` is `good` whatever `b` is, and
+  `when(ok, x, 20)` is a `good` 20: the problem is not in what the formula
+  used, and a graph that has to see it reads `all_good`.
+- **A gap makes only a model with `settle`, and an estimator on the
+  gap's own tick, `uncertain`.** Every other
   block does what the ticks nobody saw would have done to it. A window
   short of samples and a delay with nothing to give are `not_ready`, a
   total past `max_missed` is `bad`, and the rest are `good` on the far
@@ -1170,7 +1253,11 @@ to write the stricter thing.
    input, and every write still waiting is done with.
 2. A graph can write its state out and take it back, so that a host can
    save a running graph and restore it. A state saved from one graph is
-   refused by a graph that is not the same.
+   refused by a graph that is not the same. A saved state holds what the
+   blocks remember, their counters, each loop's doubt and the number of
+   the next tick. It does not hold what stands on an input, the writes
+   waiting, the clock, a `rebase` not yet followed by its call, or the
+   count of writes thrown away, which stays the engine's own.
 3. A **gap** is ticks nobody saw: they were due, and were not run. One
    tick runs at a gap, and the ticks before it are **passed over**. There
    are two kinds.
@@ -1201,10 +1288,13 @@ to write the stricter thing.
      was restored or the host said its clock had stepped: every write then
      waiting was done with, and what the host writes after that waits as
      usual, judged against nothing from the old clock. For rule 7.2.1 the graph has
-     run since this tick. **A host has to write every input again after a
-     rebase**, the ones it writes only on change among them, **with times
-     on the clock it now passes**. A value it sampled before, it writes
-     with the time of the rebase's call;
+     run since this tick. **After a rebase a host writes again every input
+     that has no maximum age**, the ones it writes only on change, **with
+     the time of the rebase's call**: such a value is as true as when it
+     was set. An input with a maximum age is written when it is next
+     sampled, on the clock the host now passes, and has no value until
+     then: an old sample written with a new time would be a new one. An
+     input's `initial` does not come back (rule 7.2.1);
    - every sample time a block remembers or holds is forgotten. A window
      with `only_new` takes the next usable sample, and an estimator
      considers the next measurement, as if they had seen none; an estimator
@@ -1213,14 +1303,17 @@ to write the stricter thing.
      compares sample times cannot tell a sample from before the rebase
      from the same one written again after it, whatever length the host
      gave. So a window with `only_new` keeps no sample from before a
-     rebase, and an estimator's variance grows (rule 6) at every rebase.
+     rebase, and an estimator's variance grows (rule 7.9.9) at every rebase.
      That growth is a stand-in and not a bound: a value written again
      after a rebase is taken as a new measurement all the same.
 
    `rebase` before any tick has run, since the engine was made or last
    reset, does away with the writes waiting, and nothing else: the next
    call runs tick 0 and is not a gap. Restoring a state saved before any
-   tick had run is a reset (rule 3). A second `rebase` before the call does away
+   tick had run is a reset (rule 3). A `rebase` whose length would give the tick
+   it runs a number past 64 bits is accepted, and every call after it is
+   refused (rule 6.11) until the host calls `rebase` again with a length
+   that does not. A second `rebase` before the call does away
    with what was written since the first, and its length, or its having
    none, is the one that counts. A reset after a `rebase` is a
    reset, and the next call is not a gap. A state saved between a `rebase`
@@ -1273,9 +1366,18 @@ counts, and a model keeps the last usable value of each input for rule
 it remembers. At a rebase with a length a delay both moves on and loses
 the sample times of what it still holds.
 
-**Open.** What "the same graph" means: the same text, or the same blocks,
-settings and period, and in either case the same layout of state in the
-library that wrote it.
+**Open.**
+
+- **What "the same graph" means**: the same text, or the same blocks,
+  settings and period, and in either case the same layout of state in the
+  library that wrote it.
+- **A restore that is not a gap.** A graph saved, restored and given the
+  same writes does not go on as it would have: its windows with `only_new`
+  are empty and its estimators less sure. A simulator that wants to go
+  back to a saved moment and run on exactly needs a save that also holds
+  what stands, the writes waiting and the clock, and a restore for which
+  the host vouches that the clock is the same and no time has passed.
+  Settled by: the first use in simulation that needs it.
 
 ## 9. The graph file
 
@@ -1303,7 +1405,10 @@ blocks:
    maximum age and, where it has them, its unit, initial value and
    `max_ahead`. A type left out is `number`. A graph that reads a signal which is
    neither an input nor a block's output is refused.
-2. A block's `in` maps each input port to a signal, named as text, or to a
+2. A block id, and a name a block's settings give to a port, a state or
+   an output, is not empty and holds no dot. The name of an input and a
+   published name are not empty. A block's `in` maps each
+   input port to a signal, named as text and not empty, or to a
    constant. Its `out` maps output ports to signal names, which are text; a
    port left out is not published, and any output, published or not, can be
    read by another block as `<block id>.<port>`. A block id is text. No
@@ -1337,6 +1442,11 @@ port may declare a unit, a connection between two declared units that differ
 is a compile error, and the strict policy requires every port to declare
 one. An external input declares its unit in `inputs`. 1.x also checks the
 unit given with every write; a version 2 write carries none.
+
+This section is a statement of intent. The graph file of section 9 has no
+key for a port's unit or for the strict policy, which is 1.x's name for
+refusing a graph with a port that declares none; neither reading in
+`conformance/` checks a unit; and no vector covers it.
 
 **Open.** The registry is a fixed built-in list. A live machine has units
 it does not hold. Settled by: whether a graph may declare its own units,
@@ -1379,13 +1489,13 @@ checks that run them.
 | A model's output is its state after the step | Its state at the tick (rule 7.8.1) |
 | Signal: a number and a unit | A typed value, a state, a sample time |
 | Unwritten signal reads 0.0 | Unwritten signal is `not_ready`, unless its input declares an initial value |
-| Stability limit checked per model | Gone: a model is stepped exactly, and no step is too long (rule 7.8.7) |
+| Stability limit checked per model | Gone: a model is stepped exactly, and no step is unstable. One too fast for the arithmetic at the graph's period is refused (rule 7.8.7) |
 | Rules and commands | Open (section 4) |
 | Unknown keys ignored by the loaders | Refused |
 | Thermal, process, mechanical and motor models | Kept as models, each a case of `linear` (Appendix A) |
 | Model settings named with their units (`tau_s`, `resistance_ohm`) | Named without; a length of time is written with its unit |
 | Model settings' ranges | Wider in places: a `thermal_rc2` node may lose nothing to the ambient, and a `dc_motor` may have no resistance, back emf or torque |
-| The transforms | Kept as block types |
+| The transforms | `delay` is kept, in ticks. `first_order_lag` is `lowpass`, and `moving_average` is a `window`'s `mean`. `linear` (scale and offset) and `unit_convert` are each a `formula`. `deadband` is another block under the same name: 1.x gives zero inside a threshold, which is a `formula`. `saturation`, `rate_limiter` and `noise` are not in the catalogue yet (Appendix A, Open) |
 | Delay in seconds | Delay in ticks; lengths of time are whole periods |
 | Noise from the standard library's generator | A generator this document will have to name, so that a vector can cover it |
 | Units, namespace, loaders, diagram tool | Kept, adapted to ports |
@@ -1418,7 +1528,7 @@ what the vectors pin down.
 | `held_for` | `x`: boolean | `time`, `on_bad`, `hold_limit` | `y`: boolean; `elapsed`, `doubtful`, `gaps` |
 | `since_true` | `x`: boolean | `time`, `on_bad` | `y`: boolean; `elapsed`, `doubtful`, `gaps` |
 | `latch` | `set`: boolean; `reset`: boolean, optional | none | `y`: boolean; `elapsed`, `doubtful`, `gaps` |
-| `integrate` | `x`: number; `reset`: boolean, optional | `per` (1 s), `max_missed` (none) | `y`, `missed`, `doubtful`, `elapsed`, `gaps` |
+| `integrate` | `x`: number; `reset`: boolean, optional | `per` (`1s`), `max_missed` (none) | `y`, `missed`, `doubtful`, `elapsed`, `gaps` |
 | `linear` | one per column of `B`, named by `inputs` | `A`, `B`, `C`, `D` (zeros), `initial` (zeros), `inputs`, `states`, `outputs`, and the model settings | one per row of `C`, named by `outputs`; and the model outputs |
 | `thermal_mass` | `power`, `ambient` | `thermal_mass`, `heat_transfer`, `initial`, and the model settings | `temp`; and the model outputs |
 | `thermal_rc2` | `power`, `ambient` | `thermal_mass_a`, `thermal_mass_b`, `heat_transfer_a`, `heat_transfer_b`, `coupling`, `initial_a`, `initial_b`, and the model settings | `temp_a`, `temp_b`; and the model outputs |
@@ -1433,7 +1543,8 @@ A setting with a value in brackets may be left out and takes that value.
 `settle` is written as a length of time, like any other counted length. An
 input is required and direct unless the table or the block's rule says
 otherwise. An output is a number unless the table says otherwise. `formula`
-and `all_good` take one or more inputs under any names. The **model
+and `all_good` take one or more inputs, `all_good` under any names and
+`formula` under names its grammar allows. The **model
 settings** are `ride_through` (0) and `settle` (rule 7.8.6), and the
 **model outputs** are `elapsed`, `doubtful` and `gaps`. A model block's
 input is a number, and is deferred unless the model's outputs read it
@@ -1441,8 +1552,13 @@ input is a number, and is deferred unless the model's outputs read it
 
 Ranges, outside which a graph is refused: `ticks` a whole number, at least
 1; `window` at least one period; `min_good` more than 0 and at most 1;
-`step`, `ride_through`, `settle`, `time`, `hold_limit`, `max_missed`, `q`
-and `gate` not negative; `per`, `tau`, `p0` and `r` more than zero; a
+`step`, `ride_through`, `settle`, `time`, `hold_limit`, `max_missed`, `q`,
+`gate` and a state's `sigma_max` not negative; `ticks`, `over`,
+`max_refused`, `max_catch_up` and `max_waiting` at most 2,147,483,647,
+which is a width and not a size: an engine may refuse a graph it has not
+the memory for, a long window among them, and a count it works out, a
+low-pass's `settle` say, that does not fit in 64 bits;
+`measure` at least one port; `per`, `tau`, `p0` and `r` more than zero; a
 model's settings as its entry below says; `rise` more
 than `fall`; every number, `initial` and fallback finite; `on_bad` one of
 the choices its block gives. `hold_limit` is required with `on_bad: hold`
@@ -1596,6 +1712,6 @@ a rate limit, a derivative, an edge detector, an off-delay, a moving sum, a
 lookup, a selector, a difference of a device's counter, a PID and a
 second-order section. None can be put together from the blocks above
 without a loop through a delay, and a formula cannot read the period. Each
-is a block with `output` and `update` and scalar settings, and none needs a
-rule this document does not have. Settled by: writing them, each with its
+is a block with scalar settings, and none needs a rule this document does
+not have. Settled by: writing them, each with its
 vectors.
