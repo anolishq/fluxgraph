@@ -1,6 +1,6 @@
 # FluxGraph semantics, version 2 (proposal)
 
-**Status:** proposal, third revision, with seven amendments. Not in force.
+**Status:** proposal, third revision, with eight amendments. Not in force.
 [semantics_spec.md](semantics_spec.md) stays the normative contract for
 FluxGraph 1.x until this is accepted, at which point this document replaces
 it and the library becomes 2.0.
@@ -111,6 +111,15 @@ time. **Amendments so far:**
    gives no value, keeps its integral, and starts its derivative again. It
    may be told what was applied to the actuator, so that a limit after it
    does not wind its integral up. A clamp is a formula, and gets no block.
+
+8. *What building it in C++ asked* (rules 6.11, 7.3.8 and Appendix A). A
+   first slice of the core was written in C++ from this text, and agreed
+   with every vector it could run. It asked for what a reading in whole
+   numbers of any size never has to: what a call does once the last tick
+   number has been run, and that a call is refused whole if any tick it
+   would run does not fit. It also wanted the order of an `integrate`'s
+   arithmetic, a delay's type on a loop, what a `bad` input is to a window
+   that takes only new samples, and how deep a formula may nest.
 
 Nothing is left on the list of what is known to be wrong as it stands.
 What each amendment gives up is at the end of section 7, and for time
@@ -403,7 +412,12 @@ call for reads what the host has in hand.
     - a write or a call whose time is not a whole number, or does not fit
       in 64 bits, signed;
     - a call that would run a tick whose number or whose time does not fit
-      in 64 bits, signed;
+      in 64 bits, signed. It is refused whole: where a call would catch up
+      over several ticks and one of them does not fit, none is run. Once
+      the tick with the largest number that fits has run, every call that
+      would run a tick is refused, after a rebase or a restore too, until
+      a reset. A tick that is due and whose time does not fit stays due,
+      and the calls refused, until a rebase or a reset;
     - a `rebase` whose length is not a whole number of nanoseconds, is
       less than zero, or does not fit in 64 bits, signed.
 12. Calls and writes are made one at a time. A host with several threads
@@ -641,7 +655,8 @@ its doubt with it.
    and its sample time is later than that of the last sample the window
    took. A value still standing from an earlier tick is not another sample,
    and neither is one with no sample time. A tick that holds none for that
-   reason counts as `not_ready` in rule 3. `min_good` has to be given: a
+   reason counts as `not_ready` in rule 3; a tick whose input is not
+   usable counts as that input's state, as in any window. `min_good` has to be given: a
    tick the host did not call for holds no new sample, and at 1 that one
    hole would spoil the window for its whole length.
 
@@ -1717,7 +1732,7 @@ and refused without it. `min_good` is required with `only_new: true`.
   - **Numbers:** digits, an optional point and more digits, an optional
     exponent (`e` or `E`, an optional sign, digits). Nothing else: no sign
     of its own, no hexadecimal, no separators. A number too large for a
-    double is refused.
+    double is refused, and one too small for a double is zero.
   - **Booleans:** `true` and `false`.
   - **Names:** a letter or underscore, then letters, digits and underscores,
     all ASCII. `and`, `or`, `not`, `true`, `false` and the function names
@@ -1751,6 +1766,9 @@ and refused without it. `min_good` is required with `only_new: true`.
     input of the block must be used by the formula. Either fault is refused.
   - Spaces and tabs between tokens mean nothing. A formula is one line, and
     not empty.
+  - An engine reads a formula nested at least 100 deep, counting each
+    bracket, function and operator that is inside another, and may refuse
+    one nested deeper than it can read.
   - `sample_of` names one of the block's inputs that is a signal (rule
     3.7). With more than one signal input and no `sample_of`, and with no
     signal input at all, `y` carries the time of the tick.
@@ -1761,7 +1779,9 @@ and refused without it. `min_good` is required with `only_new: true`.
   (but see rule 7.8.8 for a delay in a loop that holds a model). For a
   tick a gap passed over it is `not_ready` (rule 8.6). Before tick 0, its output is `initial` and `good`, with
   no sample time, or `not_ready` if no initial value is given. Its type is
-  its input's, and an initial value of the other type is refused. An
+  its input's, and an initial value of the other type is refused. On a
+  loop, where its input's type waits on its own, its type is its initial
+  value's, which rule 5.4 sees that it has. An
   initial value is `good` because it is the author's statement of where a
   loop starts, where an input's initial value stands in for a measurement.
 - **`window`.** Rule 7.8.8 has more for one in a loop that holds a model
@@ -1779,8 +1799,10 @@ and refused without it. `min_good` is required with `only_new: true`.
   from the `n + 1`-th tick after the one the input became true on.
 - **`since_true`.** Section 7.6 rule 2.
 - **`latch`.** Section 7.6 rule 3.
-- **`integrate`.** Section 7.7. On a usable tick it adds `x × period / per`.
-  `missed` is in seconds.
+- **`integrate`.** Section 7.7. On a usable tick it adds `x` times the
+  ratio of the period to `per`. The ratio is worked once, exactly, and
+  then taken as a double, so that at a period of 100 ms and a `per` of
+  300 ms an input of 3 adds exactly 1. `missed` is in seconds.
 - **`rate_limit`.** Section 7.4 rules 9 to 11.
 - **`pid`.** Section 7.7 rules 5 to 12. `kp`, `ki` and `kd` are any finite
   numbers: `ki` per second, `kd` in seconds.
