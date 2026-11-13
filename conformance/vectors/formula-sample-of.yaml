@@ -2,7 +2,7 @@
 # names; with one signal input, that input's; otherwise the tick's. z is
 # written at ticks 0 and 3, bias on every tick. Each window counts the new
 # samples among its last four ticks.
-rules: [3.7, A.formula, 7.3.7]
+rules: [3.7, A.formula, 7.3.8]
 period: 1s
 inputs: {z: {max_age: none}, bias: {max_age: none}}
 blocks:

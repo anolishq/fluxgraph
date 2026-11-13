@@ -5330,6 +5330,110 @@ def test_amendment_seven_grown():
     )
 
 
+def test_amendment_eight():
+    """Amendment 8: what building it in C++ asked."""
+    # Appendix A, integrate: the ratio of the period to `per` is worked
+    # once, exactly: at 100 ms and a per of 300 ms an input of 3 adds
+    # exactly 1 (in doubles, 3 * 0.1 / 0.3 is 1.0000000000000002)
+    g = {
+        "period": "100ms",
+        "blocks": [{"id": "i", "type": "integrate", "in": {"x": 3}, "settings": {"per": "300ms"}, "out": {"y": "y"}}],
+    }
+    e = Engine(g)
+    check("a8 integrate exactly 1", e.tick(0)[1]["y"][1] == 1.0, True)
+    check("a8 integrate exactly 2", e.tick(100000000)[1]["y"][1] == 2.0, True)
+    # a period of 1 ms and a per of 9 ms: the ratio is the double nearest
+    # a ninth, 0.1111111111111111, where 0.001 / 0.009 in doubles is
+    # 0.11111111111111112
+    g9 = {
+        "period": "1ms",
+        "blocks": [{"id": "i", "type": "integrate", "in": {"x": 1}, "settings": {"per": "9ms"}, "out": {"y": "y"}}],
+    }
+    check("a8 integrate a ninth", Engine(g9).tick(0)[1]["y"][1] == 1 / 9, True)
+    check("a8 integrate a ninth, not in doubles", 0.001 / 0.009 == 1 / 9, False)
+    # the default per of 1 s at a period of 100 ms: the double nearest 0.1
+    del g["blocks"][0]["settings"]["per"]
+    check("a8 integrate default per", Engine(g).tick(0)[1]["y"][1] == 3 * 0.1, True)
+
+    # Appendix A, formula: a number too small for a double is zero
+    def formula(expr):
+        blk = {"id": "f", "type": "formula", "in": {"a": 1}, "settings": {"expr": expr}, "out": {"y": "y"}}
+        return {"period": "1s", "blocks": [blk]}
+
+    check("a8 too small", Engine(formula("a + 1e-999")).tick(0)[1]["y"], ("good", 1.0))
+    check("a8 too small, divided by", Engine(formula("a / 1e-999")).tick(0)[1]["y"], ("bad", None))
+    refused("a8 too large", formula("a + 1e999"))
+    # a formula nested 100 deep is read: brackets, functions, operators
+    check("a8 brackets 100", Engine(formula("(" * 100 + "a" + ")" * 100)).tick(0)[1]["y"], ("good", 1.0))
+    check("a8 functions 100", Engine(formula("abs(" * 100 + "a" + ")" * 100)).tick(0)[1]["y"], ("good", 1.0))
+    check("a8 minus 100", Engine(formula("-" * 100 + "a")).tick(0)[1]["y"], ("good", 1.0))
+    check("a8 sum of 101", Engine(formula("+".join(["a"] * 101))).tick(0)[1]["y"], ("good", 101.0))
+    check("a8 right nest 100", Engine(formula("a+(" * 100 + "a" + ")" * 100)).tick(0)[1]["y"], ("good", 101.0))
+    # one nested deeper than this engine reads is refused, and not a crash
+    refused("a8 sum of 3000", formula("+".join(["a"] * 3000)))
+    refused("a8 brackets 5000", formula("(" * 5000 + "a" + ")" * 5000))
+    refused("a8 minus 5000", formula("-" * 5000 + "a"))
+
+    # rule 7.3.8: under only_new a tick whose input is not usable counts
+    # as that input's state; one with no new sample as not_ready
+    blk = {"type": "window", "in": {"x": "x"}, "settings": {"window": "3s", "min_good": 0.9, "only_new": True}}
+    got = run_seq(blk, "number", [("good", 1.0), ("bad", None), ("good", 2.0)], "mean")
+    check("a8 only_new, a bad tick", got[2], ("bad", None))
+    e = one_block(blk, max_catch_up=100)
+    put(e, 0, "good", 1.0)
+    put(e, 1)
+    check("a8 only_new, no new sample", put(e, 2, "good", 2.0)["mean"], ("not_ready", None))
+
+    # a delay's type on a loop is its initial value's: a boolean loop
+    g = {
+        "period": "1s",
+        "blocks": [
+            {"id": "d", "type": "delay", "in": {"x": "f.y"}, "settings": {"initial": False}},
+            {"id": "f", "type": "formula", "in": {"p": "d.y"}, "settings": {"expr": "not p"}, "out": {"y": "flip"}},
+        ],
+    }
+    e = Engine(g)
+    check("a8 delay loop", [e.tick(k * S)[1]["flip"][1] for k in range(3)], [True, False, True])
+    g["blocks"][0]["settings"]["initial"] = 0
+    refused("a8 delay loop, the other type", g)
+
+    # rule 6.11: once the tick with the largest number that fits has run,
+    # every call that would run a tick is refused, after a rebase or a
+    # restore too, until a reset
+    g = {"period": "1ns", "blocks": [{"id": "i", "type": "integrate", "in": {"x": 1}, "out": {"elapsed": "elapsed"}}]}
+    e = Engine(g)
+    e.tick(0)
+    e.rebase(2**63 - 1)
+    e.tick(0)
+    check("a8 last number", e.info["tick"], 2**63 - 1)
+    saved = e.save()
+    raises("a8 past the last number", lambda: e.tick(1))
+    check("a8 no tick due is no refusal", e.tick(0), (0, None))
+    for label, length in (("no length", ()), ("zero", (0,)), ("a length", (5,))):
+        e.rebase(*length)
+        raises("a8 past the last number, rebase with %s" % label, lambda: e.tick(0))
+    e.restore(saved)
+    raises("a8 past the last number, after a restore", lambda: e.tick(0))
+    e.reset()
+    check("a8 after a reset", e.tick(0)[0], 1)
+    # refused whole: a catch-up of three ticks whose last time does not
+    # fit runs none. Period 1 s; ticks up to 9,223,372,034 s have run.
+    g = integ_graph(max_catch_up=5)
+    e = Engine(g)
+    e.tick(0)
+    e.tick(9223372034 * S)
+    before = dict(e.info)
+    raises("a8 refused whole", lambda: e.tick(2**63 - 1))  # 35 and 36 fit; 37 does not
+    check("a8 refused whole: none ran", e.info, before)
+    ran, o = e.tick(9223372036 * S)
+    check("a8 the two that fit", (ran, e.info["tick"]), (2, 9223372036))
+    # the tick whose time does not fit stays due, until a rebase
+    raises("a8 stays due", lambda: e.tick(2**63 - 1))
+    raises("a8 stays due, again", lambda: e.tick(2**63 - 1))
+    e.rebase()
+    check("a8 a rebase clears it", e.tick(0)[0], 1)
+
+
 def test_estimator():
     g = {
         "period": "1s",

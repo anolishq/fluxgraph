@@ -256,15 +256,15 @@ MUTATIONS = [
      'if self.s["on_bad"] == "reset" or self.since is None:'),
     ("7.6.1 unusable stretches add up", "            self.stretch = 0\n            if not x.v:", "            if not x.v:"),
     ("7.7.1 the integrator ignores the period",
-     'self.total += x.v * self.period / float(self.s["per"])', 'self.total += x.v / float(self.s["per"])'),
-    ("A.integrate per ignored", 'self.total += x.v * self.period / float(self.s["per"])', "self.total += x.v * self.period"),
+     "self.ratio = float(a[1] / self.s[\"per\"])", "self.ratio = float(1 / self.s[\"per\"])"),
+    ("A.integrate per ignored", "self.ratio = float(a[1] / self.s[\"per\"])", "self.ratio = float(a[1])"),
     ("7.7.2 an uncertain input is not counted", "            self.doubtful += x.state == UNCERTAIN", "            self.doubtful += 0"),
     ("7.7.4 reset after the addition",
      "        self.ran += 1\n        if usable(x):\n"
-     '            self.total += x.v * self.period / float(self.s["per"])\n'
+     "            self.total += x.v * self.ratio\n"
      "            self.doubtful += x.state == UNCERTAIN\n        else:\n            self.missed += 1\n",
      "        self.ran += 1\n        if usable(x):\n"
-     '            self.total += x.v * self.period / float(self.s["per"])\n'
+     "            self.total += x.v * self.ratio\n"
      "            self.doubtful += x.state == UNCERTAIN\n        else:\n            self.missed += 1\n"
      "        if r is not None and usable(r) and r.v:\n            self.total = 0.0\n"),
     # ---- third revision: models and the estimator
@@ -1825,6 +1825,11 @@ MUTATIONS = [
     ("7.7.12 after an unusable tick the addition before it is taken back",
      "        state = worst((sp.state, pv.state))\n        self.added = None\n", "        state = worst((sp.state, pv.state))\n"),
     ("A.pid a negative applied_within accepted", 'if self.s["applied_within"] < 0:', IF_FALSE),
+    # ---- the eighth amendment
+    ("A.integrate the ratio of the period to per is worked in doubles",
+     "self.total += x.v * self.ratio", "self.total += x.v * self.period / float(self.s[\"per\"])"),
+    ("A.formula a formula nested 100 deep is not read",
+     "sys.setrecursionlimit(max(limit, 10000))", "sys.setrecursionlimit(limit)"),
 ]  # fmt: skip
 
 

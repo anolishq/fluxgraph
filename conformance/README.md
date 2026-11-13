@@ -20,9 +20,9 @@ the text says, not what it should say.
 | `contract.py` | Tries every short sequence of writes, calls, rebases, resets, saves and restores against what sections 6, 7.2 and 8 promise a host. |
 
 ```bash
-python3 conformance/run.py                 # 380 vectors: ALL AGREE
-python3 conformance/run.py --second        # 380 vectors: ALL AGREE
-python3 conformance/mutate.py              # 661 breakages: 661 noticed; every vector failed by one
+python3 conformance/run.py                 # 383 vectors: ALL AGREE
+python3 conformance/run.py --second        # 383 vectors: ALL AGREE
+python3 conformance/mutate.py              # 663 breakages: 663 noticed; every vector failed by one
 python3 conformance/compare.py             # 2165816 comparisons, 0 differences
 python3 conformance/contract.py            # 748648 sequences: ALL HOLD
 python3 conformance/contract.py --second   # 748648 sequences: ALL HOLD
@@ -536,6 +536,29 @@ reading a choice. Section 7.11 of the proposal lists what the two blocks
 give up; no vector shows a loop winding up or bumping, since those are
 runs of many ticks and not rules.
 
+## Amendment 8: what building it in C++ asked
+
+A first slice of the core was written in C++ from the text and agreed
+with every vector it could run. It still needed things the text did not
+say, and three vectors are new for them:
+
+- **The order of an integrator's arithmetic.** At 100 ms with a `per` of
+  300 ms and an input of 3, both readings here added 1.0000000000000002
+  and the C++ added 1: within the vectors' tolerance, and on either side
+  of a formula's `==`. The ratio is now worked once, exactly.
+  `integrate-ratio-exact`.
+- **A formula nested deep.** Both readings here died of it and refused
+  nothing. An engine now reads at least 100 levels and may refuse more,
+  and both refuse. `formula-nested-100`.
+- **What a `bad` input is to a window that takes only new samples.** All
+  three took it as `bad`; the text now says so. `window-only-new-bad`.
+- **The last tick number**, and a call that would catch up over a tick
+  that does not fit: said in rule 6.11. No vector here can reach it at a
+  period a reading runs at; the C++ core's own check does.
+- Ten vectors cited a rule by a number it no longer has, and one said in
+  its comment the opposite of what it expects. Their expectations were
+  right and are unchanged.
+
 ## The C++ core
 
 A first slice of a version 2 core in C++ is in `include/fluxgraph/v2/` and
@@ -553,7 +576,7 @@ against it as they do against the readings:
 cmake -S . -B build/v2 -G Ninja -DFLUXGRAPH_BUILD_V2=ON -DFLUXGRAPH_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
 cmake --build build/v2 --target fluxgraph_v2_driver
 export FLUXGRAPH_V2_DRIVER=$PWD/build/v2/tools/fluxgraph_v2_driver/fluxgraph_v2_driver
-python3 conformance/run.py --cpp        # 380 vectors: 160 agree, 220 skipped (block types not built)
+python3 conformance/run.py --cpp        # 383 vectors: 163 agree, 220 skipped (block types not built)
 python3 conformance/compare.py --cpp    # 80 graphs run, 155 skipped; 611044 comparisons, 0 differences
 python3 conformance/contract.py --cpp   # 748648 sequences: ALL HOLD
 python3 conformance/cpp/edges.py        # 72381 checks: ALL HOLD
@@ -591,6 +614,9 @@ C++ a choice.
   not depend on each other does not change any output, so no vector can see
   it.
 - **Units** (section 10), which both readings ignore.
+- **That a refusal is for the right reason.** A refusal vector checks
+  that the message names something, and for many that is one letter, the
+  block's id.
 - **Refusing a saved state from a different graph** (rule 8.2). The vector
   format has one graph per file.
 - **That a save holds a loop's doubt.** A restore is always followed by a

@@ -1,6 +1,6 @@
 # 8.5: at a rebase a block forgets the sample times it remembers. The clock
 # starts again from a low value, and the window takes the next sample.
-rules: [8.5, 7.3.7]
+rules: [8.5, 7.3.8]
 period: 1s
 inputs: {x: {max_age: none}}
 blocks:

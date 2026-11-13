@@ -1,7 +1,7 @@
 # 8.4: a stall is on one clock, and a block keeps the sample times it
 # remembers. x is written once. The ticks not run hold no sample, and the
 # sample still standing is not a new one.
-rules: [8.4, 7.3.7]
+rules: [8.4, 7.3.8]
 period: 1s
 max_catch_up: 3
 inputs: {x: {max_age: none}}

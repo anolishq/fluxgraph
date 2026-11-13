@@ -1,0 +1,11 @@
+# Appendix A: an integrator adds x times the ratio of the period to per,
+# the ratio worked once. At 100 ms and a per of 300 ms an input of 3 adds
+# exactly 1, which a formula's == can see.
+rules: [A.integrate, 7.1.6]
+period: 100ms
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: i, type: integrate, in: {x: x}, settings: {per: 300ms}, out: {y: total}}
+  - {id: f, type: formula, in: {t: i.y}, settings: {expr: "t == 1"}, out: {y: one}}
+calls:
+  - {now: 0, x: 3, total: 1, one: true}

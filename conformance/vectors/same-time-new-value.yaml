@@ -1,7 +1,7 @@
 # 6.8, 3.7: a write with the same time as what stands and another value
 # stands in its place. A block that compares sample times does not take it
 # for a new sample: the window holds one sample, the first.
-rules: [6.8, 3.7, 7.3.7]
+rules: [6.8, 3.7, 7.3.8]
 period: 1s
 inputs: {x: {max_age: none}}
 blocks:

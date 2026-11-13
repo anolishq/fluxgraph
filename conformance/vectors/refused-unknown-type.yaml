@@ -1,5 +1,5 @@
-# 9.4: refused: an unknown block type.
-rules: [9.4]
+# 9.5: refused: an unknown block type.
+rules: [9.5]
 period: 1s
 inputs: {x: {max_age: none}}
 blocks:

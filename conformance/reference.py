@@ -15,6 +15,7 @@ from __future__ import annotations
 import collections
 import copy
 import math
+import sys
 import re
 import statistics
 from fractions import Fraction
@@ -196,7 +197,14 @@ class FormulaBlock(Block):
     own_at = True
 
     def bind(self, in_types):
-        self.formula = Formula(self.s["expr"], in_types)
+        limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(max(limit, 10000))  # Appendix A: a formula nested 100 deep is read
+        try:
+            self.formula = Formula(self.s["expr"], in_types)
+        except RecursionError:  # and an engine may refuse one nested deeper than it can read
+            raise CompileError("the formula is nested too deep") from None
+        finally:
+            sys.setrecursionlimit(limit)
         self.outputs = {"y": self.formula.type}
 
     def wired(self, signals):
@@ -628,6 +636,7 @@ class Integrate(Block):
         super().__init__(*a)
         if self.s["per"] <= 0:
             raise CompileError("per is more than zero")
+        self.ratio = float(a[1] / self.s["per"])  # Appendix A: worked once, exactly
         self.total, self.ran, self.missed, self.doubtful, self.gaps = 0.0, 0, 0, 0, 0
         self.gap_at = None  # the tick of the last gap
         self.lost = False  # it has missed nobody knows how much: more than max_missed, if that is given
@@ -640,7 +649,7 @@ class Integrate(Block):
             self.gaps = int(self.gap_at == k)  # a gap at the tick it counts from is counted
         self.ran += 1
         if usable(x):
-            self.total += x.v * self.period / float(self.s["per"])
+            self.total += x.v * self.ratio
             self.doubtful += x.state == UNCERTAIN
         else:
             self.missed += 1
