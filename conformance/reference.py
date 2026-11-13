@@ -367,6 +367,47 @@ class Deadband(Block):
             self.held = None
 
 
+class RateLimit(Deadband):
+    """Section 7.4 rules 9 to 11. What it holds, and when it forgets, are a deadband's."""
+
+    settings = {
+        "up": ("number", True, None),
+        "down": ("number", False, None),
+        "ride_through": ("ticks", False, 0),
+        "initial": ("number", False, None),
+    }
+    outputs = {"y": NUMBER, "limited": BOOLEAN}
+
+    def __init__(self, *a):
+        Block.__init__(self, *a)
+        if self.s["down"] is None:
+            self.s["down"] = self.s["up"]
+        if self.s["up"] < 0 or self.s["down"] < 0:
+            raise CompileError("up and down are not negative")
+        self.start = None if self.s["initial"] is None else float(self.s["initial"])
+        self.held, self.seen = self.start, None  # rule 9: it holds `initial` from the start
+
+    def output(self, k, t, ins):
+        x = ins["x"]
+        if usable(x):
+            if self.held is not None:
+                reach = (self.s["up"] if x.v > self.held else self.s["down"]) * self.period
+                if abs(x.v - self.held) > reach:  # rule 9: one period's worth, whatever went before
+                    x = Val(x.state, self.held + math.copysign(reach, x.v - self.held))
+            limited = Val(x.state, x.v != ins["x"].v)
+            self.held, self.seen = x.v, k
+            return {"y": Val(x.state, self.held), "limited": limited}
+        riding = self.seen is not None and k - self.seen <= self.s["ride_through"]
+        if riding:
+            return {"y": Val(UNCERTAIN, self.held), "limited": Val(x.state)}
+        self.held, self.seen = self.start, None  # rule 11: forgotten, it holds `initial` again, if it has one
+        return {"y": Val(x.state), "limited": Val(x.state)}
+
+    def gap(self, k, n):
+        if self.seen is not None and (n is None or k - 1 - self.seen > self.s["ride_through"]):
+            self.held, self.seen = self.start, None
+
+
 class Lowpass(Block):
     """Section 7.4 rules 5 to 8."""
 
@@ -623,6 +664,94 @@ class Integrate(Block):
         if n:
             self.ran, self.missed = self.ran + n, self.missed + n
         self.lost = self.lost or n is None
+
+
+class Pid(Counted):
+    """Section 7.7 rules 5 to 11."""
+
+    settings = {
+        "kp": ("number", True, None),
+        "ki": ("number", False, 0.0),
+        "kd": ("number", False, 0.0),
+        "filter": ("seconds", False, None),
+        "min": ("number", False, None),
+        "max": ("number", False, None),
+        "applied_within": ("number", False, 0.0),
+    }
+    ports = {
+        "setpoint": (NUMBER, True, True),
+        "measurement": (NUMBER, True, True),
+        "reset": (BOOLEAN, False, True),
+        "applied": (NUMBER, False, False),  # deferred: rule 12
+    }
+    outputs = {"y": NUMBER, "integral": NUMBER, "limited": BOOLEAN} | COUNTERS
+
+    def __init__(self, *a):
+        super().__init__(*a)
+        if (self.s["kd"] != 0) != (self.s["filter"] is not None):
+            raise CompileError("filter is given when kd is not zero, and only then")
+        if self.s["filter"] is not None and self.s["filter"] <= 0:
+            raise CompileError("filter is more than zero")
+        if self.s["min"] is not None and self.s["max"] is not None and self.s["min"] >= self.s["max"]:
+            raise CompileError("min is less than max")
+        if self.s["applied_within"] < 0:
+            raise CompileError("applied_within is not negative")
+        self.a = math.exp(-self.period / float(self.s["filter"])) if self.s["filter"] is not None else 0.0
+        self.integral, self.before, self.f = 0.0, None, 0.0  # before: the measurement of the tick before
+        self.added = None  # this tick's addition: (the integral before it, the addition, y)
+
+    def output(self, k, t, ins):
+        sp, pv, r = ins["setpoint"], ins["measurement"], ins.get("reset")
+        resetting = bool(r is not None and usable(r) and r.v)
+        if resetting or self.since is None:
+            self.count_from(k)
+        if resetting:  # rule 10: before this tick's addition
+            self.integral, self.before, self.f = 0.0, None, 0.0
+        counts = self.counters(k, sp.state != GOOD or pv.state != GOOD)
+        state = worst((sp.state, pv.state))
+        self.added = None
+        if not (usable(sp) and usable(pv)):  # rule 8: no value, and the integral is kept
+            self.before, self.f = None, 0.0
+            doubted = UNCERTAIN if resetting and r.state == UNCERTAIN else GOOD  # rule 9
+            return {"y": Val(state), "limited": Val(state), "integral": Val(doubted, self.integral)} | counts
+        if resetting and r.state == UNCERTAIN:
+            state = UNCERTAIN
+        error = sp.v - pv.v
+        if self.before is None:  # rule 7: there is no tick before
+            self.f = 0.0
+        else:
+            self.f = self.a * self.f + (1.0 - self.a) * (pv.v - self.before) / self.period
+        self.before = pv.v
+        rest = self.s["kp"] * error - self.s["kd"] * self.f
+        low, high, add = self.s["min"], self.s["max"], self.s["ki"] * error * self.period
+        with_it, cut, was = rest + self.integral + add, False, self.integral
+        if high is not None and add > 0 and with_it > high:  # rule 6: cut short at the limit
+            self.integral, cut = max(self.integral, high - rest), True
+        elif low is not None and add < 0 and with_it < low:
+            self.integral, cut = min(self.integral, low - rest), True
+        else:
+            self.integral += add
+        y, limited = rest + self.integral, False
+        if high is not None and (y > high or (cut and add > 0)):  # cut short, y is the limit itself
+            y, limited = float(high), True
+        elif low is not None and (y < low or (cut and add < 0)):
+            y, limited = float(low), True
+        self.added = (was, add, y)
+        return {"y": Val(state, y), "limited": Val(state, limited), "integral": Val(state, self.integral)} | counts
+
+    def update(self, k, ins):
+        got = ins.get("applied")
+        if self.added is None or got is None or not usable(got):
+            return
+        was, add, y = self.added
+        within = self.s["applied_within"]
+        if (add > 0 and y - got.v > within) or (add < 0 and got.v - y > within):  # rule 12: it fell short
+            self.integral = was
+
+    def gap(self, k, n):
+        super().gap(k, n)
+        if n != 0:  # 8 rule 6: the derivative starts again, unless no tick was passed over
+            self.before, self.f = None, 0.0
 
 
 # ---------------------------------------------------------------- models (4 rule 9)
@@ -1347,6 +1476,8 @@ CATALOGUE = {
     "since_true": SinceTrue,
     "latch": Latch,
     "integrate": Integrate,
+    "rate_limit": RateLimit,
+    "pid": Pid,
     **MODEL_BLOCKS,
     "estimator": Estimator,
 }

@@ -544,6 +544,60 @@ def graphs(d, tau):
             {"a": NUM, "p": BOOL},
             [formula("f", "when(p, a, 0 - a)", {"p": "p", "a": "a"}, "y")],
         ),
+        "rate limit": (
+            {"a": NUM},
+            [
+                block("rate_limit", {"x": "a"}, {"y": "y", "limited": "l"}, up=1.5 / pt, ride_through=d(2)),
+                block("rate_limit", {"x": "a"}, {"y": "z", "limited": "m"}, bid="other", up=0.0, down=40.0 / pt),
+            ],
+        ),
+        "pid": (
+            {"a": NUM, "b": NUM, "p": BOOL},
+            [
+                block(
+                    "pid",
+                    {"setpoint": "a", "measurement": "b", "reset": "p"},
+                    {"y": "y", "integral": "i", "limited": "l", "elapsed": "e", "doubtful": "d", "gaps": "g"},
+                    kp=1.5,
+                    ki=0.7 / pt,
+                    kd=0.3 * pt,
+                    filter=tau(2),
+                    min=-30.0,
+                    max=40.0,
+                ),
+                block(
+                    "pid",
+                    {"setpoint": "a", "measurement": "b", "applied": "b"},
+                    {"y": "z", "integral": "j"},
+                    bid="pi",
+                    kp=-0.5,
+                    ki=0.2 / pt,
+                ),
+            ],
+        ),
+        "a pid on a loop with a process, through a rate limit": (
+            {"a": NUM},
+            [
+                {
+                    "id": "c",
+                    "type": "pid",
+                    "in": {"setpoint": "a", "measurement": "plant.y", "applied": "slew.y"},
+                    "settings": {
+                        "kp": 0.8,
+                        "ki": 0.3 / pt,
+                        "kd": 0.1 * pt,
+                        "filter": tau(1),
+                        "min": -50.0,
+                        "max": 50.0,
+                        "applied_within": 0.25,
+                    },
+                    "out": {"y": "u", "limited": "l", "integral": "i", "doubtful": "d"},
+                    "fallback": {"y": 0.0},
+                },
+                block("rate_limit", {"x": "c.y"}, {"y": "v"}, bid="slew", up=20.0 / pt, ride_through=d(1), initial=0.0),
+                block("first_order_process", {"u": "slew.y"}, {"y": "x"}, bid="plant", tau=tau(2), settle=d(6)),
+            ],
+        ),
     }
 
 

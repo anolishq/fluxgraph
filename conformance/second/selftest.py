@@ -4501,6 +4501,835 @@ def test_amendment_six():
     check("7.8.5 clean", o["clean"], ("uncertain", 0.0))
 
 
+def pid_engine(settings, max_catch_up=100, fallback=None, const=None):
+    """One pid reading the inputs sp, me and r, every output published
+    under its port's name. const: ports given a constant in place."""
+    ins = {"setpoint": "sp", "measurement": "me", "reset": "r"}
+    ins.update(const or {})
+    ins = {k: v for k, v in ins.items() if v is not None}
+    blk = {"id": "b", "type": "pid", "in": ins, "settings": settings}
+    if fallback is not None:
+        blk["fallback"] = fallback
+    g = {
+        "period": "1s",
+        "max_catch_up": max_catch_up,
+        "inputs": {
+            "sp": {"max_age": "none"},
+            "me": {"max_age": "none"},
+            "r": {"type": "boolean", "max_age": "none"},
+        },
+        "blocks": [blk],
+    }
+    e = Engine(g)
+    blk["out"] = {p: p for p in e._blocks["b"].out_ports}
+    return Engine(g)
+
+
+def pid_step(e, now, sp=None, me=None, r=None):
+    """Write what is given, each as (state, value) or a plain good value,
+    at `now` seconds, and call."""
+    for name, w in (("sp", sp), ("me", me), ("r", r)):
+        if w is not None:
+            if not isinstance(w, tuple):
+                w = ("good", w)
+            e.write(name, w[0], w[1], now * S)
+    return e.tick(now * S)[1]
+
+
+def test_rate_limit():
+    """Amendment 7, rules 7.4.9 to 7.4.11."""
+    # up 2 a second, down the same; a period of 1 s
+    check_seq(
+        "rate",
+        {"type": "rate_limit", "in": {"x": "x"}, "settings": {"up": 2}},
+        "number",
+        [
+            ("good", 0.0),  # a first input is taken as it is
+            ("good", 10.0),  # 2 a tick towards it
+            ("good", 10.0),
+            ("good", 10.0),
+            ("good", 7.0),  # within reach of 6: taken
+            ("uncertain", 3.0),  # 4 below: down by 2, with the input's state
+            ("good", 3.0),  # exactly 2 below: within reach, taken
+            ("bad", None),  # no ride_through: it forgets
+            ("good", 100.0),  # and takes the next as it is
+        ],
+        y=[
+            ("good", 0.0),
+            ("good", 2.0),
+            ("good", 4.0),
+            ("good", 6.0),
+            ("good", 7.0),
+            ("uncertain", 5.0),
+            ("good", 3.0),
+            ("bad", None),
+            ("good", 100.0),
+        ],
+        limited=[
+            ("good", False),
+            ("good", True),
+            ("good", True),
+            ("good", True),
+            ("good", False),
+            ("uncertain", True),
+            ("good", False),
+            ("bad", None),
+            ("good", False),
+        ],
+    )
+    # down given apart; and riding through: the held value, uncertain, and
+    # `limited` with the input's state. After riding through, one period's
+    # worth and no more.
+    check_seq(
+        "rate ride",
+        {"type": "rate_limit", "in": {"x": "x"}, "settings": {"up": 2, "down": 0.5, "ride_through": "2s"}},
+        "number",
+        [
+            ("good", 0.0),
+            ("good", 10.0),
+            ("bad", None),
+            ("not_ready", None),
+            ("good", 10.0),  # two ticks missed: still 2 and not 6
+            ("good", -10.0),  # down by a half
+            ("bad", None),
+            ("bad", None),
+            ("bad", None),  # the third: past ride_through, forgotten
+            ("good", 50.0),
+        ],
+        y=[
+            ("good", 0.0),
+            ("good", 2.0),
+            ("uncertain", 2.0),
+            ("uncertain", 2.0),
+            ("good", 4.0),
+            ("good", 3.5),
+            ("uncertain", 3.5),
+            ("uncertain", 3.5),
+            ("bad", None),
+            ("good", 50.0),
+        ],
+        limited=[
+            ("good", False),
+            ("good", True),
+            ("bad", None),
+            ("not_ready", None),
+            ("good", True),
+            ("good", True),
+            ("bad", None),
+            ("bad", None),
+            ("bad", None),
+            ("good", False),
+        ],
+    )
+    # exactly at the reach, upwards: taken as it is, and not limited
+    check_seq(
+        "rate at the reach",
+        {"type": "rate_limit", "in": {"x": "x"}, "settings": {"up": 2, "down": 1}},
+        "number",
+        [("good", 0.0), ("good", 2.0), ("good", 4.5), ("good", 3.5), ("good", 2.0)],
+        y=[("good", 0.0), ("good", 2.0), ("good", 4.0), ("good", 3.5), ("good", 2.5)],
+        limited=[("good", False), ("good", False), ("good", True), ("good", False), ("good", True)],
+    )
+    # up of zero: it never rises; down 1
+    check_seq(
+        "rate up 0",
+        {"type": "rate_limit", "in": {"x": "x"}, "settings": {"up": 0, "down": 1}},
+        "number",
+        [("good", 0.0), ("good", 5.0), ("good", -3.0), ("good", -1.5)],
+        y=[("good", 0.0), ("good", 0.0), ("good", -1.0), ("good", -1.5)],
+        limited=[("good", False), ("good", True), ("good", True), ("good", False)],
+    )
+    # an unusable input before any usable one
+    check_seq(
+        "rate nothing yet",
+        {"type": "rate_limit", "in": {"x": "x"}, "settings": {"up": 1, "ride_through": "5s"}},
+        "number",
+        [("not_ready", None), ("good", 9.0)],
+        y=[("not_ready", None), ("good", 9.0)],
+        limited=[("not_ready", None), ("good", False)],
+    )
+    # at a gap, as a deadband: ride_through of 3 ticks
+    rate = {"type": "rate_limit", "in": {"x": "x"}, "settings": {"up": 2, "ride_through": "3s"}}
+
+    def held():
+        e = one_block(rate)
+        check("rate gap 0", put(e, 0, "good", 0.0)["y"], ("good", 0.0))
+        return e
+
+    # two passed over, within ride_through: it holds 0, and moves 2
+    o = put(held(), 3, "good", 10.0)
+    check("rate gap 2", o["y"], ("good", 2.0))
+    check("rate gap 2 limited", o["limited"], ("good", True))
+    # three passed over and unusable at the tick that runs: the fourth
+    check("rate gap 3, bad", put(held(), 4, "bad")["y"], ("bad", None))
+    check("rate gap 2, bad", put(held(), 3, "bad")["y"], ("uncertain", 0.0))
+    # four passed over: it has forgotten, and jumps
+    o = put(held(), 5, "good", 10.0)
+    check("rate gap 4", o["y"], ("good", 10.0))
+    check("rate gap 4 limited", o["limited"], ("good", False))
+    # nobody knows: it forgets; none passed over: it holds
+    e = held()
+    e.rebase()
+    check("rate gap unknown", put(e, 0, "good", 10.0)["y"], ("good", 10.0))
+    e = held()
+    e.rebase(1 * S)
+    check("rate gap none", put(e, 0, "good", 10.0)["y"], ("good", 2.0))
+    # a reset forgets; a save holds what it held
+    e = held()
+    put(e, 1, "good", 10.0)
+    saved = e.save()
+    e.reset()
+    check("rate reset", put(e, 0, "good", 10.0)["y"], ("good", 10.0))
+    e.restore(saved)
+    e.rebase(1 * S)  # a length: none passed over, so it holds the 2
+    check("rate restored", put(e, 0, "good", 10.0)["y"], ("good", 4.0))
+    # a constant on its port: taken at the first tick, and never limited
+    g = {"period": "1s", "blocks": [{"id": "b", "type": "rate_limit", "in": {"x": 7}, "settings": {"up": 1}}]}
+    g["blocks"][0]["out"] = {"y": "y", "limited": "limited"}
+    e = Engine(g)
+    check("rate const", e.tick(0), (1, {"y": ("good", 7.0), "limited": ("good", False)}))
+    # a fallback on y, and none on limited
+    g = {
+        "period": "1s",
+        "inputs": {"x": {"max_age": "none"}},
+        "blocks": [
+            {
+                "id": "b",
+                "type": "rate_limit",
+                "in": {"x": "x"},
+                "settings": {"up": 1},
+                "fallback": {"y": -1},
+                "out": {"y": "y", "limited": "limited"},
+            }
+        ],
+    }
+    e = Engine(g)
+    check("rate fallback", e.tick(0), (1, {"y": ("uncertain", -1.0), "limited": ("not_ready", None)}))
+
+    # what is refused
+    def rl(**settings):
+        return {"period": "1s", "blocks": [{"id": "b", "type": "rate_limit", "in": {"x": 1}, "settings": settings}]}
+
+    Engine(rl(up=0))
+    Engine(rl(up=1, down=0))
+    refused("rate no up", rl(down=1))
+    refused("rate up below zero", rl(up=-1))
+    refused("rate down below zero", rl(up=1, down=-0.5))
+    refused("rate up not finite", rl(up=float("inf")))
+    refused("rate unknown setting", rl(up=1, step=1))
+    refused("rate ride_through not whole periods", rl(up=1, ride_through="1500ms"))
+    refused(
+        "rate boolean input",
+        {"period": "1s", "blocks": [{"id": "b", "type": "rate_limit", "in": {"x": True}, "settings": {"up": 1}}]},
+    )
+
+
+def test_pid():
+    """Amendment 7, rules 7.7.5 to 7.7.11. The period is 1 s."""
+    # proportional alone: kp times the error
+    e = pid_engine({"kp": 2})
+    o = pid_step(e, 0, sp=5.0, me=3.0, r=False)
+    check("pid p y", o["y"], ("good", 4.0))
+    check("pid p limited", o["limited"], ("good", False))
+    check("pid p integral", o["integral"], ("good", 0.0))
+    counts("pid p", o, elapsed=1, doubtful=0, gaps=0)
+
+    # the integral: ki times the error times the period, this tick's among it
+    e = pid_engine({"kp": 1, "ki": 0.5})
+    for k, (i_, y) in enumerate(((0.5, 1.5), (1.0, 2.0), (1.5, 2.5))):
+        o = pid_step(e, k, sp=1.0, me=0.0, r=False)
+        check("pid pi %d integral" % k, o["integral"], ("good", i_))
+        check("pid pi %d y" % k, o["y"], ("good", y))
+    # the error turns: -1: the integral comes down by a half
+    o = pid_step(e, 3, sp=0.0, me=1.0)
+    check("pid pi 3 integral", o["integral"], ("good", 1.0))
+    check("pid pi 3 y", o["y"], ("good", 0.0))
+
+    # an addition that would put the output above max is cut short. kp 0,
+    # ki 1, max 2.5, error 1: 1, 2, and then 3 would be above max: the
+    # integral becomes 2.5, which puts the output at max, and stays there.
+    # `limited` is true where the addition was cut.
+    e = pid_engine({"kp": 0, "ki": 1, "max": 2.5})
+    for k, (i_, lim) in enumerate(((1.0, False), (2.0, False), (2.5, True), (2.5, True))):
+        o = pid_step(e, k, sp=1.0, me=0.0, r=False)
+        check("pid windup %d integral" % k, o["integral"], ("good", i_))
+        check("pid windup %d y" % k, o["y"], ("good", i_))
+        check("pid windup %d limited" % k, o["limited"], ("good", lim))
+    # an addition towards the other limit is made whole
+    o = pid_step(e, 4, sp=0.0, me=0.5)
+    check("pid windup out", o["integral"], ("good", 2.0))
+    check("pid windup out limited", o["limited"], ("good", False))
+    # exactly at max is not above it: that addition is made whole, and the
+    # next is cut to nothing
+    e = pid_engine({"kp": 0, "ki": 1, "max": 2})
+    for k, (i_, lim) in enumerate(((1.0, False), (2.0, False), (2.0, True))):
+        o = pid_step(e, k, sp=1.0, me=0.0, r=False)
+        check("pid windup at max %d" % k, o["integral"], ("good", i_))
+        check("pid windup at max %d limited" % k, o["limited"], ("good", lim))
+    # with a proportional part: kp 1, ki 1, max 3.5, error 1. Tick 2: the
+    # integral would be 3 and the output 4: it becomes 3.5 - 1 = 2.5
+    e = pid_engine({"kp": 1, "ki": 1, "max": 3.5})
+    for k, (i_, y, lim) in enumerate(((1.0, 2.0, False), (2.0, 3.0, False), (2.5, 3.5, True))):
+        o = pid_step(e, k, sp=1.0, me=0.0, r=False)
+        check("pid cut %d integral" % k, o["integral"], ("good", i_))
+        check("pid cut %d y" % k, o["y"], ("good", y))
+        check("pid cut %d limited" % k, o["limited"], ("good", lim))
+    # the error falls to a half: 0.5 + 2.5 + 0.5 is 3.5, not above: whole,
+    # at the limit and not limited
+    o = pid_step(e, 3, sp=0.5)
+    check("pid cut 3 integral", o["integral"], ("good", 3.0))
+    check("pid cut 3 y", o["y"], ("good", 3.5))
+    check("pid cut 3 limited", o["limited"], ("good", False))
+    # and turns: the output comes off the limit at once
+    o = pid_step(e, 4, sp=-1.0)
+    check("pid cut 4 y", o["y"], ("good", 1.0))
+    # below min likewise: kp 0, ki 1, min -1.5, error -1
+    e = pid_engine({"kp": 0, "ki": 1, "min": -1.5})
+    for k, (i_, lim) in enumerate(((-1.0, False), (-1.5, True), (-1.5, True))):
+        o = pid_step(e, k, sp=0.0, me=1.0, r=False)
+        check("pid cut low %d integral" % k, o["integral"], ("good", i_))
+        check("pid cut low %d y" % k, o["y"], ("good", i_))
+        check("pid cut low %d limited" % k, o["limited"], ("good", lim))
+    # no limit: nothing stops the integral, and limited is false
+    e = pid_engine({"kp": 0, "ki": 1e6})
+    o = pid_step(e, 0, sp=1e6, me=0.0, r=False)
+    check("pid no limit y", o["y"], ("good", 1e12))
+    check("pid no limit limited", o["limited"], ("good", False))
+
+    # the proportional part alone past the limit: kp 3, ki 0.5, max 2,
+    # min -2. Error 1: 3 + 0.5 is above max; what would put the output at
+    # max is an integral of -1, less than it has: it stays at 0, y is max.
+    e = pid_engine({"kp": 3, "ki": 0.5, "max": 2, "min": -2})
+    o = pid_step(e, 0, sp=1.0, me=0.0, r=False)
+    check("pid limit y", o["y"], ("good", 2.0))
+    check("pid limit limited", o["limited"], ("good", True))
+    check("pid limit integral", o["integral"], ("good", 0.0))
+    # error -1: -3 - 0.5 is below min, and the addition less than zero
+    o = pid_step(e, 1, sp=0.0, me=1.0)
+    check("pid limit low y", o["y"], ("good", -2.0))
+    check("pid limit low limited", o["limited"], ("good", True))
+    check("pid limit low integral", o["integral"], ("good", 0.0))
+    # error 0.5: 1.5 + 0.25 is within: added
+    o = pid_step(e, 2, sp=1.5, me=1.0)
+    check("pid limit within y", o["y"], ("good", 1.75))
+    check("pid limit within limited", o["limited"], ("good", False))
+    # above max with an addition less than zero: it comes out. kp -3 and
+    # ki 1 pull opposite ways: error -1 gives 3 - 1, at max: added
+    e = pid_engine({"kp": -4, "ki": 1, "max": 2})
+    o = pid_step(e, 0, sp=0.0, me=1.0, r=False)
+    check("pid out of max integral", o["integral"], ("good", -1.0))
+    check("pid out of max y", o["y"], ("good", 2.0))
+    check("pid out of max limited", o["limited"], ("good", True))
+    # one limit alone: min only
+    e = pid_engine({"kp": 1, "min": 0})
+    check("pid min only", pid_step(e, 0, sp=0.0, me=5.0, r=False)["y"], ("good", 0.0))
+    check("pid min only, above", pid_step(e, 1, sp=1e6, me=5.0)["y"], ("good", 999995.0))
+
+    # the derivative: of the measurement, through its filter. kd 2,
+    # filter 1 s: a = exp(-1). Measurements 0, 1, 1, 3:
+    a = math.exp(-1.0)
+    e = pid_engine({"kp": 0, "kd": 2, "filter": "1s"})
+    f = 0.0
+    check("pid d 0", pid_step(e, 0, sp=0.0, me=0.0, r=False)["y"], ("good", 0.0))  # no tick before
+    f = a * f + (1 - a) * 1.0
+    check("pid d 1", pid_step(e, 1, me=1.0)["y"], ("good", -2 * f))
+    f = a * f + (1 - a) * 0.0
+    check("pid d 2", pid_step(e, 2, me=1.0)["y"], ("good", -2 * f))
+    f = a * f + (1 - a) * 2.0
+    check("pid d 3", pid_step(e, 3, me=3.0)["y"], ("good", -2 * f))
+    # a step of the setpoint gives none: only the filter's fading
+    f = a * f
+    check("pid d 4", pid_step(e, 4, sp=50.0)["y"], ("good", -2 * f))
+    # an unusable measurement: no value; and on the first tick after it
+    # there is no tick before: f is zero
+    o = pid_step(e, 5, me=("bad", None))
+    check("pid d 5", o["y"], ("bad", None))
+    check("pid d 6", pid_step(e, 6, me=4.0)["y"], ("good", 0.0))
+    check("pid d 7", pid_step(e, 7, me=5.0)["y"], ("good", -2 * (1 - a)))
+    # the same after an unusable setpoint
+    pid_step(e, 8, sp=("not_ready", None))
+    check("pid d 9", pid_step(e, 9, sp=0.0, me=6.0)["y"], ("good", 0.0))
+    # all three terms, in one: kp 1, ki 2, kd 3
+    e = pid_engine({"kp": 1, "ki": 2, "kd": 3, "filter": "2s"})
+    b = math.exp(-0.5)
+    check("pid all 0", pid_step(e, 0, sp=1.0, me=0.0, r=False)["y"], ("good", 1 + 2.0))
+    # tick 1: measurement 0.5: error 0.5, integral 2 + 1, f = (1 - b) 0.5
+    check("pid all 1", pid_step(e, 1, me=0.5)["y"], ("good", 0.5 + 3.0 - 3 * (1 - b) * 0.5))
+
+    # states (rule 8): the worse of the two inputs; with either unusable,
+    # no value, the integral kept and good
+    e = pid_engine({"kp": 1, "ki": 1})
+    pid_step(e, 0, sp=1.0, me=0.0, r=False)  # integral 1
+    o = pid_step(e, 1, sp=("uncertain", 1.0))
+    check("pid unc y", o["y"], ("uncertain", 3.0))
+    check("pid unc limited", o["limited"], ("uncertain", False))
+    check("pid unc integral", o["integral"], ("uncertain", 2.0))
+    counts("pid unc", o, elapsed=2, doubtful=1)
+    o = pid_step(e, 2, sp=1.0, me=("bad", None))
+    check("pid bad y", o["y"], ("bad", None))
+    check("pid bad limited", o["limited"], ("bad", None))
+    check("pid bad integral", o["integral"], ("good", 2.0))
+    counts("pid bad", o, elapsed=3, doubtful=2)
+    # the worst of the two: bad before not_ready
+    o = pid_step(e, 3, sp=("not_ready", None))
+    check("pid worst y", o["y"], ("bad", None))
+    # good on the tick after, with whatever went into it
+    o = pid_step(e, 4, sp=1.0, me=0.0)
+    check("pid after y", o["y"], ("good", 4.0))
+    check("pid after integral", o["integral"], ("good", 3.0))
+    counts("pid after", o, elapsed=5, doubtful=3)
+    # an uncertain measurement and a good setpoint
+    o = pid_step(e, 5, me=("uncertain", 0.0))
+    check("pid unc measurement", o["y"], ("uncertain", 5.0))
+
+    # reset (rule 10): the integral and the counts to zero before this
+    # tick's addition; unusable, or false, it is not used
+    o = pid_step(e, 6, me=0.0, r=True)
+    check("pid reset y", o["y"], ("good", 2.0))
+    check("pid reset integral", o["integral"], ("good", 1.0))
+    counts("pid reset", o, elapsed=1, doubtful=0, gaps=0)
+    o = pid_step(e, 7, r=("bad", None))
+    check("pid reset unusable", o["integral"], ("good", 2.0))
+    counts("pid reset unusable", o, elapsed=2, doubtful=0)
+    # an uncertain true reset: y, limited and the integral are uncertain
+    o = pid_step(e, 8, r=("uncertain", True))
+    check("pid reset uncertain y", o["y"], ("uncertain", 2.0))
+    check("pid reset uncertain limited", o["limited"], ("uncertain", False))
+    check("pid reset uncertain integral", o["integral"], ("uncertain", 1.0))
+    counts("pid reset uncertain", o, elapsed=1, doubtful=0)
+    # an uncertain false one is not used
+    o = pid_step(e, 9, r=("uncertain", False))
+    check("pid reset uncertain false", o["y"], ("good", 3.0))
+    # a reset with an unusable measurement: the integral is zero and good
+    o = pid_step(e, 10, me=("bad", None), r=True)
+    check("pid reset bad y", o["y"], ("bad", None))
+    check("pid reset bad integral", o["integral"], ("good", 0.0))
+    counts("pid reset bad", o, elapsed=1, doubtful=1)
+    # a reset puts the derivative at its start
+    e = pid_engine({"kp": 0, "kd": 2, "filter": "1s"})
+    pid_step(e, 0, sp=0.0, me=0.0, r=False)
+    pid_step(e, 1, me=1.0)
+    check("pid reset derivative", pid_step(e, 2, me=5.0, r=True)["y"], ("good", 0.0))
+    # reset not connected, and constants on the other ports
+    e = pid_engine({"kp": 2}, const={"reset": None, "setpoint": 3})
+    check("pid const", pid_step(e, 0, me=1.0)["y"], ("good", 4.0))
+
+    # at a gap (section 8.6): the integral is unchanged and the derivative
+    # starts again; doubtful and elapsed take in the ticks passed over
+    e = pid_engine({"kp": 0, "ki": 1, "kd": 2, "filter": "1s"}, max_catch_up=1)
+    pid_step(e, 0, sp=1.0, me=0.0, r=False)
+    o = pid_step(e, 1, me=0.5)  # integral 1 + 0.5; f = (1 - a) 0.5
+    check("pid gap 1", o["y"], ("good", 1.5 - 2 * (1 - a) * 0.5))
+    o = pid_step(e, 5, me=0.75)  # three passed over; error 0.25
+    check("pid gap info", e.info, info(True, 5, 5 * S, skipped=3))
+    check("pid gap y", o["y"], ("good", 1.75))
+    check("pid gap integral", o["integral"], ("good", 1.75))
+    counts("pid gap", o, elapsed=6, doubtful=3, gaps=1)
+    # nobody knows: the same, and nothing added to the counts but one gap
+    saved = e.save()
+    e.rebase()
+    o = pid_step(e, 0, sp=1.0, me=1.0)
+    check("pid gap unknown y", o["y"], ("good", 1.75))
+    counts("pid gap unknown", o, elapsed=7, doubtful=3, gaps=2)
+    # a gap whose tick is the tick of the reset is counted
+    e.rebase(5 * S)
+    o = pid_step(e, 0, sp=1.0, me=1.0, r=True)
+    counts("pid gap at reset", o, elapsed=1, doubtful=0, gaps=1)
+    check("pid gap at reset integral", o["integral"], ("good", 0.0))
+    # a save holds the integral; a restore is a gap of no known length
+    e.reset()
+    e.restore(saved)
+    o = pid_step(e, 0, sp=1.0, me=1.0, r=False)
+    check("pid restored integral", o["integral"], ("good", 1.75))
+    counts("pid restored", o, elapsed=7, doubtful=3, gaps=2)
+    # a reset of the engine
+    e.reset()
+    o = pid_step(e, 0, sp=1.0, me=0.0, r=False)
+    check("pid engine reset", o["integral"], ("good", 1.0))
+    counts("pid engine reset", o, elapsed=1, doubtful=0, gaps=0)
+
+    # a gap that passed over no tick adds one to gaps and nothing else
+    # (rule 8.6): the derivative goes on from the tick before
+    e = pid_engine({"kp": 0, "kd": 2, "filter": "1s"})
+    pid_step(e, 0, sp=0.0, me=0.0, r=False)
+    pid_step(e, 1, me=1.0)  # f = 1 - a
+    e.rebase(1 * S)
+    o = pid_step(e, 0, sp=0.0, me=3.0, r=False)  # slope 2
+    check("pid gap none info", e.info, info(True, 2, 0))
+    check("pid gap none y", o["y"], ("good", -2 * (a * (1 - a) + (1 - a) * 2.0)))
+    counts("pid gap none", o, elapsed=3, doubtful=0, gaps=1)
+    # one passed over: it starts again
+    e = pid_engine({"kp": 0, "kd": 2, "filter": "1s"})
+    pid_step(e, 0, sp=0.0, me=0.0, r=False)
+    pid_step(e, 1, me=1.0)
+    e.rebase(2 * S)
+    o = pid_step(e, 0, sp=0.0, me=3.0, r=False)
+    check("pid gap one y", o["y"], ("good", 0.0))
+    counts("pid gap one", o, elapsed=4, doubtful=1, gaps=1)
+
+    # a fallback says what the actuator gets: on y alone
+    e = pid_engine({"kp": 1, "ki": 1}, fallback={"y": 0})
+    pid_step(e, 0, sp=1.0, me=0.0, r=False)
+    o = pid_step(e, 1, me=("bad", None))
+    check("pid fallback y", o["y"], ("uncertain", 0.0))
+    check("pid fallback limited", o["limited"], ("bad", None))
+    check("pid fallback integral", o["integral"], ("good", 1.0))
+
+    # on a loop that holds a model: plant <- pid <- plant. A setpoint that
+    # is uncertain at tick 1 is the loop's doubt: the plant is uncertain
+    # on ticks 2, 3 and 4 (settle 3 s), and the pid, which reads it, too.
+    # At tick 6 the setpoint is bad: the pid gives no value on a port the
+    # plant is connected to, and the plant misses a step: ticks 7, 8, 9.
+    g = {
+        "period": "1s",
+        "inputs": {"sp": {"max_age": "none"}},
+        "blocks": [
+            {
+                "id": "plant",
+                "type": "first_order_process",
+                "in": {"u": "c.y"},
+                "settings": {"tau": "2s", "settle": "3s"},
+                "out": {"y": "plant"},
+            },
+            {
+                "id": "c",
+                "type": "pid",
+                "in": {"setpoint": "sp", "measurement": "plant.y"},
+                "settings": {"kp": 1, "ki": 0.1},
+                "out": {"y": "u"},
+            },
+        ],
+    }
+    e = Engine(g)
+    plant = ["good", "good", "uncertain", "uncertain", "uncertain", "good", "good"]
+    plant += ["uncertain", "uncertain", "uncertain", "good"]
+    drive = ["good", "uncertain", "uncertain", "uncertain", "uncertain", "good", "bad"]
+    drive += ["uncertain", "uncertain", "uncertain", "good"]
+    for k in range(11):
+        state = {1: "uncertain", 6: "bad"}.get(k, "good")
+        e.write("sp", state, 1.0 if state != "bad" else None, k * S)
+        o = e.tick(k * S)[1]
+        check("pid loop %d plant" % k, o["plant"][0], plant[k])
+        check("pid loop %d u" % k, o["u"][0], drive[k])
+    # with no settle on the plant the loop is refused, as any other
+    del g["blocks"][0]["settings"]["settle"]
+    refused("pid loop with no settle", g)
+
+    # what is refused
+    def bad(label, settings, **kw):
+        try:
+            pid_engine(settings, **kw)
+        except CompileError:
+            check("pid refused " + label, True, True)
+            return
+        check("pid refused " + label, "accepted", "refused")
+
+    bad("no kp", {"ki": 1})
+    bad("kd with no filter", {"kp": 1, "kd": 1})
+    bad("filter with no kd", {"kp": 1, "filter": "1s"})
+    bad("filter with a kd of zero", {"kp": 1, "kd": 0, "filter": "1s"})
+    bad("filter of zero", {"kp": 1, "kd": 1, "filter": "0s"})
+    bad("filter a bare number", {"kp": 1, "kd": 1, "filter": 1})
+    bad("min not less than max", {"kp": 1, "min": 2, "max": 2})
+    bad("min above max", {"kp": 1, "min": 3, "max": 2})
+    bad("kp not finite", {"kp": float("nan")})
+    bad("unknown setting", {"kp": 1, "tau": "1s"})
+    bad("no setpoint", {"kp": 1}, const={"setpoint": None})
+    bad("a boolean measurement", {"kp": 1}, const={"measurement": True})
+    bad("a number for reset", {"kp": 1}, const={"reset": 1})
+    pid_engine({"kp": 0, "ki": -1, "kd": -2, "filter": "500us"})
+    pid_engine({"kp": 1, "kd": 0})
+    pid_engine({"kp": 1, "min": -1})
+    # a pid gives its output the time of the tick: it is no measurement
+    g = {
+        "period": "1s",
+        "inputs": {"sp": {"max_age": "none"}, "me": {"max_age": "none"}},
+        "blocks": [
+            {"id": "c", "type": "pid", "in": {"setpoint": "sp", "measurement": "me"}, "settings": {"kp": 1}},
+            {
+                "id": "est",
+                "type": "estimator",
+                "in": {"u": 0, "z": "c.y"},
+                "settings": {
+                    "model": {"type": "state_space", "A": [[1]], "B": [0], "C": [1]},
+                    "q": {"x0": 1},
+                    "p0": {"x0": 4},
+                    "measure": {"z": {"of": "y", "r": 1}},
+                    "consistency": "none",
+                },
+            },
+        ],
+    }
+    refused("pid as a measurement", g)
+
+
+def test_amendment_seven_grown():
+    """Amendment 7 as it grew: a rate limit's `initial`, a PID's `applied`,
+    and the state of a PID's integral on an uncertain, true reset."""
+    # --- rate_limit with `initial` (rules 7.4.9 and 7.4.11): it holds that
+    # value from the start, and its first input is limited from it
+    check_seq(
+        "rate initial",
+        {"type": "rate_limit", "in": {"x": "x"}, "settings": {"up": 2, "initial": 0}},
+        "number",
+        [("good", 10.0), ("good", 10.0), ("bad", None), ("good", 10.0), ("uncertain", -9.0)],
+        # tick 2: no ride_through: it forgets, and holds `initial` again
+        y=[("good", 2.0), ("good", 4.0), ("bad", None), ("good", 2.0), ("uncertain", 0.0)],
+        limited=[("good", True), ("good", True), ("bad", None), ("good", True), ("uncertain", True)],
+    )
+    # a first input within reach of `initial` is taken as it is
+    check_seq(
+        "rate initial within",
+        {"type": "rate_limit", "in": {"x": "x"}, "settings": {"up": 2, "down": 1, "initial": 5}},
+        "number",
+        [("good", 4.0), ("good", 1.0)],
+        y=[("good", 4.0), ("good", 3.0)],
+        limited=[("good", False), ("good", True)],
+    )
+    # holding `initial` and nothing else it does not ride through: its
+    # output takes the input's state. Once it has given a value it does.
+    check_seq(
+        "rate initial ride",
+        {"type": "rate_limit", "in": {"x": "x"}, "settings": {"up": 2, "initial": 0, "ride_through": "2s"}},
+        "number",
+        [
+            ("not_ready", None),
+            ("bad", None),
+            ("good", 3.0),
+            ("bad", None),
+            ("bad", None),
+            ("bad", None),  # past ride_through: forgotten, `initial` again
+            ("bad", None),  # and no riding through on that
+            ("good", 3.0),
+        ],
+        y=[
+            ("not_ready", None),
+            ("bad", None),
+            ("good", 2.0),
+            ("uncertain", 2.0),
+            ("uncertain", 2.0),
+            ("bad", None),
+            ("bad", None),
+            ("good", 2.0),
+        ],
+    )
+    # at a gap: forgetting puts it back on `initial`, and it does not jump
+    rate = {"type": "rate_limit", "in": {"x": "x"}, "settings": {"up": 2, "ride_through": "3s", "initial": 0}}
+
+    def moved():
+        e = one_block(rate)
+        put(e, 0, "good", 10.0)
+        check("rate initial gap 1", put(e, 1)["y"], ("good", 4.0))
+        return e
+
+    check("rate initial gap held", put(moved(), 4, "good", 10.0)["y"], ("good", 6.0))  # two passed over
+    check("rate initial gap forgot", put(moved(), 6, "good", 10.0)["y"], ("good", 2.0))  # four
+    e = moved()
+    e.rebase()
+    check("rate initial gap unknown", put(e, 0, "good", 10.0)["y"], ("good", 2.0))
+    # before any input, a gap changes nothing; and a reset puts it back
+    e = one_block(rate)
+    put(e, 0)
+    check("rate initial gap first", put(e, 9, "good", 10.0)["y"], ("good", 2.0))
+    e.reset()
+    check("rate initial reset", put(e, 0, "good", 1.5)["y"], ("good", 1.5))
+
+    def rl(**settings):
+        return {"period": "1s", "blocks": [{"id": "b", "type": "rate_limit", "in": {"x": 1}, "settings": settings}]}
+
+    Engine(rl(up=1, initial=-3.5))
+    refused("rate initial not finite", rl(up=1, initial=float("nan")))
+    refused("rate initial a boolean", rl(up=1, initial=True))
+    refused("rate initial text", rl(up=1, initial="0"))
+
+    # --- pid: the integral's state on a tick with an unusable input and an
+    # uncertain, true reset (rule 7.7.9): uncertain
+    e = pid_engine({"kp": 1, "ki": 1})
+    pid_step(e, 0, sp=1.0, me=0.0, r=False)
+    o = pid_step(e, 1, me=("bad", None), r=("uncertain", True))
+    check("pid unc reset, bad input y", o["y"], ("bad", None))
+    check("pid unc reset, bad input integral", o["integral"], ("uncertain", 0.0))
+    # an uncertain false reset is not used: good, and the integral kept
+    o = pid_step(e, 2, r=("uncertain", False))
+    check("pid unc false reset, bad input integral", o["integral"], ("good", 0.0))
+    # the addition cut to nothing: the integral already has more than
+    # would put the output at max, and y is max
+    e = pid_engine({"kp": 0, "ki": 1, "max": 5})
+    for k in range(5):
+        pid_step(e, k, sp=1.0, me=0.0, r=False)  # integral 5
+    o = pid_step(e, 5, sp=2.0)
+    check("pid cut to nothing y", o["y"], ("good", 5.0))
+    check("pid cut to nothing integral", o["integral"], ("good", 5.0))
+    check("pid cut to nothing limited", o["limited"], ("good", True))
+
+    # --- pid: what was applied (rule 7.7.12)
+    def applied_graph(applied, settings=None, clamp="min(max(u, -1.5), 1.5)"):
+        pid = {
+            "id": "c",
+            "type": "pid",
+            "in": {"setpoint": "sp", "measurement": 0},
+            "settings": settings or {"kp": 0, "ki": 1},
+            "out": {"y": "u", "integral": "integral", "limited": "limited"},
+        }
+        if applied is not None:
+            pid["in"]["applied"] = applied
+        return {
+            "period": "1s",
+            "inputs": {"sp": {"max_age": "none"}, "ap": {"max_age": "none"}},
+            "blocks": [
+                pid,
+                {"id": "sat", "type": "formula", "in": {"u": "c.y"}, "settings": {"expr": clamp}, "out": {"y": "sat"}},
+            ],
+        }
+
+    def run(g, sps, ap=None):
+        e = Engine(g)
+        res = []
+        for k, sp in enumerate(sps):
+            e.write("sp", "good", sp, k * S)
+            if ap is not None and k < len(ap) and ap[k] is not None:
+                e.write("ap", ap[k][0], ap[k][1], k * S)
+            o = e.tick(k * S)[1]
+            res.append((o["u"][1], o["integral"][1]))
+        return res
+
+    # a clamp at 1.5 after the PID, and an error of 1. Not connected, the
+    # integral winds up against it:
+    got = run(applied_graph(None), [1.0] * 5)
+    check("applied: not connected", got, [(1.0, 1.0), (2.0, 2.0), (3.0, 3.0), (4.0, 4.0), (5.0, 5.0)])
+    # connected: at tick 1 y is 2 and 1.5 was applied, less than y with an
+    # addition more than zero: the addition is taken back, and from tick 2
+    # the integral is what it was before tick 1's: 1. What tick 1 gave is
+    # not changed. So it gives 2 on every tick and does not wind.
+    got = run(applied_graph("sat.y"), [1.0] * 5 + [-1.0] * 5)
+    check("applied: connected, up", got[:5], [(1.0, 1.0), (2.0, 2.0), (2.0, 2.0), (2.0, 2.0), (2.0, 2.0)])
+    # the error turns at tick 5: from 1 it comes down at once: 0, -1, and
+    # then -2 against -1.5 applied: more than y with an addition less than
+    # zero: taken back
+    check("applied: connected, down", got[5:], [(0.0, 0.0), (-1.0, -1.0), (-2.0, -2.0), (-2.0, -2.0), (-2.0, -2.0)])
+    # an addition away from what holds it is kept: applied is more than y
+    # with an addition more than zero. From an input: 9 on every tick.
+    got = run(applied_graph("ap"), [1.0] * 3, ap=[("good", 9.0)])
+    check("applied: more than y, going up", got, [(1.0, 1.0), (2.0, 2.0), (3.0, 3.0)])
+    # equal to y: kept (the comparison is exact)
+    got = run(applied_graph("ap"), [1.0] * 3, ap=[("good", 1.0), ("good", 2.0), ("good", 3.0)])
+    check("applied: equal to y", got, [(1.0, 1.0), (2.0, 2.0), (3.0, 3.0)])
+    # an `applied` that is not usable is not used; an uncertain one is
+    got = run(
+        applied_graph("ap"), [1.0] * 4, ap=[("good", 0.0), ("bad", None), ("uncertain", 0.0), ("not_ready", None)]
+    )
+    # tick 0: 1, taken back to 0. Tick 1: 1, kept (bad). Tick 2: 2, taken
+    # back to 1. Tick 3: 2, kept.
+    check("applied: unusable", got, [(1.0, 1.0), (1.0, 1.0), (2.0, 2.0), (2.0, 2.0)])
+    got = run(
+        applied_graph("ap"), [1.0] * 5, ap=[("good", 0.0), ("bad", None), ("uncertain", 0.0), ("not_ready", None)]
+    )
+    check("applied: unusable, next", got[4], (3.0, 3.0))
+    # a constant: a controller that is never let through
+    got = run(applied_graph(0), [1.0] * 3)
+    check("applied: a constant", got, [(1.0, 1.0), (1.0, 1.0), (1.0, 1.0)])
+    # an addition that was cut short is taken back too: ki 2, max 1.5: cut
+    # to 1.5; 1 applied: back to 0
+    g = applied_graph(1, {"kp": 0, "ki": 2, "max": 1.5})
+    e = Engine(g)
+    for k in range(3):
+        e.write("sp", "good", 1.0, k * S)
+        o = e.tick(k * S)[1]
+        check("applied: cut %d y" % k, o["u"], ("good", 1.5))
+        check("applied: cut %d integral" % k, o["integral"], ("good", 1.5))
+        check("applied: cut %d limited" % k, o["limited"], ("good", True))
+    # an addition of zero is not taken back: kp 1, ki 0
+    got = run(applied_graph(0, {"kp": 1}), [1.0] * 2)
+    check("applied: no addition", got, [(1.0, 0.0), (1.0, 0.0)])
+    # with a reset at the tick: what it was before the addition is zero
+    g2 = applied_graph("ap")
+    g2["inputs"]["r"] = {"type": "boolean", "max_age": "none"}
+    g2["blocks"][0]["in"]["reset"] = "r"
+    e = Engine(g2)
+    for k, (ap, r, want) in enumerate(((9.0, False, 1.0), (9.0, False, 2.0), (0.0, True, 1.0), (9.0, False, 1.0))):
+        e.write("sp", "good", 1.0, k * S)
+        e.write("ap", "good", ap, k * S)
+        e.write("r", "good", r, k * S)
+        check("applied: reset %d" % k, e.tick(k * S)[1]["integral"], ("good", want))
+    # `applied` is deferred: a rate limit after the PID, read back, is a
+    # loop through a deferred input and compiles. An error of 1, ki 1; the
+    # rate limit lets 0.25 a tick through from 0.
+    g = {
+        "period": "1s",
+        "blocks": [
+            {
+                "id": "c",
+                "type": "pid",
+                "in": {"setpoint": 1, "measurement": 0, "applied": "ramp.y"},
+                "settings": {"kp": 0, "ki": 1},
+                "out": {"y": "u", "integral": "integral"},
+            },
+            {
+                "id": "ramp",
+                "type": "rate_limit",
+                "in": {"x": "c.y"},
+                "settings": {"up": 0.25, "initial": 0},
+                "out": {"y": "ramp"},
+            },
+        ],
+    }
+    e = Engine(g)
+    check("applied deferred", e._blocks["c"].in_ports["applied"], ("number", False, False))
+    # tick 0: y 1, applied 0.25: back to 0. Each tick the same: y stays 1,
+    # and the ramp climbs to it: 0.25, 0.5, 0.75, 1. At tick 3 the ramp
+    # gives 1 = y: kept, and from tick 4 the integral goes on: 2, back.
+    want = [(1.0, 0.25), (1.0, 0.5), (1.0, 0.75), (1.0, 1.0), (2.0, 1.25), (2.0, 1.5)]
+    for k, (u, ramp) in enumerate(want):
+        o = e.tick(k * S)[1]
+        check("applied ramp %d u" % k, o["u"], ("good", u))
+        check("applied ramp %d ramp" % k, o["ramp"], ("good", ramp))
+    # applied_within: taken back only where `applied` is off by more than
+    # it. within 0.5, an error of 1, ki 1; binary-exact numbers.
+    for off, want in (
+        (0.5, [(1.0, 1.0), (2.0, 2.0), (3.0, 3.0)]),  # low by exactly 0.5: not more: kept
+        (0.75, [(1.0, 1.0), (1.0, 1.0), (1.0, 1.0)]),  # low by more: taken back
+        (-9.0, [(1.0, 1.0), (2.0, 2.0), (3.0, 3.0)]),  # high, going up: kept
+    ):
+        g = applied_graph("rb.y", {"kp": 0, "ki": 1, "applied_within": 0.5})
+        g["blocks"].append(
+            {
+                "id": "rb",
+                "type": "formula",
+                "in": {"u": "c.y"},
+                "settings": {"expr": "u - %r" % off if off > 0 else "u + 9"},
+            }
+        )
+        check("applied_within: off by %r" % off, run(g, [1.0] * 3), want)
+    # going down: more than y by more than it
+    for off, want in ((0.5, [(-1.0, -1.0), (-2.0, -2.0)]), (0.75, [(-1.0, -1.0), (-1.0, -1.0)])):
+        g = applied_graph("rb.y", {"kp": 0, "ki": 1, "applied_within": 0.5})
+        g["blocks"].append({"id": "rb", "type": "formula", "in": {"u": "c.y"}, "settings": {"expr": "u + %r" % off}})
+        check("applied_within: down, off by %r" % off, run(g, [-1.0] * 2), want)
+    # without it, a readback that is a little low takes every rising
+    # addition back, and the integral never grows
+    g = applied_graph("rb.y")
+    g["blocks"].append({"id": "rb", "type": "formula", "in": {"u": "c.y"}, "settings": {"expr": "u - 0.0009765625"}})
+    check("applied_within: none, a little low", run(g, [1.0] * 3), [(1.0, 1.0), (1.0, 1.0), (1.0, 1.0)])
+    Engine(applied_graph(None, {"kp": 1, "applied_within": 0}))
+    Engine(applied_graph(None, {"kp": 1, "applied_within": 2.5}))  # with `applied` not connected
+    refused("applied_within below zero", applied_graph("sat.y", {"kp": 1, "applied_within": -0.1}))
+    refused("applied_within not finite", applied_graph("sat.y", {"kp": 1, "applied_within": float("inf")}))
+    refused(
+        "applied: a boolean",
+        {
+            "period": "1s",
+            "blocks": [
+                {
+                    "id": "c",
+                    "type": "pid",
+                    "in": {"setpoint": 1, "measurement": 0, "applied": True},
+                    "settings": {"kp": 1},
+                }
+            ],
+        },
+    )
+
+
 def test_estimator():
     g = {
         "period": "1s",

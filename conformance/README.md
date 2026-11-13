@@ -20,10 +20,10 @@ the text says, not what it should say.
 | `contract.py` | Tries every short sequence of writes, calls, rebases, resets, saves and restores against what sections 6, 7.2 and 8 promise a host. |
 
 ```bash
-python3 conformance/run.py                 # 347 vectors: ALL AGREE
-python3 conformance/run.py --second        # 347 vectors: ALL AGREE
-python3 conformance/mutate.py              # 600 breakages: 600 noticed; every vector failed by one
-python3 conformance/compare.py             # 1939441 comparisons, 0 differences
+python3 conformance/run.py                 # 380 vectors: ALL AGREE
+python3 conformance/run.py --second        # 380 vectors: ALL AGREE
+python3 conformance/mutate.py              # 661 breakages: 661 noticed; every vector failed by one
+python3 conformance/compare.py             # 2165816 comparisons, 0 differences
 python3 conformance/contract.py            # 748648 sequences: ALL HOLD
 python3 conformance/contract.py --second   # 748648 sequences: ALL HOLD
 python3 conformance/mutate.py --contract   # 170 breakages of sections 6, 7.2 and 8: contract.py notices 93
@@ -494,6 +494,47 @@ refusals at compile, `max_waiting` and a `max_ahead` other than the
 default, a value that is not finite, the 64-bit edge, and two that need
 five steps to reach. Its docstring lists these. The vectors notice all
 170.
+
+## Amendment 7: a rate limit and a PID
+
+The first blocks added since the catalogue was drawn up. Each of the 33
+new vectors was worked from the rule's formula in plain arithmetic and
+written down before the reference was run on it, and the reference agreed
+with the first 21 as first written. What changed along the way, each from
+a run and not from reading:
+
+- **An integral that stopped short of the limit.** As first written an
+  addition that would pass a limit was not made, and the output sat at 8
+  under a limit of 10 with a standing error. Rule 7.7.6 cuts the addition
+  so that the output is at the limit. `pid-limits`.
+- **Windup behind a rate limit.** A PID through a rate limit of 2 a second
+  into a first-order plant, on a step of 50, overshot by 20 and had not
+  settled in 400 ticks: the PID sees its own limits and nothing after it.
+  Rule 7.7.12 gives it an input for what was applied, and with it the
+  overshoot is 0.02 and it settles in 39 ticks; the same at periods from
+  a hundredth of the plant's time constant to twice it.
+  `pid-applied`, `pid-applied-from-a-rate-limit`.
+- **A readback that is not exact froze the integral.** With that input
+  off by one part in 10¹², low, every rising addition was taken back and
+  the plant sat at 41.7 against a setpoint of 50, all `good`.
+  `applied_within` is the tolerance. `pid-applied-within`.
+- **A rate limit did not limit its first move**: 0 to 100 in a tick at a
+  limit of 5 a second. `initial` gives it somewhere to start, and to go
+  back to when it forgets. `rate-limit-initial`.
+- **A gap that passed over no tick restarted the derivative** in the
+  reference. The second reading, from the text, did not.
+  `pid-gap-of-no-ticks`.
+
+The loop was also run against one written out by hand from the rules, at
+periods of a hundredth, a tenth, a half and twice the plant's time
+constant, and agreed to 6e-13 over 300 ticks. `compare.py` has three
+graphs more: a rate limit, a PID with every setting, and a PID on a loop
+with a process through a rate limit it reads back.
+
+`second/ASSUMPTIONS-amendment-7.md` lists where the text left the second
+reading a choice. Section 7.11 of the proposal lists what the two blocks
+give up; no vector shows a loop winding up or bumping, since those are
+runs of many ticks and not rules.
 
 ## What this does not cover
 

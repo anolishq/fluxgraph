@@ -1,0 +1,17 @@
+# 7.4.10, 7.4.11: with a usable input the output and limited take the
+# input's state. With an unusable one it holds for ride_through, uncertain,
+# and limited takes the input's state; then it forgets, and takes its next
+# input as it is. After riding through it still moves one period's worth.
+rules: [7.4.10, 7.4.11, 7.4.9]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x}, settings: {up: 1, ride_through: 1s}, out: {y: y, limited: lim}}
+calls:
+  - {x: 0, y: 0, lim: false}
+  - {x: {state: uncertain, v: 3}, y: {u: 1}, lim: {u: true}}
+  - {x: bad, y: {u: 1}, lim: bad}
+  - {x: 5, y: 2, lim: true}
+  - {x: not_ready, y: {u: 2}, lim: not_ready}
+  - {x: bad, y: bad, lim: bad}
+  - {x: 10, y: 10, lim: false}

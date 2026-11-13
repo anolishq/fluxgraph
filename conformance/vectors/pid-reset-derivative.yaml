@@ -1,0 +1,11 @@
+# 7.7.10: a reset returns the derivative to its start as well.
+rules: [7.7.10, 7.7.7]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}, r: {type: boolean, max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, reset: r}, settings: {kp: 0, kd: 2, filter: 1s}, out: {y: y}}
+calls:
+  - {sp: 0, pv: 0, r: false, y: 0}
+  - {pv: 1, y: -1.2642411176571153}
+  - {pv: 2, r: true, y: 0}
+  - {pv: 3, r: false, y: -1.2642411176571153}

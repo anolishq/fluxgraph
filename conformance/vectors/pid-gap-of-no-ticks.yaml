@@ -1,0 +1,12 @@
+# 8.6: a gap that passed over no tick adds one to gaps and does nothing
+# else: the derivative goes on from the tick before.
+rules: [8.6, 7.7.7]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 0, kd: 2, filter: 1s}, out: {y: y, gaps: gaps}}
+calls:
+  - {now: 0, sp: 0, pv: 0, y: 0, gaps: 0}
+  - {now: 1, pv: 1, y: -1.2642411176571153, gaps: 0}
+  - {$rebase: 0}
+  - {now: 70, gap: true, skipped: 0, tick: 2, sp: 0, pv: 1, y: -0.46508831586965926, gaps: 1}

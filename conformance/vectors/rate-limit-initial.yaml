@@ -1,0 +1,19 @@
+# 7.4.9, 7.4.11, 8.6: with initial given a rate limit holds it from the
+# start, and its first input is limited from it. Holding initial alone it
+# does not ride through. Having forgotten, past ride_through or after a
+# gap of no known length, it holds initial again.
+rules: [7.4.9, 7.4.11, 8.6]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x}, settings: {up: 2, initial: 0, ride_through: 1s}, out: {y: y, limited: lim}}
+calls:
+  - {y: not_ready, lim: not_ready}
+  - {x: 10, y: 2, lim: true}
+  - {y: 4, lim: true}
+  - {x: bad, y: {u: 4}, lim: bad}
+  - {y: bad, lim: bad}
+  - {x: 10, y: 2, lim: true}
+  - {y: 4, lim: true}
+  - {$rebase: true}
+  - {now: 100, gap: true, skipped: unknown, x: 10, y: 2, lim: true}

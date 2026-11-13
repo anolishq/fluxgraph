@@ -1,0 +1,11 @@
+# 7.7.6, 7.7.9: an addition that puts the output exactly at max is made
+# whole, and limited is false; one more is cut, and limited is true.
+rules: [7.7.6, 7.7.9]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 0, ki: 1, max: 4}, out: {y: y, integral: i, limited: lim}}
+calls:
+  - {sp: 2, pv: 0, y: 2, i: 2, lim: false}
+  - {y: 4, i: 4, lim: false}
+  - {y: 4, i: 4, lim: true}

@@ -1,0 +1,17 @@
+# 7.7.7: the derivative is of the measurement, filtered: with a filter of
+# one period a is exp(-1). A step of the setpoint gives none. After an
+# unusable tick there is no tick before, and it starts again from zero.
+rules: [7.7.7, 7.7.5]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 0, kd: 2, filter: 1s}, out: {y: y}}
+calls:
+  - {sp: 0, pv: 0, y: 0}
+  - {pv: 1, y: -1.2642411176571153}
+  - {y: -0.46508831586965926}
+  - {pv: 3, y: -2.699578665051728}
+  - {sp: 100, y: -0.9931194906975781}
+  - {pv: bad, y: bad}
+  - {pv: 7, y: 0}
+  - {pv: 8, y: -1.2642411176571153}

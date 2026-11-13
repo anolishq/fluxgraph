@@ -1,0 +1,19 @@
+# 7.7.12: where what was applied fell short of y the way the addition
+# went, the addition is taken back: the integral is what it was before the
+# tick, from the next tick. The tick's own outputs are not changed. An
+# applied past y the other way, one that is not usable, and a tick with an
+# addition of zero take nothing back.
+rules: [7.7.12, 7.7.6]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}, ap: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, applied: ap}, settings: {kp: 0, ki: 1}, out: {y: y, integral: i}}
+calls:
+  - {sp: 2, pv: 0, ap: 2, y: 2, i: 2}
+  - {ap: 3, y: 4, i: 4}        # 3 is short of 4: back to 2
+  - {ap: 5, y: 4, i: 4}        # 5 is past 4: kept
+  - {sp: -1, ap: 3.5, y: 3, i: 3}  # going down, 3.5 is short of 3: back to 4
+  - {ap: 2, y: 3, i: 3}
+  - {ap: bad, y: 2, i: 2}
+  - {sp: 0, ap: 0, y: 2, i: 2}   # nothing added, nothing to take back
+  - {sp: 1, ap: 9, y: 3, i: 3}

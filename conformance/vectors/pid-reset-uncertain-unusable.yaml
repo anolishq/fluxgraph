@@ -1,0 +1,11 @@
+# 7.7.9: the integral is uncertain on a tick where reset is uncertain and
+# true, with an unusable input too.
+rules: [7.7.9, 7.7.10]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}, r: {type: boolean, max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, reset: r}, settings: {kp: 0, ki: 1}, out: {y: y, integral: i}}
+calls:
+  - {sp: 1, pv: 0, r: false, y: 1, i: 1}
+  - {pv: bad, r: {state: uncertain, v: true}, y: bad, i: {u: 0}}
+  - {pv: 0, r: false, y: 1, i: 1}

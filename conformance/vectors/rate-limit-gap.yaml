@@ -1,0 +1,16 @@
+# 8.6: at a gap a rate limit does what a deadband does. One that rides
+# through 2 s holds across two ticks passed over and moves one period's
+# worth on the tick that runs; one that rides through 1 s has forgotten,
+# and so have both after a gap of no known length.
+rules: [8.6, 7.4.11]
+period: 1s
+max_catch_up: 2
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: a, type: rate_limit, in: {x: x}, settings: {up: 1, ride_through: 2s}, out: {y: held}}
+  - {id: b, type: rate_limit, in: {x: x}, settings: {up: 1, ride_through: 1s}, out: {y: forgot}}
+calls:
+  - {now: 0, x: 0, held: 0, forgot: 0}
+  - {now: 3, gap: true, skipped: 2, tick: 3, x: 5, held: 1, forgot: 5}
+  - {$rebase: true}
+  - {now: 100, gap: true, skipped: unknown, tick: 4, x: 9, held: 9, forgot: 9}

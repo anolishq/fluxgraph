@@ -1,0 +1,12 @@
+# 7.7.7: the difference is over the period, and a is exp(-period / filter):
+# at 500 ms with a filter of 2 s, a step of 1 is a slope of 2 and a is
+# exp(-0.25).
+rules: [7.7.7]
+period: 500ms
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 0, kd: 2, filter: 2s}, out: {y: y}}
+calls:
+  - {sp: 0, pv: 0, y: 0}
+  - {pv: 1, y: -0.8847968677143805}
+  - {y: -0.6890804934350857}

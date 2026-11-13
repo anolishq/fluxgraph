@@ -8,7 +8,8 @@ ASSUMPTIONS-amendment-2.md, for Amendment 3 (gaps) in
 ASSUMPTIONS-amendment-3.md, for Amendment 4 (models) in
 ASSUMPTIONS-amendment-4.md, for Amendment 5 (the estimator) in
 ASSUMPTIONS-amendment-5.md, and for Amendment 6 (the whole text, read cold)
-in ASSUMPTIONS-amendment-6.md.
+in ASSUMPTIONS-amendment-6.md, and for Amendment 7 (a rate limit and a PID)
+in ASSUMPTIONS-amendment-7.md.
 
 Every time is a whole number of nanoseconds, held as an int (rule 6.2).
 """
@@ -977,6 +978,68 @@ class Lowpass(Block):
         return {"y": out(x[0])}
 
 
+class RateLimit(Block):
+    SETTINGS = ("up", "down", "ride_through", "initial")
+
+    def configure(self, in_map):
+        self.in_ports["x"] = (NUMBER, True, True)
+        self.out_ports["y"] = NUMBER
+        self.out_ports["limited"] = BOOLEAN
+        self.up = s_num(self, self.st, "up")
+        if self.up < 0:
+            raise self.err("setting 'up' must not be negative")
+        self.down = s_num(self, self.st, "down", self.up)
+        if self.down < 0:
+            raise self.err("setting 'down' must not be negative")
+        self.rt = s_counted(self, self.st, "ride_through", 0)
+        self.initial = s_num(self, self.st, "initial", None)
+
+    def reset(self):
+        # held: the value it holds, or None; given: it holds a value it
+        # gave, and not `initial` alone
+        self.s = {"held": self.initial, "m": 0, "given": False}
+
+    def _forget(self):
+        # having forgotten, it holds `initial` again if it was given one
+        self.s["held"] = self.initial
+        self.s["m"] = 0
+        self.s["given"] = False
+
+    def gap(self, g, n):
+        s = self.s
+        if not s["given"]:
+            return
+        if n is not None and s["m"] + n <= self.rt:
+            s["m"] += n  # it rides through the ticks passed over
+        else:
+            self._forget()
+
+    def output(self, k, t, ins):
+        s = self.s
+        x = ins["x"]
+        if usable(x[0]):
+            s["m"] = 0
+            h = s["held"]
+            if h is None:
+                h = x[1]  # a first input is taken as it is
+            elif x[1] > h:
+                reach = self.up * self.ctx.period
+                h = x[1] if x[1] - h <= reach else h + reach
+            elif x[1] < h:
+                reach = self.down * self.ctx.period
+                h = x[1] if h - x[1] <= reach else h - reach
+            s["held"] = h
+            s["given"] = True
+            return {"y": out(x[0], h), "limited": out(x[0], h != x[1])}
+        # holding `initial` and nothing else it does not ride through
+        if s["given"]:
+            s["m"] += 1
+            if s["m"] <= self.rt:
+                return {"y": out(UNC, s["held"]), "limited": out(x[0])}
+            self._forget()
+        return {"y": out(x[0]), "limited": out(x[0])}
+
+
 class Hysteresis(Block):
     SETTINGS = ("rise", "fall", "initial")
 
@@ -1278,6 +1341,162 @@ class Integrate(Block):
             "elapsed": out(GOOD, s["run"] * period),
             "gaps": out(GOOD, float(s["gaps"])),
         }
+
+
+class Pid(Block):
+    SETTINGS = ("kp", "ki", "kd", "filter", "min", "max", "applied_within")
+    has_update = True
+
+    def configure(self, in_map):
+        self.in_ports["setpoint"] = (NUMBER, True, True)
+        self.in_ports["measurement"] = (NUMBER, True, True)
+        self.in_ports["reset"] = (BOOLEAN, False, True)
+        self.in_ports["applied"] = (NUMBER, False, False)  # deferred
+        self.out_ports["y"] = NUMBER
+        self.out_ports["integral"] = NUMBER
+        self.out_ports["limited"] = BOOLEAN
+        for p in ("elapsed", "doubtful", "gaps"):
+            self.out_ports[p] = NUMBER
+        self.kp = s_num(self, self.st, "kp")
+        self.ki = s_num(self, self.st, "ki", 0.0)
+        self.kd = s_num(self, self.st, "kd", 0.0)
+        if self.kd != 0:
+            filt = s_length(self, self.st, "filter")
+            if not filt > 0:
+                raise self.err("setting 'filter' must be more than zero")
+            self.a = math.exp(-self.ctx.period / filt)
+        elif "filter" in self.st:
+            raise self.err("setting 'filter' is refused without a 'kd' that is not zero")
+        self.lo = s_num(self, self.st, "min", None)
+        self.hi = s_num(self, self.st, "max", None)
+        if self.lo is not None and self.hi is not None and not self.lo < self.hi:
+            raise self.err("setting 'min' must be less than 'max'")
+        self.within = s_num(self, self.st, "applied_within", 0.0)
+        if self.within < 0:
+            raise self.err("setting 'applied_within' must not be negative")
+
+    def reset(self):
+        # prev: the measurement of the tick before, or None where the
+        # derivative is at its start; run, doubtful, gaps: since its last reset
+        # made: this tick's addition, for `applied` in the second phase:
+        # (the integral before it, the addition, y), or None
+        self.s = {
+            "integral": 0.0,
+            "f": 0.0,
+            "prev": None,
+            "run": 0,
+            "doubtful": 0,
+            "gaps": 0,
+            "gap_at": None,
+            "made": None,
+        }
+
+    def gap(self, g, n):
+        s = self.s
+        s["gaps"] += 1
+        s["gap_at"] = g
+        if n == 0:
+            return  # none passed over: nothing but one to gaps (rule 8.6)
+        s["prev"] = None  # the derivative starts again (rule 7.7.7)
+        if n is not None:
+            s["run"] += n
+            s["doubtful"] += n
+
+    def output(self, k, t, ins):
+        s = self.s
+        sp = ins["setpoint"]
+        me = ins["measurement"]
+        rs = ins.get("reset")
+        reset_unc = False
+        if rs is not None and usable(rs[0]) and rs[1]:
+            gap_at = s["gap_at"]
+            self.reset()
+            s = self.s
+            s["gap_at"] = gap_at
+            s["gaps"] = 1 if gap_at == k else 0
+            reset_unc = rs[0] == UNC
+        s["run"] += 1
+        s["made"] = None
+        if sp[0] != GOOD or me[0] != GOOD:
+            s["doubtful"] += 1
+        period = self.ctx.period
+        res = {
+            "elapsed": out(GOOD, s["run"] * period),
+            "doubtful": out(GOOD, s["doubtful"] * period),
+            "gaps": out(GOOD, float(s["gaps"])),
+        }
+        st = worst([sp[0], me[0]])
+        if not usable(st):
+            # a controller does not drive on a value it did not see. The
+            # integral is kept, and the derivative starts again
+            s["prev"] = None
+            res["y"] = out(st)
+            res["limited"] = out(st)
+            res["integral"] = out(UNC if reset_unc else GOOD, s["integral"])
+            return res
+        error = sp[1] - me[1]
+        # the derivative, of the measurement, through its filter
+        derivative = 0.0
+        if self.kd != 0:
+            if s["prev"] is None:
+                s["f"] = 0.0  # there is no tick before
+            else:
+                slope = (me[1] - s["prev"]) / period
+                s["f"] = self.a * s["f"] + (1 - self.a) * slope
+            derivative = -self.kd * s["f"]
+        s["prev"] = me[1]
+        # the integral: an addition that would put the output before
+        # limiting past a limit is cut short (rule 7.7.6)
+        add = self.ki * error * period
+        before = s["integral"]
+        raw = self.kp * error + (s["integral"] + add) + derivative
+        cut = False
+        if self.hi is not None and add > 0 and raw > self.hi:
+            # what puts that output at max, or as it is if that is less;
+            # and y is max
+            cut = True
+            at = self.hi - self.kp * error - derivative
+            if at > s["integral"]:
+                s["integral"] = at
+            raw = self.hi
+        elif self.lo is not None and add < 0 and raw < self.lo:
+            cut = True
+            at = self.lo - self.kp * error - derivative
+            if at < s["integral"]:
+                s["integral"] = at
+            raw = self.lo
+        else:
+            s["integral"] += add
+            raw = self.kp * error + s["integral"] + derivative
+        y = raw
+        limited = cut
+        if self.hi is not None and raw > self.hi:
+            y, limited = self.hi, True
+        if self.lo is not None and raw < self.lo:
+            y, limited = self.lo, True
+        if reset_unc:
+            st = UNC
+        res["y"] = out(st, y)
+        res["limited"] = out(st, limited)
+        res["integral"] = out(st, s["integral"])
+        s["made"] = (before, add, y)
+        return res
+
+    def update(self, k, t, ins):
+        # what was applied (rule 7.7.12): where it fell short of y the way
+        # the addition went, the addition is taken back
+        s = self.s
+        made = s["made"]
+        s["made"] = None
+        ap = ins.get("applied")
+        if made is None or ap is None or not usable(ap[0]):
+            return
+        before, add, y = made
+        if not math.isfinite(y):
+            return
+        # less than y, or more, by more than `applied_within`
+        if (add > 0 and y - ap[1] > self.within) or (add < 0 and ap[1] - y > self.within):
+            s["integral"] = before
 
 
 # ------------------------------------------------------------------ models
@@ -2179,6 +2398,8 @@ BLOCK_TYPES = {
     "since_true": SinceTrue,
     "latch": Latch,
     "integrate": Integrate,
+    "rate_limit": RateLimit,
+    "pid": Pid,
     "estimator": Estimator,
 }
 for _model_type in MODELS:

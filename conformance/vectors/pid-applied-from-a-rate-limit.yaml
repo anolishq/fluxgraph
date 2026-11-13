@@ -1,0 +1,16 @@
+# 7.7.12, 5.3: a rate limit after a PID, read back as applied. The input
+# is deferred, so the loop compiles. While the rate limit is short of the
+# PID's output the integral does not grow.
+rules: [7.7.12, 5.3, 7.4.9]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, applied: slew.y}, settings: {kp: 0, ki: 1}, out: {y: y}}
+  - {id: slew, type: rate_limit, in: {x: c.y}, settings: {up: 1, initial: 0}, out: {y: act}}
+calls:
+  - {sp: 3, pv: 0, y: 3, act: 1}
+  - {y: 3, act: 2}
+  - {y: 3, act: 3}
+  - {y: 6, act: 4}
+  - {y: 6, act: 5}
+  - {y: 6, act: 6}
