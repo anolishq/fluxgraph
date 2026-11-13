@@ -9,7 +9,8 @@ ASSUMPTIONS-amendment-3.md, for Amendment 4 (models) in
 ASSUMPTIONS-amendment-4.md, for Amendment 5 (the estimator) in
 ASSUMPTIONS-amendment-5.md, and for Amendment 6 (the whole text, read cold)
 in ASSUMPTIONS-amendment-6.md, and for Amendment 7 (a rate limit and a PID)
-in ASSUMPTIONS-amendment-7.md.
+in ASSUMPTIONS-amendment-7.md, and for Amendment 8 in
+ASSUMPTIONS-amendment-8.md.
 
 Every time is a whole number of nanoseconds, held as an int (rule 6.2).
 """
@@ -364,6 +365,25 @@ class _Parser:
         raise _FormulaError("unexpected %r" % (val,))
 
 
+_MAX_DEPTH = 200  # how deep a formula may nest (Appendix A asks for 100 at least)
+
+
+def _depth(node):
+    """How deep the operators and functions of a formula nest, without
+    recursion."""
+    deepest = 0
+    stack = [(node, 0)]
+    while stack:
+        nd, d = stack.pop()
+        deepest = max(deepest, d)
+        for child in nd[1:]:
+            if isinstance(child, tuple):
+                stack.append((child, d + 1))
+            elif isinstance(child, list):
+                stack.extend((c, d + 1) for c in child)
+    return deepest
+
+
 def _names(node, acc):
     if node[0] == "name":
         acc.add(node[1])
@@ -654,7 +674,12 @@ class Formula(Block):
             toks = _tokenize(expr)
             if len(toks) == 1:
                 raise _FormulaError("the formula is empty")
-            self.ast = _Parser(toks).parse()
+            try:
+                self.ast = _Parser(toks).parse()
+            except RecursionError:
+                raise _FormulaError("it is nested deeper than this engine reads")
+            if _depth(self.ast) > _MAX_DEPTH:
+                raise _FormulaError("it is nested more than %d deep" % _MAX_DEPTH)
         except _FormulaError as e:
             raise self.err("setting 'expr': %s" % e)
         used = _names(self.ast, set())
@@ -1293,6 +1318,10 @@ class Integrate(Block):
         self.per = s_length(self, self.st, "per", 1.0)
         if not self.per > 0:
             raise self.err("setting 'per' must be more than zero")
+        # the ratio of the period to `per`: worked once, exactly, and then
+        # taken as a double (Appendix A)
+        per_ns = parse_length("block %r setting 'per'" % self.id, self.st["per"]) if "per" in self.st else Fraction(_NS)
+        self.ratio = float(Fraction(self.ctx.period_ns) / per_ns)
         self.max_missed = s_counted(self, self.st, "max_missed", None)
 
     def reset(self):
@@ -1322,7 +1351,7 @@ class Integrate(Block):
             reset_unc = rs[0] == UNC
         s["run"] += 1
         if usable(x[0]):
-            s["total"] += x[1] * self.ctx.period / self.per
+            s["total"] += x[1] * self.ratio
             if x[0] == UNC:
                 s["unc"] += 1
         else:

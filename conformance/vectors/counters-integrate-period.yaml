@@ -1,5 +1,5 @@
-# 7.7.4: missed, doubtful and elapsed are in seconds. The period is 500 ms.
-rules: [7.7.4]
+# 7.7.3: missed, doubtful and elapsed are in seconds. The period is 500 ms.
+rules: [7.7.3]
 period: 500ms
 inputs: {x: {max_age: none}}
 blocks:

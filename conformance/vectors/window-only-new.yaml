@@ -1,7 +1,7 @@
 # 7.3.8: with only_new a tick holds a sample only when the input's sample
 # time has moved on. min_good of 0.3 over three ticks needs one good sample;
 # a good window gives the statistics of its good samples alone.
-rules: [7.3.7, 7.3.3]
+rules: [7.3.8, 7.3.3]
 period: 1s
 inputs: {x: {max_age: none}}
 blocks:
