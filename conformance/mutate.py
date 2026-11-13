@@ -12,12 +12,21 @@ to put in its place; an entry may give several such pairs. Each piece has to
 occur exactly once. Exits 1 if any breakage passes every vector, or if an
 entry no longer matches the file. Also lists the vectors that no breakage
 failed. Writes only to a temporary directory.
+
+  python3 conformance/mutate.py --contract
+
+runs contract.py in place of the vectors on the breakages of sections 6, 7.2
+and 8, and says which of them it notices by itself. It checks the host
+contract on one small graph, so a breakage of what some other block does at
+a gap is not its to notice, and this exits 1 only for an entry out of date.
 """
 
 # ruff: noqa: E501 - the entries quote lines of reference.py as they are
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -212,14 +221,12 @@ MUTATIONS = [
      'ports = {"x": (None, True, False)}\n    typed_late = True\n    own_at = True',
      'ports = {"x": (None, True, False)}\n    typed_late = True\n    own_at = False'),
     ("7.3.2 min_good ignored: every sample required",
-     'self.need = max(1, round_up(self.s["min_good"] * self.n))', "self.need = self.n"),
+     'self.need = max(1, math.ceil(Fraction(str(self.s["min_good"])) * self.n))', "self.need = self.n"),
     ("7.3.2 min_good ignored: one sample is enough",
-     'self.need = max(1, round_up(self.s["min_good"] * self.n))', "self.need = 1"),
+     'self.need = max(1, math.ceil(Fraction(str(self.s["min_good"])) * self.n))', "self.need = 1"),
     ("7.3.2 min_good times n rounded as it comes out in binary",
-     'self.need = max(1, round_up(self.s["min_good"] * self.n))',
+     'self.need = max(1, math.ceil(Fraction(str(self.s["min_good"])) * self.n))',
      'self.need = max(1, math.ceil(self.s["min_good"] * self.n))'),
-    ("7.3.2 a window may need no samples",
-     'self.need = max(1, round_up(self.s["min_good"] * self.n))', 'self.need = round_up(self.s["min_good"] * self.n)'),
     ("7.3.1 a window keeps one sample too many",
      "self.buf, self.last_at = collections.deque(maxlen=self.n), None",
      "self.buf, self.last_at = collections.deque(maxlen=self.n + 1), None"),
@@ -235,8 +242,8 @@ MUTATIONS = [
     ("7.4.5 the ticks a low-pass missed do not decay",
      "self.y = self.a**m * self.y + (1 - self.a**m) * x.v", "self.y = self.a * self.y + (1 - self.a) * x.v"),
     ("7.4.8 settle is one time constant",
-     'self.s["settle"] = round_up(3 * float(self.s["tau"]) / self.period)',
-     'self.s["settle"] = round_up(float(self.s["tau"]) / self.period)'),
+     'self.s["settle"] = math.ceil(3 * self.s["tau"] / a[1])',
+     'self.s["settle"] = math.ceil(self.s["tau"] / a[1])'),
     ("7.4.6 a low-pass does not ride through",
      '            if self.y is not None and k - self.seen <= self.s["ride_through"]:', "            if False:"),
     ("7.4.6 a low-pass's ride_through one tick short",
@@ -277,9 +284,9 @@ MUTATIONS = [
      "        if False:\n            return Val(BAD)"),
     ("6.11 a refused call still moves the last time",
      "        if self.last_now is not None and now < self.last_now:\n"
-     '            raise ValueError("the time passed to tick does not go backwards")\n        self.last_now = now',
+     '            raise ValueError("the time passed to tick does not go backwards")\n',
      "        previous, self.last_now = self.last_now, now\n        if previous is not None and now < previous:\n"
-     '            raise ValueError("the time passed to tick does not go backwards")'),
+     '            raise ValueError("the time passed to tick does not go backwards")\n'),
     ("6.11 a call with the same time is refused",
      "if self.last_now is not None and now < self.last_now:", "if self.last_now is not None and now <= self.last_now:"),
     ("6.5 tick 0 is at time zero", "            self.zero = self.since = now", "            self.zero = self.since = 0.0"),
@@ -287,9 +294,9 @@ MUTATIONS = [
      "        inputs = {name: self._input(name, k, t) for name in self.inputs}",
      "        inputs = {name: self._input(name, k, self.last_now) for name in self.inputs}"),
     ("6.7 after a gap ticks stay on the old grid",
-     "            self.zero, self.since = now - self.k * self.period, now", "            self.since = now"),
+     "            self.zero, self.since, self.rebased = now - self.k * self.period, now, True", "            self.since, self.rebased = now, True"),
     ("8.4 a gap does not start how long the graph has run again",
-     "            self.zero, self.since = now - self.k * self.period, now", "            self.zero = now - self.k * self.period"),
+     "            self.zero, self.since, self.rebased = now - self.k * self.period, now, True", "            self.zero, self.rebased = now - self.k * self.period, True"),
     ("7.10 a fallback is seen only outside the graph",
      "                    if port in self.fallback[bid]:  # 7.10",
      "                    if port in self.fallback[bid] and (bid, port) in self.published.values():  # 7.10"),
@@ -312,7 +319,7 @@ MUTATIONS = [
     ("9.5 two blocks with one id accepted",
      "if not all(isinstance(i, str) and i for i in ids) or len(set(ids)) != len(ids):", "if not all(isinstance(i, str) and i for i in ids):"),
     ("6.9 a max_catch_up of zero accepted",
-     "if isinstance(self.max_catch_up, bool) or not isinstance(self.max_catch_up, int) or self.max_catch_up < 1:", "if False:"),
+     "if not 1 <= self.max_catch_up <= MOST:", "if self.max_catch_up > MOST:"),
     ("9.5 an unknown output port accepted",
      "                if port not in block.outputs:\n                    raise CompileError(f\"{where}: no output {port!r}\")",
      "                if False:\n                    pass"),
@@ -349,12 +356,12 @@ MUTATIONS = [
      "if not is_number(value) or value < least or (strict and value == least):", "if not is_number(value) or value < least:"),
     # ---- amendment 1: time and the host interface
     ("7.2.1 an initial value never expires",
-     '            if spec["initial"] is not None and ran <= spec["max_age"]:', '            if spec["initial"] is not None:'),
+     '            if spec["initial"] is not None and ran <= spec["max_age"] and not self.rebased:', '            if spec["initial"] is not None and not self.rebased:'),
     ("7.2.1 an initial value is ignored",
-     '            if spec["initial"] is not None and ran <= spec["max_age"]:', "            if False:"),
+     '            if spec["initial"] is not None and ran <= spec["max_age"] and not self.rebased:', "            if False:"),
     ("7.2.1 an initial value expires a tick early",
-     '            if spec["initial"] is not None and ran <= spec["max_age"]:',
-     '            if spec["initial"] is not None and ran < spec["max_age"]:'),
+     '            if spec["initial"] is not None and ran <= spec["max_age"] and not self.rebased:',
+     '            if spec["initial"] is not None and ran < spec["max_age"] and not self.rebased:'),
     ("3.4 an unwritten input reads as zero",
      '            return Val(BAD) if ran > spec["max_age"] else Val(NOT_READY)', "            return Val(GOOD, 0.0)"),
     ("7.2.1 an unwritten input never turns bad",
@@ -393,9 +400,9 @@ MUTATIONS = [
     ("8.5 at a rebase blocks keep the sample times they remember",
      "            for block in self.blocks.values():\n                block.forget_times()\n", ""),
     ("8.5 a rebase does not start how long the graph has run again",
-     "            self.zero, self.since = now - self.k * self.period, now", "            self.zero = now - self.k * self.period"),
+     "            self.zero, self.since, self.rebased = now - self.k * self.period, now, True", "            self.zero, self.rebased = now - self.k * self.period, True"),
     ("8.5 after a rebase ticks stay on the old grid",
-     "            self.zero, self.since = now - self.k * self.period, now", "            self.since = now"),
+     "            self.zero, self.since, self.rebased = now - self.k * self.period, now, True", "            self.since, self.rebased = now, True"),
     ("8.5 a rebase keeps what was written before it",
      "        self.pending = {name: [] for name in self.inputs}  # 8 rule 5: what was written before is done with\n", ""),
     ("8.1 reset keeps the time of tick 0",
@@ -457,8 +464,8 @@ MUTATIONS = [
     ("8.5 a rebase before any tick makes the first call a gap",
      "        if self.zero is None and self.k == 0:\n            return  # nothing has run", "        if False:\n            return  # nothing has run"),
     ("8.5 at a rebase the tick is put on the old grid's next whole period",
-     "            self.zero, self.since = now - self.k * self.period, now",
-     "            self.zero = self.since = now - self.k * self.period - now % self.period"),
+     "            self.zero, self.since, self.rebased = now - self.k * self.period, now, True",
+     "            self.zero = self.since = now - self.k * self.period - now % self.period\n            self.rebased = True"),
     ("6.11 a call that runs no tick does not count as the last call",
      "            if due == 0:\n                self.info = None\n                return 0, None",
      "            if due == 0:\n                self.info = None\n"
@@ -488,8 +495,8 @@ MUTATIONS = [
     ("6.8 a write thrown away for being ahead is not counted",
      "            self.thrown += len(writes) - len(self.pending[name])\n", ""),
     ("6.8 a max_waiting of zero accepted",
-     "        if isinstance(self.max_waiting, bool) or not isinstance(self.max_waiting, int) or self.max_waiting < 1:",
-     "        if False:"),
+     "        if not 1 <= self.max_waiting <= MOST:",
+     "        if self.max_waiting > MOST:"),
     ("7.2 a maximum age under half a period accepted",
      "            if 2 * max_age < self.period or 2 * max_ahead < self.period:  # 7.2, and 6 rule 8",
      "            if 2 * max_ahead < self.period:  # 7.2, and 6 rule 8"),
@@ -944,14 +951,14 @@ MUTATIONS = [
      "            if self.away is not None:  # the ticks",
      "            if False:  # the ticks"),
     ("8.5 the length of a rebase is rounded down",
-     "skipped = max(0, (2 * self.away + self.period) // (2 * self.period) - 1)",
-     "skipped = max(0, self.away // self.period - 1)"),
+     "return max(0, (2 * self.away + self.period) // (2 * self.period) - 1)",
+     "return max(0, self.away // self.period - 1)"),
     ("8.5 half a period of a rebase's length rounds down",
-     "skipped = max(0, (2 * self.away + self.period) // (2 * self.period) - 1)",
-     "skipped = max(0, (2 * self.away + self.period - 1) // (2 * self.period) - 1)"),
+     "return max(0, (2 * self.away + self.period) // (2 * self.period) - 1)",
+     "return max(0, (2 * self.away + self.period - 1) // (2 * self.period) - 1)"),
     ("8.5 every tick due in a rebase's length is passed over",
-     "skipped = max(0, (2 * self.away + self.period) // (2 * self.period) - 1)",
-     "skipped = max(0, (2 * self.away + self.period) // (2 * self.period))"),
+     "return max(0, (2 * self.away + self.period) // (2 * self.period) - 1)",
+     "return max(0, (2 * self.away + self.period) // (2 * self.period))"),
     ("8.5 a rebase with a length does not move the tick's number",
      "                self.k += skipped\n",
      ""),
@@ -1522,8 +1529,8 @@ MUTATIONS = [
      "                doubt = doubt or sum(self.recent[port]) / self.over > self.limit",
      "                doubt = doubt or max(self.recent[port]) > self.limit"),
     ("7.9.6 a consistency over no measurements is accepted",
-     "test[\"over\"] >= 1",
-     "test[\"over\"] >= 0"),
+     "1 <= test[\"over\"] <= MOST",
+     "0 <= test[\"over\"] <= MOST"),
     ("7.9.7 a refusal leaves its tick good",
      "                        take, doubt = False, True\n                        self.refused[port] += 1",
      "                        take = False\n                        self.refused[port] += 1"),
@@ -1672,11 +1679,76 @@ MUTATIONS = [
     ("A.estimator an r_uncertain less than r is accepted",
      "if wide is not None and (not is_number(wide) or wide < m[\"r\"]):",
      "if wide is not None and not is_number(wide):"),
+    # ---- the sixth amendment
+    ("7.2.1 an initial value comes back after a rebase", " and not self.rebased:", ":"),
+    ("6.3 min_good times n rounded with a tolerance",
+     'self.need = max(1, math.ceil(Fraction(str(self.s["min_good"])) * self.n))',
+     'self.need = max(1, round_up(self.s["min_good"] * self.n))'),
+    ("6.3 a low-pass's settle rounded with a tolerance",
+     'self.s["settle"] = math.ceil(3 * self.s["tau"] / a[1])',
+     'self.s["settle"] = round_up(3 * float(self.s["tau"]) / self.period)'),
+    ("9.2 a block id with a dot accepted", 'if any("." in i for i in ids):', IF_FALSE),
+    ("9.2 a model's name with a dot accepted", 'if any("." in name for name in names):', IF_FALSE),
+    ("9.2 a measurement port with a dot, or with no name, accepted",
+     'fits = fits and port != "" and "." not in port  # 9 rule 2', "pass"),
+    ("7.9.8 two outputs of one name accepted", "if len(set(named)) != len(named):", IF_FALSE),
+    ("A a count past 2,147,483,647 accepted", "                if value > MOST:", "                if False:"),
+    ("6.9 a max_catch_up past 2,147,483,647 accepted",
+     "if not 1 <= self.max_catch_up <= MOST:", "if self.max_catch_up < 1:"),
+    ("6.8 a max_waiting past 2,147,483,647 accepted",
+     "if not 1 <= self.max_waiting <= MOST:", "if self.max_waiting < 1:"),
+    ("A a consistency over past 2,147,483,647 accepted", '1 <= test["over"] <= MOST', '1 <= test["over"]'),
+    ("6.2 a length past 64 bits accepted", "if whole and seconds_ * NS >= 2**63:", IF_FALSE),
+    ("6.2 the largest length that fits refused", "seconds_ * NS >= 2**63:", "seconds_ * NS >= 2**63 - 1:"),
+    ("6.11 a tick past 64 bits is run", "if number >= 2**63 or at >= 2**63:", IF_FALSE),
 ]  # fmt: skip
+
+
+def contract(files):
+    """Which breakages of the host contract contract.py notices, with no vector run."""
+    chosen = [m for m in MUTATIONS if m[0].startswith(("6.", "7.2.", "8."))]
+
+    def one(entry):
+        label, *rest = entry
+        pairs = rest[0] if len(rest) == 1 else [tuple(rest)]
+        counts = [sum(text.count(old) for text in files.values()) for old, _ in pairs]
+        if counts != [1] * len(pairs):
+            return label, f"ENTRY MATCHES {counts} TIMES"
+        broken = dict(files)
+        for old, new in pairs:
+            broken = {name: text.replace(old, new) for name, text in broken.items()}
+        if (
+            hashlib.sha256("".join(broken.values()).encode()).digest()
+            == hashlib.sha256("".join(files.values()).encode()).digest()
+        ):
+            return label, "ENTRY CHANGES NOTHING"
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, text in broken.items():
+                (Path(tmp) / name).write_text(text)
+            shutil.copy(HERE / "contract.py", tmp)
+            run = subprocess.run([sys.executable, "contract.py"], cwd=tmp, capture_output=True, text=True)
+        if run.returncode == 0:
+            return label, "not noticed"
+        said = [line for line in run.stdout.splitlines() if line.startswith("FAILS:")]
+        return label, said[0] if said else "FAILS: " + (run.stderr.strip().splitlines() or ["no word"])[-1]
+
+    with concurrent.futures.ThreadPoolExecutor(os.cpu_count()) as pool:
+        results = list(pool.map(one, chosen))
+    for label, result in results:
+        print(f"{label:58s} {result}")
+    noticed = sum(result.startswith("FAILS") for _, result in results)
+    stale = sum(result.startswith("ENTRY") for _, result in results)
+    print()
+    print(
+        f"{len(results)} breakages of sections 6, 7.2 and 8: contract.py notices {noticed}, {stale} entries out of date"
+    )
+    sys.exit(1 if stale else 0)
 
 
 def main():
     files = {name: (HERE / name).read_text() for name in ("reference.py", "formula.py")}
+    if sys.argv[1:] == ["--contract"]:
+        contract(files)
     vectors = sorted(HERE.glob("vectors/*.yaml"))
     survivors, stale, ever_failed = [], [], set()
     print(f"{'breakage':58s} result")

@@ -6,8 +6,9 @@ ASSUMPTIONS.md, for Amendment 1 (time and the host interface) in
 ASSUMPTIONS-amendment-1.md, for Amendment 2 (doubt through memory) in
 ASSUMPTIONS-amendment-2.md, for Amendment 3 (gaps) in
 ASSUMPTIONS-amendment-3.md, for Amendment 4 (models) in
-ASSUMPTIONS-amendment-4.md, and for Amendment 5 (the estimator) in
-ASSUMPTIONS-amendment-5.md.
+ASSUMPTIONS-amendment-4.md, for Amendment 5 (the estimator) in
+ASSUMPTIONS-amendment-5.md, and for Amendment 6 (the whole text, read cold)
+in ASSUMPTIONS-amendment-6.md.
 
 Every time is a whole number of nanoseconds, held as an int (rule 6.2).
 """
@@ -67,12 +68,30 @@ def _finite(v):
     return f if math.isfinite(f) else None
 
 
-def ceil_tol(v):
-    """Round up to a whole number; within 1e-9 of a whole number is it."""
-    r = round(v)
-    if abs(v - r) <= 1e-9:
-        return int(r)
-    return int(math.ceil(v))
+_INT32_MAX = 2147483647  # the most `ticks`, `over`, `max_refused`, `max_catch_up` and `max_waiting` may be
+
+
+def ceil_exact(v):
+    """A fraction rounded up to a whole number, exactly: no tolerance
+    (rule 6.3)."""
+    return -((-v.numerator) // v.denominator)
+
+
+def as_written(v):
+    """A number of the graph file as the decimal it is written as (rule
+    6.3): a double is taken for the shortest decimal that reads back as
+    it, which is what was written unless that had more digits than a
+    double keeps."""
+    if isinstance(v, int):
+        return Fraction(v)
+    return Fraction(decimal.Decimal(repr(float(v))))
+
+
+def settle_of(tau, period):
+    """A named model's `settle`, three of its slowest time constant in
+    ticks (rule 7.8.6): in double arithmetic, the least whole number not
+    less than r - 1e-9."""
+    return int(math.ceil(3.0 * tau / period - 1e-9))
 
 
 def _is_time(v):
@@ -100,6 +119,8 @@ def parse_duration(what, v):
     d = parse_length(what, v)
     if d.denominator != 1:
         raise CompileError("%s: %r is not a whole number of nanoseconds" % (what, v))
+    if d >= 2**63:
+        raise CompileError("%s: %r does not fit in 64 bits, signed" % (what, v))
     return int(d)
 
 
@@ -125,6 +146,8 @@ def s_whole(b, st, key, default=REQ):
     v = st[key]
     if not isinstance(v, int) or isinstance(v, bool):
         raise b.err("setting %r must be a whole number" % key)
+    if v > _INT32_MAX:
+        raise b.err("setting %r must be at most %d" % (key, _INT32_MAX))
     return v
 
 
@@ -745,7 +768,8 @@ class Window(Block):
         mg = s_num(self, self.st, "min_good", 1.0)
         if not (mg > 0 and mg <= 1):
             raise self.err("setting 'min_good' must be more than 0 and at most 1")
-        self.need = max(1, ceil_tol(mg * self.n))
+        # worked exactly, from the decimal as it is written (rule 6.3)
+        self.need = max(1, ceil_exact(as_written(self.st.get("min_good", 1)) * self.n))
         self.only_new = s_bool(self, self.st, "only_new", False)
         if self.only_new and "min_good" not in self.st:
             raise self.err("setting 'min_good' is required with only_new: true")
@@ -905,7 +929,9 @@ class Lowpass(Block):
         self.rt = s_counted(self, self.st, "ride_through", 0)
         self.settle = s_counted(self, self.st, "settle", None)
         if self.settle is None:
-            self.settle = ceil_tol(3.0 * self.tau / self.ctx.period)
+            # three time constants, rounded up exactly (rule 6.3)
+            tau_ns = parse_length("block %r setting 'tau'" % self.id, self.st["tau"])
+            self.settle = ceil_exact(3 * tau_ns / self.ctx.period_ns)
         self.a = math.exp(-self.ctx.period / self.tau)
 
     def reset(self):
@@ -1479,6 +1505,9 @@ def s_names(b, st, key, n, stem, single):
         raise b.err("setting %r must be a list of %d names" % (key, n))
     if len(set(v)) != n:
         raise b.err("setting %r: the names must be distinct" % key)
+    for e in v:
+        if e == "" or "." in e:
+            raise b.err("setting %r: a name is not empty and holds no dot, got %r" % (key, e))
     return list(v)
 
 
@@ -1649,7 +1678,7 @@ class ModelBlock(Block):
         self.settle = s_counted(self, self.st, "settle", None)
         if self.settle is None and self.model.tau is not None:
             # three of its slowest time constant (rule 7.8.6)
-            self.settle = ceil_tol(3.0 * self.model.tau / self.ctx.period)
+            self.settle = settle_of(self.model.tau, self.ctx.period)
         for name in self.model.inputs:
             self.in_ports[name] = (NUMBER, True, name in self.model.direct)
         for name in self.model.outputs:
@@ -1859,6 +1888,9 @@ class Estimator(Block):
                     "the model grows so fast that its process noise over one period is more than a double holds"
                 )
         smax = self._state_map("sigma_max", False)
+        for name, v in smax.items():
+            if v < 0:
+                raise self.err("setting 'sigma_max' for %r must not be negative" % name)
         self.sigma_max = [smax.get(n) for n in states]
         self.gate = s_num(self, self.st, "gate", None)
         if self.gate is not None and self.gate < 0:
@@ -1894,6 +1926,8 @@ class Estimator(Block):
         meas = self.st["measure"]
         if not isinstance(meas, dict):
             raise self.err("setting 'measure' must be a map")
+        if not meas:
+            raise self.err("setting 'measure' must have at least one port")
         for name in self.model.inputs:
             self.in_ports[name] = (NUMBER, True, False)  # deferred
         for name in states:
@@ -1904,6 +1938,8 @@ class Estimator(Block):
         for port, spec in meas.items():
             if not isinstance(port, str):
                 raise self.err("setting 'measure': a port's name is text, got %r" % (port,))
+            if port == "" or "." in port:
+                raise self.err("setting 'measure': a port's name is not empty and holds no dot, got %r" % (port,))
             if port in self.in_ports:
                 raise self.err("setting 'measure': port %r is named twice or is one of the model's inputs" % port)
             if not isinstance(spec, dict):
@@ -2188,9 +2224,13 @@ class Engine:
         self._max_catch_up = graph.get("max_catch_up", 100)
         if not isinstance(self._max_catch_up, int) or isinstance(self._max_catch_up, bool) or self._max_catch_up < 1:
             raise CompileError("max_catch_up: must be a whole number, at least 1")
+        if self._max_catch_up > _INT32_MAX:
+            raise CompileError("max_catch_up: must be at most %d" % _INT32_MAX)
         self._max_waiting = graph.get("max_waiting", 1024)
         if not isinstance(self._max_waiting, int) or isinstance(self._max_waiting, bool) or self._max_waiting < 1:
             raise CompileError("max_waiting: must be a whole number, at least 1")
+        if self._max_waiting > _INT32_MAX:
+            raise CompileError("max_waiting: must be at most %d" % _INT32_MAX)
         self._compile_inputs(graph.get("inputs"))
         self._compile_blocks(graph.get("blocks"))
         self._graph_key = json.dumps(graph, default=repr)
@@ -2208,6 +2248,8 @@ class Engine:
             what = "input %r" % (name,)
             if not isinstance(name, str):
                 raise CompileError("%s: an input's name is text" % what)
+            if name == "":
+                raise CompileError("%s: the name of an input is not empty" % what)
             if d is None:
                 d = {}
             if not isinstance(d, dict):
@@ -2263,6 +2305,8 @@ class Engine:
             bid = spec["id"]
             if not isinstance(bid, str):
                 raise CompileError("block id %r is not text" % (bid,))
+            if bid == "" or "." in bid:
+                raise CompileError("block id %r: an id is not empty and holds no dot" % (bid,))
             if bid in self._blocks:
                 raise CompileError("block %r: two blocks have this id" % bid)
             for key in spec:
@@ -2284,6 +2328,8 @@ class Engine:
                 maps.append(m)
             in_map, settings, out_map, fallback = maps
             for port, v in in_map.items():
+                if v == "" and isinstance(v, str):
+                    raise CompileError("block %r: input port %r is given a signal with no name" % (bid, port))
                 if isinstance(v, str) or isinstance(v, bool):
                     continue
                 if _finite(v) is None:
@@ -2303,6 +2349,8 @@ class Engine:
                     raise b.err("unknown output port %r in 'out'" % port)
                 if not isinstance(name, str):
                     raise b.err("output port %r: a signal's name is text, got %r" % (port, name))
+                if name == "":
+                    raise b.err("output port %r: a published name is not empty" % port)
             for port in fallback:
                 if port not in b.out_ports:
                     raise b.err("unknown output port %r in 'fallback'" % port)
@@ -2550,6 +2598,7 @@ class Engine:
         self._last_now = None
         self._rebase = False  # the next call is a rebase (rule 8.3)
         self._away = None  # how long the host says the graph was away, if it does
+        self._rebased = False  # there has been a rebase since the engine was made or last reset
         self._standing = {}  # name -> (state, value, time)
         self._waiting = {}  # name -> [(state, value, time)], in the order made
         self._thrown = 0  # writes thrown away since the last call that ran a tick
@@ -2640,6 +2689,17 @@ class Engine:
         skipped = 0
         if self._last_k is not None and not self._rebase and now < self._last_now:
             raise ValueError("now is earlier than the last call's")
+        # a call that would run a tick whose number or whose time does not
+        # fit in 64 bits, signed, is refused, and changes nothing (rule 6.11)
+        if self._last_k is not None:
+            if self._rebase:
+                due = 1 if self._away is None else max((2 * self._away + period) // (2 * period), 1)
+                last = (self._last_k + due, now)
+            else:
+                due = (2 * (now - self._time(self._last_k)) + period) // (2 * period)
+                last = (self._last_k + due, self._time(self._last_k) + due * period) if due > 0 else None
+            if last is not None and not (_is_time(last[0]) and _is_time(last[1])):
+                raise ValueError("the call would run a tick whose number or time does not fit in 64 bits")
         # stamped ahead (rule 6.8): at every call, a waiting write whose
         # time is more than max_ahead after now is thrown away
         for name, writes in self._waiting.items():
@@ -2666,6 +2726,7 @@ class Engine:
                 g = self._last_k + 1 + skipped
             self._anchor_k, self._anchor_t = g, now
             self._origin_t = now
+            self._rebased = True
             for b in self._blocks.values():
                 b.rebase()
                 b.gap(g, skipped)
@@ -2741,7 +2802,9 @@ class Engine:
         if standing is None:
             too_long = d.max_age is not None and t - self._origin_t > d.max_age
             if not too_long:
-                if d.has_initial:
+                if d.has_initial and not self._rebased:
+                    # it stands in for the first measurement and for nothing
+                    # later: not after a rebase (rule 7.2.1)
                     return (UNC, d.initial, None)
                 return (NR, None, None)
             return (BAD, None, None)

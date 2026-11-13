@@ -42,6 +42,8 @@ def length(text, whole=True):
     seconds_ = Fraction(m.group(1)) * _UNIT[m.group(2)]
     if whole and (seconds_ * NS).denominator != 1:  # 6 rule 2
         raise CompileError(f"{text!r} is not a whole number of nanoseconds")
+    if whole and seconds_ * NS >= 2**63:
+        raise CompileError(f"{text!r} does not fit in 64 bits, in nanoseconds")
     return seconds_
 
 
@@ -53,8 +55,11 @@ def seconds(text):
     return float(length(text))
 
 
+MOST = 2**31 - 1  # Appendix A: the most a count the author gives may be
+
+
 def round_up(x):
-    """Section 6 rule 3: up to a whole number, a value within 1e-9 of one being that one."""
+    """7.8 rule 6: a named model's settle, which is not exact: the least whole number not less than x - 1e-9."""
     return math.ceil(x - 1e-9)
 
 
@@ -100,6 +105,8 @@ def read_settings(where, spec, raw, period):
             elif kind == "int":
                 if isinstance(value, bool) or not isinstance(value, int):
                     raise CompileError("is a whole number, written without a point")
+                if value > MOST:
+                    raise CompileError(f"is at most {MOST}")
             elif kind == "bool":
                 if not isinstance(value, bool):
                     raise CompileError("is true or false")
@@ -277,7 +284,8 @@ class Window(Block):
             self.s["min_good"] = 1.0
         if not 0.0 < self.s["min_good"] <= 1.0:
             raise CompileError("min_good is more than 0 and at most 1")
-        self.need = max(1, round_up(self.s["min_good"] * self.n))
+        # 6 rule 3: exactly, from the decimal as it is written
+        self.need = max(1, math.ceil(Fraction(str(self.s["min_good"])) * self.n))
         self.buf, self.last_at = collections.deque(maxlen=self.n), None
 
     def output(self, k, t, ins):
@@ -371,7 +379,7 @@ class Lowpass(Block):
             raise CompileError("tau is more than zero")
         self.a = math.exp(-self.period / float(self.s["tau"]))
         if self.s["settle"] is None:
-            self.s["settle"] = round_up(3 * float(self.s["tau"]) / self.period)
+            self.s["settle"] = math.ceil(3 * self.s["tau"] / a[1])  # 6 rule 3: exactly
         self.y, self.seen, self.doubt = None, None, None
 
     def output(self, k, t, ins):
@@ -730,6 +738,8 @@ class Model:
         for names in (self.inputs, self.states, self.outputs):
             if len(set(names)) != len(names) or not all(isinstance(name, str) and name for name in names):
                 raise CompileError("the names of a model's inputs, of its states and of its outputs are each distinct")
+            if any("." in name for name in names):  # 9 rule 2
+                raise CompileError("a name of a model's input, state or output holds no dot")
         if set(self.outputs) & set(COUNTERS):
             raise CompileError(f"a model's output is not named one of {sorted(COUNTERS)}")
         # an input is direct if an output reads it (7.8 rule 2)
@@ -1168,7 +1178,8 @@ class Estimator(Block):
         test = self.s["consistency"]  # rule 7: stated, or said to be none
         if test != "none":
             fits = isinstance(test, dict) and set(test) == {"over", "limit"}
-            fits = fits and isinstance(test["over"], int) and not isinstance(test["over"], bool) and test["over"] >= 1
+            fits = fits and isinstance(test["over"], int) and not isinstance(test["over"], bool)
+            fits = fits and 1 <= test["over"] <= MOST
             if not fits or not is_number(test["limit"]) or test["limit"] <= 0:
                 raise CompileError("consistency is `none`, or `over`, a whole number of measurements, and `limit`")
         self.over, self.limit = (None, None) if test == "none" else (test["over"], float(test["limit"]))
@@ -1179,6 +1190,7 @@ class Estimator(Block):
         self.meas = {}
         for port, m in self.s["measure"].items():
             fits = isinstance(port, str) and port not in self.model.inputs and isinstance(m, dict)
+            fits = fits and port != "" and "." not in port  # 9 rule 2
             if not fits or not {"of", "r"} <= set(m) or set(m) - {"of", "r", "r_uncertain"}:
                 raise CompileError(f"measure {port!r} is a port of its own, with `of`, `r` and perhaps `r_uncertain`")
             wide = m.get("r_uncertain")
@@ -1194,12 +1206,13 @@ class Estimator(Block):
             raise CompileError("measure names at least one measurement")
         self.ports = {name: (NUMBER, True, False) for name in self.model.inputs}  # deferred: rule 2
         self.ports |= {port: (NUMBER, True, True) for port in self.meas}
-        self.outputs = dict.fromkeys(self.names, NUMBER)
-        self.outputs |= {f"sigma_{name}": NUMBER for name in self.names}
+        named = [*self.names, *(f"sigma_{name}" for name in self.names)]
         for port in self.meas:
-            self.outputs |= dict.fromkeys(
-                (f"innovation_{port}", f"nis_{port}", f"refused_{port}", f"since_{port}"), NUMBER
-            )
+            named += [f"innovation_{port}", f"nis_{port}", f"refused_{port}", f"since_{port}"]
+        if len(set(named)) != len(named):  # rule 8
+            twice = sorted({name for name in named if named.count(name) > 1})
+            raise CompileError(f"two outputs would be named {twice[0]!r}")
+        self.outputs = dict.fromkeys(named, NUMBER)
         self.x = self.model.initial()
         self.p = [[self.p0[i] if i == j else 0.0 for j in range(n)] for i in range(n)]
         self.considered = dict.fromkeys(self.meas)  # the sample time last considered, per port
@@ -1365,11 +1378,15 @@ class Engine:
             raise CompileError("the period is more than zero")
         self.period = nanoseconds(graph["period"])  # every time in the engine is whole nanoseconds (6 rule 2)
         self.max_catch_up = graph.get("max_catch_up", 100)
-        if isinstance(self.max_catch_up, bool) or not isinstance(self.max_catch_up, int) or self.max_catch_up < 1:
+        if isinstance(self.max_catch_up, bool) or not isinstance(self.max_catch_up, int):
             raise CompileError("max_catch_up is a whole number, at least 1")
+        if not 1 <= self.max_catch_up <= MOST:
+            raise CompileError(f"max_catch_up is a whole number, at least 1 and at most {MOST}")
         self.max_waiting = graph.get("max_waiting", 1024)  # 6 rule 8
-        if isinstance(self.max_waiting, bool) or not isinstance(self.max_waiting, int) or self.max_waiting < 1:
+        if isinstance(self.max_waiting, bool) or not isinstance(self.max_waiting, int):
             raise CompileError("max_waiting is a whole number, at least 1")
+        if not 1 <= self.max_waiting <= MOST:
+            raise CompileError(f"max_waiting is a whole number, at least 1 and at most {MOST}")
 
         self.inputs = {}
         for name, spec in (graph.get("inputs") or {}).items():
@@ -1402,6 +1419,8 @@ class Engine:
         ids = [b.get("id") if isinstance(b, dict) else None for b in specs]
         if not all(isinstance(i, str) and i for i in ids) or len(set(ids)) != len(ids):
             raise CompileError("every block has an id of its own, which is text")
+        if any("." in i for i in ids):  # 9 rule 2
+            raise CompileError("a block id holds no dot")
         by_id = {b["id"]: b for b in specs}
 
         # The blocks as configured, and what each publishes.
@@ -1625,6 +1644,7 @@ class Engine:
         self.k = 0  # the next tick to run
         self.zero = None  # the time tick 0 is at, or would be at, in nanoseconds
         self.since = None  # the time the graph has run since: tick 0's, or the last rebase's
+        self.rebased = False  # whether there has been a rebase since the engine was made or reset (7.2 rule 1)
         self.last_now = None
         self.standing = {}  # input -> (state, value, time): the write last taken up
         self.pending = {name: [] for name in self.inputs}  # the writes not yet taken up, as made
@@ -1703,7 +1723,7 @@ class Engine:
         spec = self.inputs[name]
         if name not in self.standing:
             ran = t - self.since
-            if spec["initial"] is not None and ran <= spec["max_age"]:
+            if spec["initial"] is not None and ran <= spec["max_age"] and not self.rebased:
                 value = spec["initial"]
                 return Val(UNCERTAIN, value if isinstance(value, bool) else float(value))
             return Val(BAD) if ran > spec["max_age"] else Val(NOT_READY)
@@ -1724,6 +1744,15 @@ class Engine:
             raise ValueError("the time passed to tick is a whole number of nanoseconds that fits in 64 bits")
         if self.last_now is not None and now < self.last_now:
             raise ValueError("the time passed to tick does not go backwards")
+        # 6 rule 11: the last tick this call would run has a number and a time that fit in 64 bits
+        if self.rebasing:
+            number, at = self.k + (self.away is not None and self._over()), now
+        else:
+            zero = now if self.zero is None else self.zero
+            number = (2 * (now - zero) + self.period) // (2 * self.period)
+            at = zero + number * self.period
+        if number >= 2**63 or at >= 2**63:
+            raise ValueError("the tick this call would run does not fit in 64 bits")
         self.last_now = now
         for name, writes in self.pending.items():  # rule 8: stamped too far ahead
             self.pending[name] = [w for w in writes if w[2] - now <= self.inputs[name]["max_ahead"]]
@@ -1735,9 +1764,9 @@ class Engine:
             self.rebasing, gap, due = False, True, 1
             skipped = None  # nobody knows, unless the host said how long it was away
             if self.away is not None:  # the ticks that were due in that time, less the one that now runs
-                skipped = max(0, (2 * self.away + self.period) // (2 * self.period) - 1)
+                skipped = self._over()
                 self.k += skipped
-            self.zero, self.since = now - self.k * self.period, now
+            self.zero, self.since, self.rebased = now - self.k * self.period, now, True
             for block in self.blocks.values():
                 block.forget_times()
         else:
@@ -1768,6 +1797,10 @@ class Engine:
         }
         self.thrown = 0
         return due, out
+
+    def _over(self):
+        """8 rule 5: the ticks due in the time a rebase was told of, less the one that runs."""
+        return max(0, (2 * self.away + self.period) // (2 * self.period) - 1)
 
     def _run(self, last):
         k, t = self.k, self.zero + self.k * self.period

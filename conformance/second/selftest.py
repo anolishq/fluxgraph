@@ -4186,6 +4186,321 @@ def test_fallback_sample_time():
     check("fb delay 3", e.tick(3 * S)[1]["count"], ("good", 1.0))
 
 
+def test_amendment_six():
+    """Amendment 6: the whole text, read cold."""
+
+    def window_need(min_good, window="10s"):
+        st = {"window": window}
+        if min_good is not None:
+            st["min_good"] = min_good
+        g = {"period": "1s", "blocks": [{"id": "w", "type": "window", "in": {"x": 1}, "settings": st}]}
+        return Engine(g)._blocks["w"].need
+
+    # rule 6.3: worked exactly from the decimal as it is written, with no
+    # tolerance
+    check("need 0.7 of 10", window_need(0.7), 7)
+    check("need 0.7000000001 of 10", window_need(0.7000000001), 8)
+    check("need 0.6999999999 of 10", window_need(0.6999999999), 7)
+    # 0.1 as a double is a little more than a tenth; as written it is a tenth
+    check("need 0.1 of 10", window_need(0.1), 1)
+    check("need 0.1 of 30", window_need(0.1, "30s"), 3)
+    check("need 0.3 of 10", window_need(0.3), 3)
+    check("need 0.35 of 20", window_need(0.35, "20s"), 7)
+    check("need 1 of 10", window_need(1), 10)
+    check("need default", window_need(None), 10)
+    check("need 1e-12 of 10", window_need(1e-12), 1)
+    # and in what a window gives: ten good samples but for three uncertain
+    # ones is seven good: good at 0.7, uncertain at 0.7000000001
+    for mg, want in ((0.7, "good"), (0.7000000001, "uncertain")):
+        got = run_seq(
+            {"type": "window", "in": {"x": "x"}, "settings": {"window": "10s", "min_good": mg}},
+            "number",
+            [("uncertain", 1.0)] * 3 + [("good", 1.0)] * 7,
+            "mean",
+        )
+        check("need in a window %r" % mg, got[9][0], want)
+
+    # a low-pass's default settle is three of tau, which is written as a
+    # length: exact. tau of 1.000000001 s at a period of 3 s is
+    # 1.000000001 ticks: two.
+    def lowpass_settle(tau, period):
+        g = {"period": period, "blocks": [{"id": "b", "type": "lowpass", "in": {"x": 1}, "settings": {"tau": tau}}]}
+        return Engine(g)._blocks["b"].settle
+
+    check("lowpass settle exact", lowpass_settle("1s", "3s"), 1)
+    check("lowpass settle just over", lowpass_settle("1000000001ns", "3s"), 2)
+    check("lowpass settle a fraction of a ns over", lowpass_settle("1.0000000001s", "3s"), 2)
+    check("lowpass settle 2.5", lowpass_settle("2500ms", "1s"), 8)
+
+    # rule 7.8.6: a named model's settle is not exact: with r three of the
+    # constant over the period, the least whole number not less than
+    # r - 1e-9. r of 1.0000000005 is one tick, and of 1.000000002 two.
+    def model_settle(tau, period):
+        blk = {"id": "b", "type": "first_order_process", "in": {"u": 1}, "settings": {"tau": tau}}
+        return Engine({"period": period, "blocks": [blk]})._blocks["b"].settle
+
+    check("model settle exact", model_settle("1s", "3s"), 1)
+    check("model settle within 1e-9", model_settle("1.0000000005s", "3s"), 1)
+    check("model settle past 1e-9", model_settle("1.000000002s", "3s"), 2)
+    check("model settle 2.5", model_settle("2500ms", "1s"), 8)
+
+    # rule 6.2: every length the engine keeps fits in 64 bits, signed
+    big = "%dns" % (2**63)
+    fits = "%dns" % (2**63 - 1)
+    refused("width: period", {"period": big})
+    Engine({"period": fits})
+    refused("width: max_age", {"period": "1s", "inputs": {"x": {"max_age": big}}})
+    Engine({"period": "1s", "inputs": {"x": {"max_age": fits}}})
+    refused("width: max_ahead", {"period": "1s", "inputs": {"x": {"max_age": "none", "max_ahead": big}}})
+    refused(
+        "width: a counted length",
+        {
+            "period": "1ns",
+            "blocks": [
+                {"id": "h", "type": "hysteresis", "in": {"x": 1}, "settings": {"rise": 1, "fall": 0}},
+                {"id": "t", "type": "since_true", "in": {"x": "h.y"}, "settings": {"time": big, "on_bad": "unknown"}},
+            ],
+        },
+    )
+    # an age is the true difference, however far apart the two times are
+    e = Engine(echo_graph("%dns" % (2**63 - 1)))
+    e.write("x", "good", 1.0, -(2**63))
+    check("width: an age of nearly 2^64", e.tick(2**63 - 2)[1]["y"], ("bad", None))
+    e = Engine(echo_graph("none"))
+    e.write("x", "good", 1.0, -(2**63))
+    check("width: no maximum age", e.tick(2**63 - 2)[1]["y"], ("good", 1.0))
+
+    # rule 6.11: a call that would run a tick whose time does not fit is
+    # refused, and changes nothing. Period 1 s, tick 0 at 0: at a now of
+    # 2^63 - 1 ns the last tick due is at 9,223,372,037 s, past 2^63 ns.
+    g = integ_graph(max_catch_up=3)
+    e = Engine(g)
+    e.write("x", "good", 1.0, 0)
+    e.tick(0)
+    before = dict(e.info)
+    e.write("x", "good", 9.0, 5 * S)  # far ahead of a call at 1 s: it would be thrown away
+    raises("width: a tick's time", lambda: e.tick(2**63 - 1))
+    check("width: refused, nothing changed", e.info, before)
+    # the call was refused: the write still waits, and an earlier now is no error
+    ran, o = e.tick(5 * S)
+    check("width: after the refusal", e.info, info(True, 5, 5 * S, skipped=4))
+    check("width: after the refusal y", o["y"], ("good", 10.0))
+    # the last now for which the tick's time fits: 9,223,372,036 s is due
+    # from half a second before it
+    e = Engine(g)
+    e.tick(0)
+    ran, o = e.tick(9223372036 * S)
+    check("width: the last tick that fits", e.info, info(True, 9223372036, 9223372036 * S, skipped=9223372035))
+    # the next tick, at 9,223,372,037 s, is due from 0.5 s before it, and
+    # its time does not fit: until then a call runs no tick, and from then
+    # on it is refused
+    check("width: nothing more is due", e.tick(9223372036 * S + 499999999), (0, None))
+    raises("width: the next tick is due and does not fit", lambda: e.tick(9223372036 * S + 500000000))
+    raises("width: nor at the end of the clock", lambda: e.tick(2**63 - 1))
+    # a tick's number: at a period of 1 ns a rebase with a length of
+    # 2^63 - 1 runs tick 2^63 - 1; the next tick would be numbered 2^63
+    g = {"period": "1ns", "blocks": [{"id": "i", "type": "integrate", "in": {"x": 1}, "out": {"elapsed": "elapsed"}}]}
+    e = Engine(g)
+    e.tick(0)
+    e.rebase(2**63 - 1)
+    e.tick(0)
+    check("width: the last number that fits", e.info, info(True, 2**63 - 1, 0, skipped=2**63 - 2))
+    before = dict(e.info)
+    raises("width: a tick's number", lambda: e.tick(1))
+    check("width: number refused, nothing changed", e.info, before)
+    e.rebase(1)
+    raises("width: a tick's number, at a rebase", lambda: e.tick(0))
+    raises("width: a tick's number, at a rebase with no length", lambda: (e.rebase(), e.tick(0)))
+    e = Engine(g)
+    e.tick(0)
+    e.rebase(2**63 - 1)
+    e.tick(0)
+    e.reset()
+    check("width: after a reset", e.tick(0)[0], 1)
+    e = Engine(g)
+    e.tick(0)
+    e.tick(1)
+    e.rebase(2**63 - 1)
+    raises("width: a rebase's length takes the number past", lambda: e.tick(0))
+
+    # rule 7.2.1: an initial value stands in until the first rebase and
+    # not after it
+    e = Engine(echo_graph("none", initial=5))
+    check("initial 0", e.tick(0)[1]["y"], ("uncertain", 5.0))
+    check("initial 1", e.tick(1 * S)[1]["y"], ("uncertain", 5.0))
+    saved = e.save()
+    e.rebase()
+    check("initial after a rebase", e.tick(0)[1]["y"], ("not_ready", None))
+    check("initial after a rebase, next", e.tick(1 * S)[1]["y"], ("not_ready", None))
+    e.write("x", "good", 2.0, 2 * S)
+    check("initial after a rebase, written", e.tick(2 * S)[1]["y"], ("good", 4.0 / 2))
+    # a rebase with a length is a rebase
+    e = Engine(echo_graph("none", initial=5))
+    e.tick(0)
+    e.rebase(0)
+    check("initial after rebase(0)", e.tick(0)[1]["y"], ("not_ready", None))
+    # a restore is followed by one
+    e = Engine(echo_graph("none", initial=5))
+    e.tick(0)
+    e.restore(saved)
+    check("initial after a restore", e.tick(0)[1]["y"], ("not_ready", None))
+    # a reset brings it back; a stall is no rebase; and a rebase before any
+    # tick is none either
+    e.reset()
+    check("initial after a reset", e.tick(0)[1]["y"], ("uncertain", 5.0))
+    e = Engine(echo_graph("none", initial=5, **{}))
+    e.tick(0)
+    check("initial across a stall", e.tick(1000 * S)[1]["y"], ("uncertain", 5.0))
+    e = Engine(echo_graph("none", initial=5))
+    e.rebase()
+    check("initial, rebase before any tick", e.tick(0)[1]["y"], ("uncertain", 5.0))
+    # with a maximum age it is not_ready, and bad once the graph has run
+    # for longer than that since the rebase's tick
+    e = Engine(echo_graph("2s", initial=5))
+    check("initial aged 0", e.tick(0)[1]["y"], ("uncertain", 5.0))
+    e.rebase()
+    check("initial aged, rebase", e.tick(100 * S)[1]["y"], ("not_ready", None))
+    check("initial aged, 2 s on", e.tick(102 * S)[1]["y"], ("not_ready", None))
+    check("initial aged, 3 s on", e.tick(103 * S)[1]["y"], ("bad", None))
+
+    # rule 9.2: a block id, and a name a block's settings give, is not
+    # empty and holds no dot
+    def one(bid="b", **more):
+        blk = {"id": bid, "type": "formula", "in": {"a": 1}, "settings": {"expr": "a"}}
+        blk.update(more)
+        return {"period": "1s", "inputs": {"m": {"max_age": "none"}}, "blocks": [blk]}
+
+    Engine(one())
+    refused("names: an empty block id", one(""))
+    refused("names: a block id with a dot", one("a.b"))
+    refused("names: a signal with no name", one(**{"in": {"a": ""}}))
+    # ... also where an input from outside has that name
+    g = one(**{"in": {"a": ""}})
+    g["inputs"][""] = {"max_age": "none"}
+    refused("names: a signal with no name that exists", g)
+    # the name of an input and a published name are not empty (rule 9.2);
+    # they may hold a dot, where that is not <block id>.<port>
+    g = one()
+    g["inputs"][""] = {"max_age": "none"}
+    refused("names: an input with no name", g)
+    refused("names: a published name that is empty", one(out={"y": ""}))
+    g = one(out={"y": "plant.out"})
+    g["inputs"]["room.temp"] = {"max_age": "none"}
+    Engine(g)
+    refused("names: a published name of the form id.port", one(out={"y": "b.y"}))
+
+    def lin(**names):
+        st = {"A": [[0, 1], [0, 0]], "B": [[0], [1]], "C": [[1, 0]]}
+        st.update(names)
+        ins = {(names.get("inputs") or ["u"])[0]: 0}
+        return {"period": "1s", "blocks": [{"id": "b", "type": "linear", "in": ins, "settings": st}]}
+
+    Engine(lin(states=["pos", "vel"], inputs=["force"], outputs=["where"]))
+    refused("names: a state with a dot", lin(states=["pos", "v.el"]))
+    refused("names: an empty state", lin(states=["pos", ""]))
+    refused("names: an output with a dot", lin(outputs=["o.ut"]))
+    refused("names: an empty output", lin(outputs=[""]))
+    refused("names: an input with a dot", lin(inputs=["f.orce"]))
+    refused("names: an empty input", lin(inputs=[""]))
+    try:
+        est_engine({"measure": {"z.1": {"of": "y", "r": 1}}}, ins={"u": 0, "z.1": "z"})
+        check("names: a measurement port with a dot", "accepted", "refused")
+    except CompileError:
+        check("names: a measurement port with a dot", True, True)
+    try:
+        est_engine({"measure": {"": {"of": "y", "r": 1}}}, ins={"u": 0, "": "z"})
+        check("names: an empty measurement port", "accepted", "refused")
+    except CompileError:
+        check("names: an empty measurement port", True, True)
+
+    # rule 7.9.8: each of an estimator's outputs has a name of its own
+    def est_bad(label, settings=None, **kw):
+        try:
+            est_engine(settings, **kw)
+        except CompileError:
+            check(label, True, True)
+            return
+        check(label, "accepted", "refused")
+
+    twin = {"type": "linear", "A": [[0, 0], [0, 0]], "B": [[1], [1]], "C": [[1, 0]], "states": ["x", "sigma_x"]}
+    est_bad("est names: x and sigma_x", {"q": {"x": 1, "sigma_x": 1}, "p0": {"x": 1, "sigma_x": 1}}, model=twin)
+    twin = dict(twin, states=["x", "nis_z"])
+    est_bad("est names: a state and nis_z", {"q": {"x": 1, "nis_z": 1}, "p0": {"x": 1, "nis_z": 1}}, model=twin)
+    twin = dict(twin, states=["x", "v"])
+    est_engine({"q": {"x": 1, "v": 1}, "p0": {"x": 1, "v": 1}}, model=twin)
+
+    # Appendix A, ranges
+    est_bad("range: sigma_max below zero", {"sigma_max": {"x0": -1}})
+    est_engine({"sigma_max": {"x0": 0}})
+    est_bad("range: no measurement", {"measure": {}}, ins={"u": 0})
+    est_bad("range: over", {"consistency": {"over": 2**31, "limit": 2}})
+    est_engine({"consistency": {"over": 2**31 - 1, "limit": 2}})
+    est_bad("range: max_refused", {"gate": 3, "max_refused": 2**31})
+    est_engine({"gate": 3, "max_refused": 2**31 - 1})
+    refused(
+        "range: ticks",
+        {"period": "1s", "blocks": [{"id": "d", "type": "delay", "in": {"x": 1}, "settings": {"ticks": 2**31}}]},
+    )
+    refused("range: max_catch_up", {"period": "1s", "max_catch_up": 2**31})
+    Engine({"period": "1s", "max_catch_up": 2**31 - 1})
+    refused("range: max_catch_up 0", {"period": "1s", "max_catch_up": 0})
+    refused("range: max_waiting", {"period": "1s", "max_waiting": 2**31})
+    Engine({"period": "1s", "max_waiting": 2**31 - 1})
+
+    # rule 3.6: a statistic is a plain sum in double arithmetic: the mean
+    # of two samples of 1e308 passes through a value that is not finite
+    blk = {"type": "window", "in": {"x": "x"}, "settings": {"window": "2s"}}
+    seq = [("good", 1e308), ("good", 1e308)]
+    check("3.6 mean", run_seq(blk, "number", seq, "mean")[1], ("bad", None))
+    check("3.6 max", run_seq(blk, "number", seq, "max")[1], ("good", 1e308))
+    check("3.6 spread", run_seq(blk, "number", seq, "spread")[1], ("good", 0.0))
+
+    # rule 3.7: inputs are counted by port: one signal on two ports is two,
+    # so the formula gives the time of the tick, and with only_new every
+    # tick is a new sample
+    g = {
+        "period": "1s",
+        "inputs": {"m": {"max_age": "none"}},
+        "blocks": [
+            {"id": "one", "type": "formula", "in": {"a": "m"}, "settings": {"expr": "a + a"}},
+            {"id": "two", "type": "formula", "in": {"a": "m", "b": "m"}, "settings": {"expr": "a + b"}},
+        ],
+    }
+    for bid in ("one", "two"):
+        g["blocks"].append(
+            {
+                "id": "w_" + bid,
+                "type": "window",
+                "in": {"x": bid + ".y"},
+                "settings": {"window": "3s", "min_good": 0.3, "only_new": True},
+                "out": {"count": bid},
+            }
+        )
+    e = Engine(g)
+    e.write("m", "good", 1.0, 0)
+    e.tick(0)
+    e.tick(1 * S)
+    o = e.tick(2 * S)[1]
+    check("3.7 one port", o["one"], ("good", 1.0))
+    check("3.7 two ports", o["two"], ("good", 3.0))
+
+    # rule 7.8.5: a model block's outputs are judged together: a direct
+    # input that is uncertain makes every output so, one that reads no
+    # input among them
+    blk = {
+        "id": "b",
+        "type": "linear",
+        "in": {"u": "x"},
+        "settings": {"A": [[0]], "B": [[0]], "C": [[1], [1]], "D": [[0], [2]], "outputs": ["clean", "fed"]},
+        "out": {"clean": "clean", "fed": "fed"},
+    }
+    e = Engine({"period": "1s", "inputs": {"x": {"max_age": "none"}}, "blocks": [blk]})
+    e.write("x", "uncertain", 1.0, 0)
+    o = e.tick(0)[1]
+    check("7.8.5 fed", o["fed"], ("uncertain", 2.0))
+    check("7.8.5 clean", o["clean"], ("uncertain", 0.0))
+
+
 def test_estimator():
     g = {
         "period": "1s",

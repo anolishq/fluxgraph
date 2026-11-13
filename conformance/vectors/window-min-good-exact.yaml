@@ -1,0 +1,18 @@
+# 6.3: the number a window needs is worked exactly from min_good as it is
+# written, with no tolerance. Over ten ticks 0.7 needs seven good samples
+# and 0.7000000001 needs eight.
+rules: [6.3, 7.3.2]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: a, type: window, in: {x: x}, settings: {window: 10s, min_good: 0.7}, out: {mean: seven}}
+  - {id: b, type: window, in: {x: x}, settings: {window: 10s, min_good: 0.7000000001}, out: {mean: eight}}
+calls:
+  - {x: 1, seven: not_ready, eight: not_ready}
+  - {x: 1, seven: not_ready, eight: not_ready}
+  - {x: 1, seven: not_ready, eight: not_ready}
+  - {x: 1, seven: not_ready, eight: not_ready}
+  - {x: 1, seven: not_ready, eight: not_ready}
+  - {x: 1, seven: not_ready, eight: not_ready}
+  - {x: 1, seven: 1, eight: not_ready}
+  - {x: 1, seven: 1, eight: 1}

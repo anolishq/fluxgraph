@@ -1,0 +1,8 @@
+# 6.2: refused: a maximum age that does not fit in 64 bits, in nanoseconds.
+rules: [6.2, 7.2]
+period: 1s
+inputs: {x: {max_age: 9223372036854775808ns}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}}
+expect: compile_error
+error_mentions: [x]

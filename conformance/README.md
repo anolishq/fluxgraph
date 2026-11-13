@@ -17,12 +17,16 @@ the text says, not what it should say.
 | `run.py` | Runs the vectors against the reference, or with `--second` against the second reading. Needs PyYAML. |
 | `mutate.py` | Breaks the reference one rule at a time and checks that a vector notices. |
 | `compare.py` | Runs the two readings side by side on random inputs and call times and compares every output after every call. |
+| `contract.py` | Tries every short sequence of writes, calls, rebases, resets, saves and restores against what sections 6, 7.2 and 8 promise a host. |
 
 ```bash
-python3 conformance/run.py            # 328 vectors: ALL AGREE
-python3 conformance/run.py --second   # 328 vectors: ALL AGREE
-python3 conformance/mutate.py         # 587 breakages: 587 noticed; every vector failed by one
-python3 conformance/compare.py        # 1939441 comparisons, 0 differences
+python3 conformance/run.py                 # 347 vectors: ALL AGREE
+python3 conformance/run.py --second        # 347 vectors: ALL AGREE
+python3 conformance/mutate.py              # 600 breakages: 600 noticed; every vector failed by one
+python3 conformance/compare.py             # 1939441 comparisons, 0 differences
+python3 conformance/contract.py            # 748648 sequences: ALL HOLD
+python3 conformance/contract.py --second   # 748648 sequences: ALL HOLD
+python3 conformance/mutate.py --contract   # 170 breakages of sections 6, 7.2 and 8: contract.py notices 93
 ```
 
 The format of a vector is described at the top of `run.py`.
@@ -414,6 +418,83 @@ its own.
   estimator has given in to it, a wrong model with `consistency: none`,
   and a long gap of known length predicted across on inputs nobody saw.
 
+## Amendment 6: the whole text, read cold
+
+The amended text was read from start to finish twice: once for where it
+contradicts itself, and once as the author of a third engine would read
+it, looking for where two engines written from it would part. What that
+found, each reproduced on both readings before the text was changed:
+
+- **An input's `initial` came back after a rebase.** A setpoint with no
+  maximum age and an initial value of 20, written 50 and not written again
+  after a rebase, read as an `uncertain` 20 for good. Rule 7.2.1 now ends
+  an initial value at the first rebase. `input-initial-not-after-rebase`.
+- **A host told to write an old sample with a new time made it new.** A
+  sample that had gone `bad` for age read `good` after a rebase. A host
+  now writes again only the inputs with no maximum age.
+- **The two readings parted on rounding.** At three time constants of
+  2.000000001 periods one gave a `settle` of two ticks and the other of
+  three, and a window of ten ticks with a `min_good` of 0.7000000001
+  needed seven samples in one and eight in the other: 25 of 1,994 cases
+  tried. Rule 6.3 is now exact, with no tolerance. `lowpass-settle-exact`,
+  `window-min-good-exact`.
+- **Nothing bounded a time.** Both readings ran ticks at times and numbers
+  past 64 bits, which a Python whole number holds and a C++ one does not.
+  Lengths now fit in 64 bits, and a call that would take a tick past them
+  is refused. `tick-past-64-bits`, `tick-number-past-64-bits`,
+  `accepted-largest-lengths` and seven refusals.
+- **The readings parted on names.** An estimator with states `x` and
+  `sigma_x` gave two outputs one name in the reference and was refused by
+  the second; a block id with a dot made `x.y.z` mean two things. Rules
+  7.9.8 and 9.2. Six refusals.
+- **A vector pinned what the text did not say**: that a model block's
+  outputs are `uncertain` together (rule 7.8.5), and that `max_catch_up`
+  is at least 1 (rule 6.9).
+- **Summaries had drifted from their rules**: in the introduction, the
+  paragraph on memory and section 7.11, with one stale rule number and
+  the row of section 12 that said every 1.x transform is kept.
+
+19 vectors are new, and none of the earlier 328 changed its expectations.
+The second reading was brought up to the amended text from the text
+alone; `second/ASSUMPTIONS-amendment-6.md` lists where it had a choice.
+
+### The host contract, tried exhaustively
+
+`contract.py` is the check asked for in issue #183. The vectors hold the
+cases someone thought of, and `compare.py` cannot see a fault the two
+readings share. This takes one small graph, an input published as it is
+read, a count of the ticks that held a new sample, and a total's
+counters, and plays on it every sequence of four steps drawn from 26:
+writes stamped from two periods behind the clock to past `max_ahead`, in
+each state; calls that are repeated, early, on time, late, a quarter
+period back, catching up and stalled; rebases with and without a length;
+reset, save and restore. It runs at a period of 1 s on a clock near
+1.7e9 s and at 100 ms on a clock that starts below zero. Six things are
+checked, and its docstring states each:
+
+1. a host that calls once a period loses no sample, tick or count;
+2. every sequence gives what `Contract` gives, a statement of rules 6.5
+   to 6.11, 7.2 and 8.1 to 8.6 for that graph, written from the text;
+3. no value outlives `max_ahead` and its maximum age past the call that
+   followed its last write;
+4. a refused write or call changes nothing;
+5. a reset is a new engine, a restore is a rebase of no known length, and
+   the last `rebase` before a call is the one that counts;
+6. with samples stamped on ticks, the answer does not depend on when the
+   host called.
+
+Both readings hold on all 748,648 sequences, and on 3,610,612 at five
+steps (`--depth 5`) before the sixth amendment was written. That run is
+many times longer and has not been repeated since.
+
+What it notices by itself: 93 of the 170 breakages `mutate.py` has for
+sections 6, 7.2 and 8. Of the 77 it does not, most are what some other
+block does at a gap, which its one graph does not hold. The rest are
+refusals at compile, `max_waiting` and a `max_ahead` other than the
+default, a value that is not finite, the 64-bit edge, and two that need
+five steps to reach. Its docstring lists these. The vectors notice all
+170.
+
 ## What this does not cover
 
 - **A fault both readings share.** `compare.py` only compares them. The
@@ -443,9 +524,11 @@ its own.
   `loop-window-stays-good` pins it and the tick-by-tick second reading
   failed it, but no entry in `mutate.py` breaks it: the reference has no
   single piece to replace.
-- **What a host may not do.** A write to a name that is not an input, a
-  write of the wrong type: the proposal does not say, and the two readings
-  were not compared on it.
+- **More of the host contract than `contract.py`'s graph holds**: two
+  inputs stamped a tick apart, a boolean input, a full queue of waiting
+  writes, and sequences longer than it runs.
+- **A decimal with more digits than a double keeps** (rule 6.3), and an
+  engine's refusal of a graph it has not the memory for (Appendix A).
 - **Stability of blocks together** (section 7.8, open).
 - **The library.** Nothing here runs FluxGraph. A runner for the library
   comes with the rebuilt core.
