@@ -110,8 +110,7 @@ set(FLUXGRAPH_BUILD_EXAMPLES OFF CACHE BOOL "")
 include(FetchContent)
 FetchContent_Declare(
     fluxgraph
-    GIT_REPOSITORY https://github.com/anolishq/fluxgraph.git
-    GIT_TAG        05a1564688a4b3fffbfd5e66b68fd7f9d587a0c5  # v1.0.6
+    URL https://github.com/anolishq/fluxgraph/releases/download/v1.1.0/fluxgraph-1.1.0-source.tar.gz
 )
 FetchContent_MakeAvailable(fluxgraph)
 

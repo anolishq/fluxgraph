@@ -3,3 +3,9 @@ CMakeLists.txt:project\(.* VERSION ([0-9]+\.[0-9]+\.[0-9]+)
 include/fluxgraph/version.hpp:#define FLUXGRAPH_VERSION "([0-9]+\.[0-9]+\.[0-9]+)"
 vcpkg.json:"version": "([0-9]+\.[0-9]+\.[0-9]+)"
 
+README.md:fluxgraph/releases/download/v([0-9]+\.[0-9]+\.[0-9]+)/
+README.md:fluxgraph-([0-9]+\.[0-9]+\.[0-9]+)-source\.tar\.gz
+README.md:^Replace `v([0-9]+\.[0-9]+\.[0-9]+)` with the
+docs/EMBEDDING.md:fluxgraph/releases/download/v([0-9]+\.[0-9]+\.[0-9]+)/
+docs/EMBEDDING.md:fluxgraph-([0-9]+\.[0-9]+\.[0-9]+)-source\.tar\.gz
+
