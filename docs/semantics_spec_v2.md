@@ -1,6 +1,6 @@
 # FluxGraph semantics, version 2 (proposal)
 
-**Status:** proposal, third revision, with six amendments. Not in force.
+**Status:** proposal, third revision, with seven amendments. Not in force.
 [semantics_spec.md](semantics_spec.md) stays the normative contract for
 FluxGraph 1.x until this is accepted, at which point this document replaces
 it and the library becomes 2.0.
@@ -100,6 +100,17 @@ time. **Amendments so far:**
    judged together. The summaries that had drifted from the rules they
    summarise are put right, and section 7.11 lists more of what is given
    up.
+
+7. *A rate limit and a PID* (sections 7.4 and 7.7, the table of section
+   8, and Appendix A). A controller written as a formula and a delay
+   stopped for good at its first gap. A `rate_limit` holds its last output
+   and moves it towards its input by no more than a stated rate. A `pid`
+   reads a setpoint and a measurement: its derivative is of the
+   measurement, through a filter; its integral stops going into an output
+   limit and still comes out of it; and with an input it cannot use it
+   gives no value, keeps its integral, and starts its derivative again. It
+   may be told what was applied to the actuator, so that a limit after it
+   does not wind its integral up. A clamp is a formula, and gets no block.
 
 Nothing is left on the list of what is known to be wrong as it stands.
 What each amendment gives up is at the end of section 7, and for time
@@ -671,6 +682,29 @@ it. `only_new` is for the window that must not.
    back, and nothing held is left in the value.
 8. With a usable input its output is `uncertain` if the input is, and for
    `settle` after its doubt. Otherwise it is `good`.
+
+**Rate limit.** It holds the last value it gave, which has no end.
+
+9. The first usable input is taken as it is. After that, on a usable
+   input, its output moves from the value it holds towards the input: by
+   at most `up` times the period where the input is above it, and by at
+   most `down` times the period where it is below. An input within that
+   reach is taken as it is: the input less the value held, either way
+   round, is compared with the reach, exactly. `up` and `down`
+   are per second, and `down` is `up` unless given. The reach is of one
+   period whatever went before: after riding through, the output still
+   moves by no more than one period's worth in a tick. With `initial`
+   given, the block holds that value from the start, and its first input
+   is limited from it like any other.
+10. With a usable input its output takes the state of the input at this
+    tick, as a deadband's does (rule 2). `limited` is a boolean with that
+    state: true when the output is not the input.
+11. With an unusable input, rules 3 and 4 apply to its output as to a
+    deadband's, and `limited` takes the input's state: there is nothing to
+    compare. Having forgotten, it holds `initial` again if it was given
+    one, and otherwise takes its next usable input as it is, however far
+    that is from where it was. Holding `initial` and nothing else it does
+    not ride through: its output takes the input's state.
 <!-- markdownlint-enable MD029 -->
 
 ### 7.5 Hysteresis
@@ -772,6 +806,92 @@ lacks.
    `reset` returns the total and all four counts to zero before that tick's
    addition. An unusable `reset`, or one that is usable and false, is not
    used.
+
+**The PID.** A controller's integral is a running total, and has no end.
+
+<!-- markdownlint-disable MD029 -- the rules of 7.7 keep one numbering -->
+5. A `pid` reads `setpoint` and `measurement`, and its **error** is the
+   first less the second. On a tick where both are usable, its output
+   before limiting is `kp·error + integral + derivative`, and its output
+   `y` is that held within `min` and `max`, where they are given.
+6. **The integral** starts at zero. On a tick where both inputs are
+   usable, `ki·error·period` is added to it, `ki` being per second, and
+   the value at a tick includes that tick's addition, as a total's does
+   (rule 1). **An addition that would put the output before limiting
+   above `max` is cut short**: where the addition is more than zero and,
+   with it made, that output would be above `max`, the integral becomes
+   what puts that output at `max`, or stays as it is if that is less than
+   it has, and `y` is `max`. Likewise below `min`, for an addition less
+   than zero. So the
+   integral stops going into a limit, takes the output to the limit and
+   not short of it, and still comes out of one: an addition towards the
+   other limit is made whole.
+7. **The derivative** is of the measurement and not of the error, so that
+   a step of the setpoint gives none. With `s` the measurement less the
+   measurement of the tick before, over the period, the block keeps
+   `f = a·f + (1 - a)·s` from tick to tick, with
+   `a = exp(-period / filter)`, and the derivative is `-kd·f`. `filter` is
+   written as a length, and is given when `kd` is not zero and only then.
+   On the first tick where both inputs are usable, and on the first such
+   tick after one where they were not, after a reset or after a gap, there
+   is no tick before: `f` is zero, and the derivative with it. Every tick
+   is taken as a new measurement, so `filter` is chosen no shorter than
+   the time between samples: a measurement that stands for several ticks
+   and then moves gives a derivative of spikes.
+8. With both inputs usable, `y` takes the worse of their two states, and
+   is `uncertain` as well on a tick where `reset` is `uncertain` and true.
+   With either unusable, `y` takes the worst state of the two and has no
+   value: **a controller does not drive on a value it did not see**, and a
+   fallback (section 7.10) or the host says what the actuator gets, or a
+   block after it that rides through, a `rate_limit` or a `deadband` with
+   a `step` of zero, holds its last output for that long. The integral is
+   kept, and nothing is added to it.
+9. `limited` is a boolean with the state of `y`: true when the output
+   before limiting was above `max` or below `min`, or the addition was
+   cut short. `integral` is the
+   integral, a number: `uncertain` on a tick where `y` is, or where
+   `reset` is `uncertain` and true, and otherwise `good`, on a tick with
+   an unusable input too, as a total is (rule 2).
+10. It has an input `reset` that need not be connected. A usable, true
+    `reset` returns the integral and the counts to zero and the derivative
+    to its start, before that tick's addition. An unusable `reset`, or one
+    that is usable and false, is not used.
+11. It gives `elapsed`, `doubtful` and `gaps`, which count from its last
+    reset, or from the first tick. `doubtful` counts the ticks on which
+    either input was not `good`. A gap whose tick is the tick of the reset
+    is counted.
+12. **What was applied.** It has an input `applied`, a number, deferred,
+    that need not be connected: the value that reached the actuator, from
+    whatever follows the PID. Rule 6 sees the PID's own `min` and `max`
+    and no limit after it, and against a rate limit that follows it the
+    integral winds up. Where `applied` is usable at a tick whose addition
+    was made, whole or cut short, and is less than `y` by more than
+    `applied_within` with the addition more than zero, or more than `y` by
+    more than `applied_within` with the addition less than zero, **the
+    addition is taken back**: from the next tick the integral is what it
+    was before this one. What this tick gave is not changed. An `applied`
+    that is `uncertain` is used as a `good` one is, and one that is not
+    usable is not used. `applied_within` is zero unless given, and the
+    comparison is exact, of `y` less `applied`, or the other way round,
+    with `applied_within`. A PID whose `applied` is not connected may be
+    given one, which does nothing. At zero, `applied` is for the output
+    of a block
+    that gives `y` on unchanged when it is not limiting, wired straight
+    in. **A readback that is off by anything, a formula's rounding
+    included, needs an `applied_within` larger than it is off by.**
+    Without one, a readback that is always a little low takes every
+    rising addition back, and the integral never grows; one a little high
+    takes back every falling one. A rate limit read back this way still
+    takes the PID's first output whole unless it has an `initial` (rule
+    7.4.9).
+    `limited` says nothing of an addition taken back: a graph that has to
+    know compares `y` with what was applied.
+<!-- markdownlint-enable MD029 -->
+
+A PID with a limit and an error that stays one way sits at the limit with
+its integral where it was when it got there, and comes off the limit as
+soon as the error has turned far enough to bring the output inside it. One with no `max` and no `min` has nothing to stop
+its integral, and `limited` is false.
 
 ### 7.8 Models
 
@@ -1157,7 +1277,7 @@ to write the stricter thing.
 - **An `uncertain` true on a total's `reset` sets it and its counts to
   zero.** The total is `uncertain` on that tick and `good` from the next,
   with nothing to say it was reset on doubt. Give it `r and ok`, as for a
-  latch.
+  latch. A PID's `reset` is the same.
 - **An `uncertain` measurement on a port with no `r_uncertain` is passed
   by**, and the estimator stays `good`. `since_<port>` shows how long it
   has gone without one.
@@ -1233,6 +1353,28 @@ to write the stricter thing.
   where a model block stops after `ride_through`. A tick after a stall of
   a thousand ticks it is `good` on a thousand steps of an input nobody
   saw, with a sigma that has grown by its process noise alone.
+- **A PID keeps its integral across a gap of any length**, a restore
+  among them, and is `good` on the far side with whatever it had wound to.
+  `gaps` says there was one.
+- **A PID is `good` on the tick after an `uncertain` error went into its
+  integral.** `doubtful` counts the tick. Its derivative's filter fades,
+  and is treated as the integral is and not as a low-pass.
+- **A rate limit with no `initial` does not limit its first move**, or
+  its first after it has forgotten: past `ride_through`, or after a gap
+  that long, its next usable input is taken as it is.
+- **A limit after a PID that `applied` is not connected to is not seen by
+  it.** Its integral winds up against it, and `limited` is false.
+- **A PID whose `applied` reads low by more than `applied_within` never
+  integrates upwards**, and is `good` with a standing error; one that
+  reads high never integrates downwards. A shortfall inside
+  `applied_within` is not seen, and the integral winds up by that much.
+- **An `uncertain` `applied` decides what the integral keeps**, and the
+  integral is `good` on the next tick.
+- **A PID's derivative is zero on the tick an input comes back**, and its
+  output steps by what the derivative was giving. With `kd` of zero there
+  is no step.
+- **A rate limit holding a value it moved to on an `uncertain` input** is
+  `good` once its input is, as a deadband is.
 - **Only a window has a tolerance for doubtful samples.** One `uncertain`
   sample in every `settle` ticks keeps a low-pass, and any low-pass or
   model after it, `uncertain` for good. That includes the value another
@@ -1337,11 +1479,12 @@ to write the stricter thing.
 | `formula`, `all_good` | Nothing: no memory | The same |
 | `delay` | It moves on `n` places, taking in `not_ready` for each, so that what it gives is still its input of `ticks` ago | Everything it holds is `not_ready`, an initial value not yet given among them |
 | `window` | Those `n` ticks hold no sample, and count as `not_ready` | None of its ticks holds a sample |
-| `deadband`, `lowpass` | If the last tick passed over is within `ride_through` of its last usable input, it holds what it held, and a low-pass decays over the ticks it missed (rule 7.4.5). Otherwise it forgets, a low-pass its doubt too | It forgets |
+| `deadband`, `lowpass`, `rate_limit` | If the last tick passed over is within `ride_through` of its last usable input, it holds what it held, and a low-pass decays over the ticks it missed (rule 7.4.5). Otherwise it forgets, a low-pass its doubt too | It forgets |
 | `hysteresis` | Stays as it was. `doubtful` goes up by `n` | Stays as it was |
 | `held_for` | With `reset` the timer stops. With `hold` the unusable stretch grows by `n`: within `hold_limit` the timer runs on and `doubtful` goes up by `n`, and past it the timer stops | The timer stops |
 | `since_true` | The clock is not set, with either `on_bad`. `doubtful` goes up by `n` | The input was last true longer ago than `time` (rule 7.6.2), and its counts start again at the gap's tick |
 | `latch` | Unchanged. `doubtful` goes up by `n` if it is not set | Unchanged |
+| `pid` | The integral is unchanged, and the derivative starts again (rule 7.7.7). `doubtful` goes up by `n` | The integral is unchanged, and the derivative starts again |
 | `integrate` | The total is unchanged. `missed` and `elapsed` go up by `n` | The total is unchanged. With `max_missed` given it is `bad` until a reset: what it missed is more than that |
 | Model block | For each of those ticks, in order, it steps on the last usable value of every input while each is within `ride_through` (rule 7.8.4), and takes no step from the first tick where one is not. `doubtful` goes up by `n`. The tick before the one that runs is a doubt (rule 7.8.6), its loop's if it is on one: with `settle` it is `uncertain` from the tick that runs | The same doubt. It takes no step, and does not ride through (rule 7.8.4) |
 | `estimator` | It predicts `n` times more on the model inputs it last had (rule 7.9.9) | Each state's variance grows by its `p0` |
@@ -1495,7 +1638,7 @@ checks that run them.
 | Thermal, process, mechanical and motor models | Kept as models, each a case of `linear` (Appendix A) |
 | Model settings named with their units (`tau_s`, `resistance_ohm`) | Named without; a length of time is written with its unit |
 | Model settings' ranges | Wider in places: a `thermal_rc2` node may lose nothing to the ambient, and a `dc_motor` may have no resistance, back emf or torque |
-| The transforms | `delay` is kept, in ticks. `first_order_lag` is `lowpass`, and `moving_average` is a `window`'s `mean`. `linear` (scale and offset) and `unit_convert` are each a `formula`. `deadband` is another block under the same name: 1.x gives zero inside a threshold, which is a `formula`. `saturation`, `rate_limiter` and `noise` are not in the catalogue yet (Appendix A, Open) |
+| The transforms | `delay` is kept, in ticks. `first_order_lag` is `lowpass`, and `moving_average` is a `window`'s `mean`. `linear` (scale and offset) and `unit_convert` are each a `formula`. `deadband` is another block under the same name: 1.x gives zero inside a threshold, which is a `formula`. `saturation` is a `formula`, `min(max(x, lo), hi)`, and `rate_limiter` is `rate_limit`. `noise` is not in the catalogue yet |
 | Delay in seconds | Delay in ticks; lengths of time are whole periods |
 | Noise from the standard library's generator | A generator this document will have to name, so that a vector can cover it |
 | Units, namespace, loaders, diagram tool | Kept, adapted to ports |
@@ -1529,6 +1672,8 @@ what the vectors pin down.
 | `since_true` | `x`: boolean | `time`, `on_bad` | `y`: boolean; `elapsed`, `doubtful`, `gaps` |
 | `latch` | `set`: boolean; `reset`: boolean, optional | none | `y`: boolean; `elapsed`, `doubtful`, `gaps` |
 | `integrate` | `x`: number; `reset`: boolean, optional | `per` (`1s`), `max_missed` (none) | `y`, `missed`, `doubtful`, `elapsed`, `gaps` |
+| `rate_limit` | `x`: number | `up`, `down` (`up`), `ride_through` (0), `initial` (none) | `y`; `limited`: boolean |
+| `pid` | `setpoint`, `measurement`: number; `reset`: boolean, optional; `applied`: number, optional, deferred | `kp`, `ki` (0), `kd` (0), `filter`, `min` (none), `max` (none), `applied_within` (0) | `y`, `integral`; `limited`: boolean; `elapsed`, `doubtful`, `gaps` |
 | `linear` | one per column of `B`, named by `inputs` | `A`, `B`, `C`, `D` (zeros), `initial` (zeros), `inputs`, `states`, `outputs`, and the model settings | one per row of `C`, named by `outputs`; and the model outputs |
 | `thermal_mass` | `power`, `ambient` | `thermal_mass`, `heat_transfer`, `initial`, and the model settings | `temp`; and the model outputs |
 | `thermal_rc2` | `power`, `ambient` | `thermal_mass_a`, `thermal_mass_b`, `heat_transfer_a`, `heat_transfer_b`, `coupling`, `initial_a`, `initial_b`, and the model settings | `temp_a`, `temp_b`; and the model outputs |
@@ -1558,10 +1703,14 @@ Ranges, outside which a graph is refused: `ticks` a whole number, at least
 which is a width and not a size: an engine may refuse a graph it has not
 the memory for, a long window among them, and a count it works out, a
 low-pass's `settle` say, that does not fit in 64 bits;
-`measure` at least one port; `per`, `tau`, `p0` and `r` more than zero; a
+`measure` at least one port; `up`, `down` and `applied_within` not
+negative; `per`, `tau`,
+`filter`, `p0` and `r` more than zero; `min` less than `max` where both
+are given; a
 model's settings as its entry below says; `rise` more
 than `fall`; every number, `initial` and fallback finite; `on_bad` one of
-the choices its block gives. `hold_limit` is required with `on_bad: hold`
+the choices its block gives. `filter` is required with a `kd` that is not
+zero and refused without one. `hold_limit` is required with `on_bad: hold`
 and refused without it. `min_good` is required with `only_new: true`.
 
 - **`formula`.** Section 7.1 governs states.
@@ -1632,6 +1781,9 @@ and refused without it. `min_good` is required with `only_new: true`.
 - **`latch`.** Section 7.6 rule 3.
 - **`integrate`.** Section 7.7. On a usable tick it adds `x × period / per`.
   `missed` is in seconds.
+- **`rate_limit`.** Section 7.4 rules 9 to 11.
+- **`pid`.** Section 7.7 rules 5 to 12. `kp`, `ki` and `kd` are any finite
+  numbers: `ki` per second, `kd` in seconds.
 - **`linear`.** Any linear model in continuous time (rule 7.8.7):
   `dx/dt = A·x + B·u`, `y = C·x + D·u`. `A` is a list of `n` rows of `n`
   numbers; `B` a list of `n` rows, one number per input; `C` a list of
@@ -1707,11 +1859,12 @@ and refused without it. `min_good` is required with `only_new: true`.
 A block may carry `fallback`, a map from an output port to a constant of
 that port's type (section 7.10).
 
-**Open.** The catalogue is short of what a first real graph needs: a clamp,
-a rate limit, a derivative, an edge detector, an off-delay, a moving sum, a
-lookup, a selector, a difference of a device's counter, a PID and a
-second-order section. None can be put together from the blocks above
-without a loop through a delay, and a formula cannot read the period. Each
+**Open.** The catalogue is short of what a first real graph needs: a
+derivative, an edge detector, an off-delay, a moving sum, a lookup, a
+selector, a difference of a device's counter and a second-order section.
+None can be put together from the blocks above without a loop through a
+delay, and a formula cannot read the period. A clamp can, and is a
+formula: `min(max(x, lo), hi)`. Each
 is a block with scalar settings, and none needs a rule this document does
 not have. Settled by: writing them, each with its
 vectors.
