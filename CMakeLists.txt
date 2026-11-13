@@ -15,6 +15,7 @@ option(FLUXGRAPH_BUILD_SERVER "Build gRPC server" OFF)
 option(FLUXGRAPH_BUILD_DIAGRAM_TOOL "Build diagram generation tooling" OFF)
 option(FLUXGRAPH_JSON_ENABLED "Enable JSON graph loading (requires nlohmann/json)" OFF)
 option(FLUXGRAPH_YAML_ENABLED "Enable YAML graph loading (requires yaml-cpp)" OFF)
+option(FLUXGRAPH_BUILD_V2 "Build the version 2 core and its conformance driver (proposal)" OFF)
 
 # Map CMake options -> vcpkg manifest features for deterministic dependency resolution.
 if(FLUXGRAPH_BUILD_TESTS)
@@ -157,6 +158,12 @@ if(FLUXGRAPH_BUILD_DIAGRAM_TOOL)
     add_subdirectory(tools)
 endif()
 
+# Version 2 core (proposal), beside the 1.x library and apart from it
+if(FLUXGRAPH_BUILD_V2)
+    add_subdirectory(src/v2)
+    add_subdirectory(tools/fluxgraph_v2_driver)
+endif()
+
 # Tests
 if(FLUXGRAPH_BUILD_TESTS)
     enable_testing()
@@ -189,11 +196,13 @@ install(TARGETS fluxgraph
 if(FLUXGRAPH_BUILD_DIAGRAM_TOOL)
     install(DIRECTORY include/fluxgraph
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        PATTERN "v2" EXCLUDE
     )
 else()
     install(DIRECTORY include/fluxgraph
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         PATTERN "viz" EXCLUDE
+        PATTERN "v2" EXCLUDE
     )
 endif()
 
