@@ -26,6 +26,11 @@ What is checked:
    and 2.5 s, and with `B` up to 10^150.
 3. A matrix just past the bound is refused, and one whose step is past what a double holds.
 4. A named model's default `settle` (rule 7.8.6), against the eigenvalues worked in decimal.
+5. The process noise `N` an estimator adds over one step (rule 7.9.2), which is promised on the same terms: the
+   integral of `exp(A s) Q exp(A' s)` over the period. It is worked in decimal by its series and by doubling,
+   and that is checked against a closed form for one state and against another route, the equation
+   `A N + N A' = Ad Q Ad' - Q` solved for `N`, wherever that has one answer. `N` is read off an estimator: one
+   that starts all but certain gives, after its first prediction, the innovation squared over `c N c'`.
 
 The error of an entry is its difference from the decimal value over the larger of that value and 1, as rule 11.5
 compares. Prints the worst of each family, and exits 1 if any is over 10^-9. Stdlib only.
@@ -243,6 +248,143 @@ def against_the_core(rng):
     return tried, table
 
 
+# ---- process noise (rule 7.9.2)
+
+
+def exact_noise(a, q, seconds):
+    """-> N, the integral of exp(A s) Q exp(A' s) over the period, by its series on a small step and doubling:
+    the integrand's k-th derivative at zero is L(k), with L(0) = Q and L(k + 1) = A L(k) + L(k) A'."""
+    n = len(a)
+    a = [[Decimal(v) for v in row] for row in a]
+    size = max(sum(abs(v) for v in row) for row in a) * seconds
+    halvings = max(0, size.adjusted() * 4 + 16) if size else 0
+    h = seconds / Decimal(2) ** halvings
+    x = [[v * h for v in row] for row in a]
+    layer = [[Decimal(q[i]) * int(i == j) for j in range(n)] for i in range(n)]
+    total = [row[:] for row in layer]
+    for k in range(1, 60):
+        left, right = times(x, layer), times(layer, [list(col) for col in zip(*x)])
+        layer = [[(left[i][j] + right[i][j]) / k for j in range(n)] for i in range(n)]
+        total = [[total[i][j] + layer[i][j] / (k + 1) for j in range(n)] for i in range(n)]
+    total = [[v * h for v in row] for row in total]
+    e = exponential(x)
+    for _ in range(halvings):
+        carried = times(times(e, total), [list(col) for col in zip(*e)])
+        total = [[total[i][j] + carried[i][j] for j in range(n)] for i in range(n)]
+        e = times(e, e)
+    return total
+
+
+def noise_by_equation(a, q, seconds):
+    """-> N by another route, or None where that route cannot be taken: A N + N A' = Ad Q Ad' - Q, which is the
+    integrand taken at the two ends, solved for N's entries as so many unknowns. It has one answer unless two
+    rates of A add up to nothing."""
+    n = len(a)
+    a = [[Decimal(v) for v in row] for row in a]
+    ad = exponential([[v * seconds for v in row] for row in a])
+    big_q = [[Decimal(q[i]) * int(i == j) for j in range(n)] for i in range(n)]
+    right = times(times(ad, big_q), [list(col) for col in zip(*ad)])
+    rows = []
+    for i in range(n):
+        for j in range(n):
+            row = [Decimal(0)] * (n * n + 1)
+            for k in range(n):
+                row[k * n + j] += a[i][k]  # (A N)(i, j) = sum over k of A(i, k) N(k, j)
+                row[i * n + k] += a[j][k]  # (N A')(i, j) = sum over k of N(i, k) A(j, k)
+            row[n * n] = right[i][j] - big_q[i][j]
+            rows.append(row)
+    scale = max(abs(v) for row in rows for v in row[:-1])
+    for col in range(n * n):
+        pivot = max(range(col, n * n), key=lambda r: abs(rows[r][col]))
+        if abs(rows[pivot][col]) < scale * Decimal(10) ** -40:
+            return None
+        rows[col], rows[pivot] = rows[pivot], rows[col]
+        for r in range(n * n):
+            if r != col and rows[r][col]:
+                factor = rows[r][col] / rows[col][col]
+                rows[r] = [v - factor * w for v, w in zip(rows[r], rows[col])]
+    return [[rows[i * n + j][n * n] / rows[i * n + j][i * n + j] for j in range(n)] for i in range(n)]
+
+
+def core_noise(a, q, period):
+    """-> for each pair of states i <= j, c N c' as the implementation has it, with c picking out state i, or
+    states i and j together; or None where it refuses the graph. Read off an estimator that starts all but
+    certain (p0 of 10^-300), after its first prediction: its spread for a measurement of variance 10^-300 is
+    c P c', and it gives the innovation squared over that. A gate of zero has every measurement refused, so
+    that none of them changes P for the next."""
+    n = len(a)
+    pairs = [(i, j) for i in range(n) for j in range(i, n)]
+    model = {"type": "linear", "A": a, "B": [[0.0]] * n, "outputs": [f"o{k}" for k in range(len(pairs))]}
+    model["C"] = [[float(s in pair) for s in range(n)] for pair in pairs]
+    settings = {"model": model, "q": {f"x{i}": q[i] for i in range(n)}, "p0": {f"x{i}": 1e-300 for i in range(n)}}
+    settings["measure"] = {f"m{k}": {"of": f"o{k}", "r": 1e-300} for k in range(len(pairs))}
+    settings.update(consistency="none", gate=0, max_refused=1)
+    ins = {"u": 0.0, **{f"m{k}": f"z{k}" for k in range(len(pairs))}}
+    block = {"id": "k", "type": "estimator", "in": ins, "settings": settings}
+    block["out"] = {f"nis_m{k}": f"n{k}" for k in range(len(pairs))}
+    inputs = {f"z{k}": {"max_age": "none"} for k in range(len(pairs))}
+    try:
+        engine = adapter.Engine({"period": f"{period}ns", "inputs": inputs, "blocks": [block]})
+    except adapter.CompileError:
+        return None
+    engine.tick(0)
+    for k in range(len(pairs)):
+        engine.write(f"z{k}", adapter.GOOD, 1.0, period)
+    out = engine.tick(period)[1]
+    if any(out[f"n{k}"].v is None for k in range(len(pairs))):
+        return None
+    return {pair: 1.0 / out[f"n{k}"].v for k, pair in enumerate(pairs)}
+
+
+def against_the_core_noise(rng):
+    """5: the process noise of one step, against the decimal routes."""
+    tried, table, routes = 0, {}, 0.0
+    scalar = exact_noise([[-3.0]], [0.5], Decimal(2))[0][0]  # one state: q (exp(2 a T) - 1) / (2 a)
+    closed = Decimal("0.5") * ((Decimal(-12)).exp() - 1) / Decimal(-6)
+    routes = float(abs(scalar - closed))
+
+    def one(family, a, q, period, seconds, n, size):
+        nonlocal tried, routes
+        have = core_noise(a, q, period)
+        if have is None:
+            print(f"FAILS: an estimator over {family}, {n} states, size {size:g}, period {period} ns was refused")
+            sys.exit(1)
+        want = exact_noise(a, q, seconds)
+        other = noise_by_equation(a, q, seconds)
+        if other is not None:
+            top = max(Decimal(1), max(abs(v) for row in want for v in row))
+            routes = max(routes, max(float(abs(want[i][j] - other[i][j]) / top) for i in range(n) for j in range(n)))
+        tried += 1
+        for (i, j), value in have.items():
+            exact = want[i][i] if i == j else want[i][i] + want[j][j] + 2 * want[i][j]
+            exact += Decimal("2e-300") if i == j else Decimal("3e-300")  # what p0 and r add, near enough
+            error = float(abs(Decimal(value) - exact) / max(Decimal(1), abs(exact)))
+            key = (family, "N" if i == j else "N+")
+            if not error <= table.get(key, (-1.0,))[0]:
+                table[key] = (error, n, size, period, (i, j, value, float(exact)))
+
+    for period in (10**9, 37 * 10**6, 2_500_000_000):
+        seconds = Decimal(period) / 10**9
+        for n in range(1, 6):
+            for size in (1e-8, 1e-3, 1.0, 50.0, 1e3, 3e4, 99999.9):
+                for family, matrix in families(rng, n):
+                    a = scaled(matrix, size, float(seconds))
+                    q = [rng.uniform(0.1, 1.0) / float(seconds) for _ in range(n)]
+                    one(family, a, q, period, seconds, n, size)
+    for n in range(1, 6):
+        for size in (1.0, 30.0, 300.0):
+            a = scaled([[rng.uniform(-1, 1) for _ in range(n)] for _ in range(n)], size, 1.0)
+            one("any matrix, growing", a, [rng.uniform(0.1, 1.0) for _ in range(n)], 10**9, Decimal(1), n, size)
+    if routes > 1e-60:
+        print(f"FAILS: the two decimal routes to the process noise are out from each other by {routes:.3g}")
+        sys.exit(1)
+    # past what a double holds, though Ad is not: refused (rule 7.9.9)
+    if core_noise([[400.0]], [1.0], 10**9) is not None or core_noise([[300.0]], [1.0], 10**9) is None:
+        print("FAILS: process noise past what a double holds was accepted, or noise within it refused")
+        sys.exit(1)
+    return tried + 2, table, routes
+
+
 def refusals():
     """3: just past the bound, and past what a double holds."""
     wanted = [
@@ -336,6 +478,14 @@ def main():
         at = f"{n} states, size {size:g}, period {period / 1e9:g} s"
         print(f"{family:30s} {which:3s} {error:11.3g}  {at}, entry {where}")
     tried += refusals() + default_settles()
+    noises, table, routes = against_the_core_noise(rng)
+    tried += noises
+    print(f"the two decimal routes to the process noise: out from each other by at most {routes:.1g}")
+    print("N: a variance of N, read by itself; N+: two variances and twice their covariance, read as one sum")
+    for (family, which), (error, n, size, period, where) in sorted(table.items()):
+        most = max(most, error)
+        at = f"{n} states, size {size:g}, period {period / 1e9:g} s"
+        print(f"{family:30s} {which:3s} {error:11.3g}  {at}, states {where[0]}, {where[1]}: {where[2:]}")
     if not most <= PROMISED:
         print(f"FAILS: the worst error, {most:.3g}, is over what is promised, {PROMISED:g}")
         sys.exit(1)
