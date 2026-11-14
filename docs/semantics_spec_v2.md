@@ -119,7 +119,10 @@ time. **Amendments so far:**
    number has been run, and that a call is refused whole if any tick it
    would run does not fit. It also wanted the order of an `integrate`'s
    arithmetic, a delay's type on a loop, what a `bad` input is to a window
-   that takes only new samples, and how deep a formula may nest.
+   that takes only new samples, and how deep a formula may nest. The
+   second slice asked for the order of a PID's sum, which three
+   implementations had taken three ways, and how a low-pass raises its
+   decay to a power.
 
 Nothing is left on the list of what is known to be wrong as it stands.
 What each amendment gives up is at the end of section 7, and for time
@@ -689,7 +692,9 @@ it. `only_new` is for the window that must not.
 5. The first usable input sets `y = x`. After that, on a usable input,
    `y = aᵐ·y + (1 - aᵐ)·x`, where `a = exp(-period / tau)` and `m` is the
    number of ticks since its last usable input. `m` is 1 unless it has
-   ridden through unusable ticks; the ticks it missed decay too.
+   ridden through unusable ticks; the ticks it missed decay too. `aᵐ` is
+   `a` raised to the power `m` as C's `pow` gives it, and `a` itself
+   where `m` is 1.
 6. With an unusable input, rules 3 and 4 apply to it as to a deadband.
 7. Its **doubt** is the latest tick at which it took an `uncertain` input,
    a first input among them. Forgetting (rule 4) clears it. Riding through
@@ -828,7 +833,13 @@ lacks.
 5. A `pid` reads `setpoint` and `measurement`, and its **error** is the
    first less the second. On a tick where both are usable, its output
    before limiting is `kp·error + integral + derivative`, and its output
-   `y` is that held within `min` and `max`, where they are given.
+   `y` is that held within `min` and `max`, where they are given. The sum
+   is worked in one order, since another differs in the last place and
+   can fall on the other side of a limit: `kp·error` and the derivative
+   are added first, and to that the integral with this tick's addition
+   already made. The test of rule 6 is of that same sum. Where an
+   addition is cut short at `max`, the integral becomes `max` less the
+   first of those two, and `y` is `max` itself.
 6. **The integral** starts at zero. On a tick where both inputs are
    usable, `ki·error·period` is added to it, `ki` being per second, and
    the value at a tick includes that tick's addition, as a total's does
@@ -884,7 +895,8 @@ lacks.
     `applied_within` with the addition more than zero, or more than `y` by
     more than `applied_within` with the addition less than zero, **the
     addition is taken back**: from the next tick the integral is what it
-    was before this one. What this tick gave is not changed. An `applied`
+    was before this tick's addition, which on the tick of a reset is
+    zero. What this tick gave is not changed. An `applied`
     that is `uncertain` is used as a `good` one is, and one that is not
     usable is not used. `applied_within` is zero unless given, and the
     comparison is exact, of `y` less `applied`, or the other way round,
