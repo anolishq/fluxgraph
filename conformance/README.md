@@ -561,12 +561,14 @@ say, and three vectors are new for them:
 
 ## The C++ core
 
-A first slice of a version 2 core in C++ is in `include/fluxgraph/v2/` and
+Two slices of a version 2 core in C++ are in `include/fluxgraph/v2/` and
 `src/v2/`, behind the CMake option `FLUXGRAPH_BUILD_V2`, which is off
 unless given. It was written from the proposal's text, without sight of
 either reading here. It has the engine, the compiler, the formula language
-and five block types: `formula`, `all_good`, `delay`, `window` and
-`integrate`.
+and thirteen block types: `formula`, `all_good`, `delay`, `window`,
+`integrate`, `deadband`, `lowpass`, `rate_limit`, `hysteresis`,
+`held_for`, `since_true`, `latch` and `pid`. The model blocks and the
+estimator are not built.
 
 `cpp/adapter.py` drives it through a small executable,
 `fluxgraph_v2_driver`, over a line protocol, so that the checks here run
@@ -576,10 +578,10 @@ against it as they do against the readings:
 cmake -S . -B build/v2 -G Ninja -DFLUXGRAPH_BUILD_V2=ON -DFLUXGRAPH_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
 cmake --build build/v2 --target fluxgraph_v2_driver
 export FLUXGRAPH_V2_DRIVER=$PWD/build/v2/tools/fluxgraph_v2_driver/fluxgraph_v2_driver
-python3 conformance/run.py --cpp        # 383 vectors: 163 agree, 220 skipped (block types not built)
-python3 conformance/compare.py --cpp    # 80 graphs run, 155 skipped; 611044 comparisons, 0 differences
+python3 conformance/run.py --cpp        # 383 vectors: 242 agree, 141 skipped (block types not built)
+python3 conformance/compare.py --cpp    # 145 graphs run, 90 skipped; 1267788 comparisons, 0 differences
 python3 conformance/contract.py --cpp   # 748648 sequences: ALL HOLD
-python3 conformance/cpp/edges.py        # 72381 checks: ALL HOLD
+python3 conformance/cpp/edges.py        # 72511 checks: ALL HOLD
 ```
 
 A vector or a graph that needs a block type not built yet is skipped and

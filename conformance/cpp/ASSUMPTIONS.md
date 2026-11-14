@@ -5,7 +5,9 @@ The first slice of the C++ core (`include/fluxgraph/v2`, `src/v2`) was
 written from `docs/semantics_spec_v2.md` as amended seven times, without
 sight of `reference.py`, `formula.py` or `second/impl.py`. It has `formula`,
 `all_good`, `delay`, `window` and `integrate`, and the whole of sections 6
-and 8.
+and 8. A second slice, written the same way from the text as amended
+eight times, adds eight block types; its entries are in a section of
+their own.
 
 This lists each place where the text left a choice or could be read two
 ways, with the reading taken. A choice the second reading already
@@ -87,15 +89,13 @@ last section. Rule numbers are those of the text as it stands.
 
 ## Rules read one way of two
 
-15. **Appendix A, `integrate`: "it adds `x × period / per`".** Worked as
-    `x` times the ratio, with the ratio worked once: the period in
-    nanoseconds, as a double, over `per` in nanoseconds as the nearest
-    double to what was written. With `per` equal to the period the ratio
-    is exactly 1 and a count of ticks is exact. The order matters in the
-    last place: at a period of 100 ms with `per: 300ms` and an input of
-    3, the core's total after one tick is exactly 1, and both Python
-    readings give a value that `== 1` says is not (they agree with the
-    core to 10⁻⁹, which is all rule 11.5 asks).
+15. **Appendix A, `integrate`: the ratio of the period to `per`.** Settled
+    by the eighth amendment: "worked once, exactly, and then taken as a
+    double". The core now does that for every length that only scales a
+    value (`per`, `tau`, `filter`): the ratio of two exact lengths, rounded
+    once to the nearest double, ties to even. Before the amendment it
+    divided two doubles, which is the same wherever both are exact in a
+    double and can differ in the last place elsewhere.
 16. **Appendix A, formula numbers: "A number too large for a double is
     refused."** One too small for a double, `1e-999`, is not refused: it
     is the nearest double, zero.
@@ -132,6 +132,84 @@ last section. Rule numbers are those of the text as it stands.
     reads back to the same double. A value that is not a number crosses
     as `nan`, without its sign or payload; the core reads any such value
     as `bad` (rule 7.2.3).
+
+## The second slice: the blocks that hold, the timers, the latch and the PID
+
+`deadband`, `lowpass`, `rate_limit`, `hysteresis`, `held_for`,
+`since_true`, `latch` and `pid` were written from sections 7.4 to 7.7, the
+head of section 7, section 8's table and Appendix A, as amended eight
+times. All 79 vectors they opened agreed as first written, and so did
+every probe against the two readings, so nothing here is a disagreement:
+each is a place where the words allowed another answer.
+
+26. **Rule 7.4.5, `aᵐ`.** Worked as `pow(a, m)` with `a = exp(-ratio)`,
+    and as `a` itself where `m` is 1. `exp(-m · period / tau)` is the same
+    number and can differ in the last place. The text gives the formula
+    and not the arithmetic, as Appendix A now does for `integrate`.
+27. **Rule 7.7.6, the arithmetic of the output and of a cut addition.**
+    The output before limiting is worked as
+    `kp·error + (integral + addition) + derivative`, in that order. Cut
+    short at `max`, the integral becomes `max - kp·error - derivative`, or
+    stays if that is less, and `y` is `max` itself and not the sum worked
+    again, which need not come back to `max` exactly. Another order
+    differs in the last place, and decides on which side of a limit an
+    output within rounding of it falls.
+28. **Rule 7.7.12, "what it was before this one" on the tick of a
+    reset.** The integral before this tick's addition, which on a reset's
+    tick is zero and not what it held before the reset. Both readings take
+    it so (the second records it); the text still does not say.
+29. **Rule 7.7.7, `kd` of zero.** No `filter` is given, so there is no
+    `a`: the core keeps no `f` and the derivative is zero. Nothing can
+    show whether `f` is kept.
+30. **Rules 7.7.8 and 7.7.9, a tick with an input that is not usable.**
+    `limited` "is a boolean with the state of `y`", so it has no value
+    either. `integral` is `good` with its value, and `uncertain` where
+    `reset` is `uncertain` and true. A reset on such a tick still returns
+    the integral and the counts to zero.
+31. **Rule 7.7.12, an addition of nothing.** With `ki` or the error at
+    zero the addition is neither more nor less than zero, and is neither
+    cut short nor taken back. An addition cut short to nothing is "made",
+    and taking it back changes nothing.
+32. **Rule 7.4.7 and 7.4.8, `settle` across a gap.** The doubt is kept as
+    a tick's number, and "the `settle` ticks after `d`" are ticks by
+    number, so the ticks a stall or a rebase with a length passed over
+    are among them.
+33. **Section 8's table, "within `ride_through` of its last usable
+    input".** The unusable ticks in a row before the gap and the ticks
+    passed over, together, are no more than `ride_through`. A low-pass
+    that holds across a gap decays over all of them on the input that
+    comes back.
+34. **Rule 7.4.11, "holding `initial` and nothing else".** That is so
+    from the start and again after it has forgotten, until its first
+    usable input. A gap adds nothing to a block in that state.
+35. **Rule 7.6.1, the counters on the tick the timer stops.** They are
+    zero on that tick already, `gaps` with them, and a gap while the
+    timer is not running is counted nowhere unless the timer starts on
+    the gap's own tick.
+36. **Rule 7.5.4, a hysteresis with `initial`.** It is never undecided,
+    so its first usable input is a change only if it goes to the other
+    side. Until then the counts are from the first tick.
+37. **Rule 7.6.2, `on_bad: unknown` after a gap of no known length.**
+    "The output's value is true, with the state the rule above gives it":
+    with an unusable input that state is the input's, and there is no
+    value.
+38. **Appendix A, ranges.** "Not negative" is read on the number: `-0.0`
+    is taken. A `settle` or a `ride_through` of `0s` is taken. `step`,
+    `up`, `rise`, `fall`, `kp` and `initial` may be written as whole
+    numbers. A hysteresis's `initial` is a boolean and a rate limit's a
+    finite number.
+39. **Appendix A, `lowpass`: "`settle` (three `tau`)".** Three times
+    `tau` over the period, rounded up, worked exactly from what the graph
+    writes and not in doubles (rule 6.3: "there is no tolerance"). `tau`
+    need not be a whole number of nanoseconds.
+
+Read the same way as the second reading records them: the reach of a rate
+limit is the rate times the period in seconds, worked once in doubles; an
+output exactly at `max` with its addition whole is not `limited`; a gap
+that passed over no tick does not start a PID's derivative again; a
+`held_for` holding across a gap measures the stretch from before the gap;
+`gaps` starts at one where a count starts again on the gap's own tick; a
+`reset` that is true clears a latch whatever `set` is.
 
 ## Recorded already, and read the same way
 

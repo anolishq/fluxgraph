@@ -19,6 +19,7 @@ What is checked:
 2. The number of samples a window needs (rules 6.3 and 7.3.2), against exact fractions.
 3. Lengths of time (rule 9.3) that are, and are just not, whole nanoseconds that fit, in every unit.
 4. What the driver refuses because it cannot be handed to the core: a time that is not whole or does not fit.
+5. Lengths that only scale a value (`per`, `tau`): the ratio and the rounding up are exact, at any period.
 
 Exits 1 on the first difference, and prints it. Stdlib only.
 """
@@ -431,10 +432,67 @@ def limits():
     return len(wanted) + 5
 
 
+def ratios():
+    """5: a length that only scales a value is taken exactly (rule 6.3; Appendix A, `integrate` and `lowpass`)."""
+    units = {"ns": 1, "us": 10**3, "ms": 10**6, "s": 10**9, "m": 60 * 10**9, "h": 3600 * 10**9}
+    tried = 0
+    # An integrate adds x times the ratio of the period to `per`, worked exactly and then taken as a double.
+    pers = [
+        "300ms",
+        "0.3s",
+        "0.1ns",
+        "7s",
+        "1h",
+        "0.7m",
+        "3ns",
+        "0.000000001s",
+        "9223372036854775807ns",
+        "123456789.123456789us",
+    ]
+    pers += ["0.000000000000000000001ns", "99999999999999999999999999h", "1.1s", "0.9s", "49ns"]
+    pairs = [(period, per) for period in (1, 3, 10**8, 10**9, 37 * 10**6, 2**53 + 1, 2**62 + 1, HIGH) for per in pers]
+    # Ratios whose 54th bit is set and whose next ten are not, with more after: half-way but for what is far below.
+    pairs += [(124909972, "865811861ns"), (916708312, "276467299ns"), (273471883, "230981431ns")]
+    # And two that divide exactly, where what is far below is in the quotient itself.
+    pairs += [(3277024805645671066, "0.00000000000000000001ns"), (341157100118808736, "0.00000000000000000001ns")]
+    for period, per in pairs:
+        tried += 1
+        number, unit = next((per[: -len(u)], u) for u in ("ns", "us", "ms", "s", "m", "h") if per.endswith(u))
+        want = float(Fraction(period) / (Fraction(number) * units[unit]))  # a Fraction's float is the nearest
+        blocks = [{"id": "i", "type": "integrate", "in": {"x": 1}, "settings": {"per": per}, "out": {"y": "y"}}]
+        y = adapter.Engine({"period": f"{period}ns", "blocks": blocks}).tick(0)[1]["y"]
+        if (y.v if math.isfinite(want) and y.v is not None else None) != (want if math.isfinite(want) else None):
+            fail("the ratio of the period to per", ("period", period), ("per", per), ("core", y), ("text", want))
+    # A low-pass's settle is three time constants, rounded up to whole ticks, exactly: it is uncertain on that
+    # many ticks after an uncertain input, and no more.
+    for period, tau in (
+        ("100ms", "0.7s"),
+        ("1s", "0.3333333333s"),
+        ("1s", "0.3333333334s"),
+        ("1s", "1s"),
+        ("3ns", "1ns"),
+    ):
+        tried += 1
+        ticks = Fraction(adapter.seconds(period)).limit_denominator(10**12)
+        ticks = math.ceil(
+            3 * Fraction(tau[:-1] if tau.endswith("s") and not tau.endswith("ns") else tau[:-2] + "e-9") / ticks
+        )
+        blocks = [{"id": "f", "type": "lowpass", "in": {"x": "x"}, "settings": {"tau": tau}, "out": {"y": "y"}}]
+        engine = adapter.Engine({"period": period, "inputs": {"x": {"max_age": "none"}}, "blocks": blocks})
+        step = round(adapter.seconds(period) * 10**9)
+        engine.write("x", UNCERTAIN, 1.0, 0)
+        engine.tick(0)
+        engine.write("x", GOOD, 1.0, step)
+        first = next(k for k in range(1, ticks + 3) if engine.tick(k * step)[1]["y"].state == GOOD)
+        if first != ticks + 1:
+            fail("a low-pass's settle", ("period", period), ("tau", tau), ("core", first - 1), ("text", ticks))
+    return tried
+
+
 def main():
     adapter.start()
     rng = random.Random(20261113)
-    total = last_number() + needed(rng) + lengths() + limits()
+    total = last_number() + needed(rng) + lengths() + limits() + ratios()
     for period in (1, 2, 3, 7, 10**9, 2**61, 2**62, 2**62 + 1, 2**63 - 2, 2**63 - 1):
         tried = sequences(rng, period, runs=60, steps=120)
         total += tried
