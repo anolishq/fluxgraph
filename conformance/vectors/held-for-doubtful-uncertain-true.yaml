@@ -1,0 +1,12 @@
+# 7.6.1: doubtful is of the input: a tick on which the input is true and
+# uncertain runs the timer and is counted. The output takes the input's
+# state, and is true once the input has been true for longer than 1 s.
+rules: [7.6.1]
+period: 1s
+inputs: {x: {type: boolean, max_age: none}}
+blocks:
+  - {id: h, type: held_for, in: {x: x}, settings: {time: 1s, on_bad: reset}, out: {y: y, elapsed: elapsed, doubtful: doubtful}}
+calls:
+  - {x: {v: true, state: uncertain}, y: {u: false}, elapsed: 1, doubtful: 1}
+  - {x: true, y: false, elapsed: 2, doubtful: 1}
+  - {x: {v: true, state: uncertain}, y: {u: true}, elapsed: 3, doubtful: 2}

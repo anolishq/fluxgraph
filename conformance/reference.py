@@ -733,7 +733,7 @@ class Pid(Counted):
         self.before = pv.v
         rest = self.s["kp"] * error - self.s["kd"] * self.f
         low, high, add = self.s["min"], self.s["max"], self.s["ki"] * error * self.period
-        with_it, cut, was = rest + self.integral + add, False, self.integral
+        with_it, cut, was = rest + (self.integral + add), False, self.integral  # rule 5: in this order
         if high is not None and add > 0 and with_it > high:  # rule 6: cut short at the limit
             self.integral, cut = max(self.integral, high - rest), True
         elif low is not None and add < 0 and with_it < low:

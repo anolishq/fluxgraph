@@ -1,0 +1,14 @@
+# 7.7.5: the sum is worked in one order: kp times the error and the
+# derivative first, and to that the integral with its addition made. With
+# kp, ki and kd of 1 and a filter of one period, measurements of 0.1 and
+# 0.2 against a setpoint of 0 give -0.5632120558828558 at the second tick;
+# kp times the error and the integral first gives -0.5632120558828557.
+rules: [7.7.5, 7.1.6]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 1, ki: 1, kd: 1, filter: 1s}, out: {y: y}}
+  - {id: f, type: formula, in: {y: c.y}, settings: {expr: "y == -0.5632120558828558"}, out: {y: exact}}
+calls:
+  - {sp: 0, pv: 0.1, y: -0.2, exact: false}
+  - {pv: 0.2, y: -0.5632120558828558, exact: true}

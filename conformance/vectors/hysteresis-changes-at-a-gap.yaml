@@ -1,0 +1,13 @@
+# 8.6, 7.5.4: where a hysteresis changes on the tick a gap runs, its counts
+# start again at that tick, and gaps with them at one: the gap's tick is
+# the tick it counts from.
+rules: [8.6, 7.5.4]
+period: 1s
+max_catch_up: 1
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: h, type: hysteresis, in: {x: x}, settings: {rise: 2, fall: 1}, out: {y: y, elapsed: elapsed, doubtful: doubtful, gaps: gaps}}
+calls:
+  - {now: 0, x: 3, y: true, elapsed: 1, doubtful: 0, gaps: 0}
+  - {now: 3, gap: true, skipped: 2, x: 0, y: false, elapsed: 1, doubtful: 0, gaps: 1}
+  - {now: 4, x: 0, y: false, elapsed: 2, doubtful: 0, gaps: 1}

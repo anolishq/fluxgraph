@@ -1478,25 +1478,28 @@ class Pid(Block):
         # limiting past a limit is cut short (rule 7.7.6)
         add = self.ki * error * period
         before = s["integral"]
-        raw = self.kp * error + (s["integral"] + add) + derivative
+        # the sum is worked in one order (rule 7.7.5): kp.error and the
+        # derivative first, and to that the integral with its addition made
+        first = self.kp * error + derivative
+        raw = first + (s["integral"] + add)
         cut = False
         if self.hi is not None and add > 0 and raw > self.hi:
             # what puts that output at max, or as it is if that is less;
             # and y is max
             cut = True
-            at = self.hi - self.kp * error - derivative
+            at = self.hi - first
             if at > s["integral"]:
                 s["integral"] = at
             raw = self.hi
         elif self.lo is not None and add < 0 and raw < self.lo:
             cut = True
-            at = self.lo - self.kp * error - derivative
+            at = self.lo - first
             if at < s["integral"]:
                 s["integral"] = at
             raw = self.lo
         else:
             s["integral"] += add
-            raw = self.kp * error + s["integral"] + derivative
+            raw = first + s["integral"]
         y = raw
         limited = cut
         if self.hi is not None and raw > self.hi:
