@@ -91,16 +91,18 @@ public:
 
         // Rule 6: an addition that would put the output before limiting past a limit is cut short.
         added_ = ki_ * error * period_seconds_;
-        const double whole = proportional + (before_ + added_) + derivative;
+        // Rule 5: the sum in one order. The proportional term and the derivative first, then the integral.
+        const double rest = proportional + derivative;
+        const double whole = rest + (before_ + added_);
         double y = 0.0;
         bool limited = false;
         if (has_max_ && added_ > 0.0 && whole > max_) {
             // What puts that output at `max`, or as it is if that is less than it has.
-            next_.integral = std::max(before_, max_ - proportional - derivative);
+            next_.integral = std::max(before_, max_ - rest);
             y = max_;
             limited = true;
         } else if (has_min_ && added_ < 0.0 && whole < min_) {
-            next_.integral = std::min(before_, min_ - proportional - derivative);
+            next_.integral = std::min(before_, min_ - rest);
             y = min_;
             limited = true;
         } else {

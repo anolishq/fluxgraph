@@ -574,6 +574,7 @@ implementations, each within the vectors' tolerance of the others and
 able to fall on either side of a limit. Rule 7.7.5 now gives the order,
 and `pid-sum-order` pins it with a formula's `==`: -0.5632120558828558
 in the order the text gives, and one less in the last place in another.
+
 ## The C++ core
 
 Two slices of a version 2 core in C++ are in `include/fluxgraph/v2/` and

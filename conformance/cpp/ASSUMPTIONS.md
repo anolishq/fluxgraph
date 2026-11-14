@@ -147,13 +147,10 @@ each is a place where the words allowed another answer.
     number and can differ in the last place. The text gives the formula
     and not the arithmetic, as Appendix A now does for `integrate`.
 27. **Rule 7.7.6, the arithmetic of the output and of a cut addition.**
-    The output before limiting is worked as
-    `kp·error + (integral + addition) + derivative`, in that order. Cut
-    short at `max`, the integral becomes `max - kp·error - derivative`, or
-    stays if that is less, and `y` is `max` itself and not the sum worked
-    again, which need not come back to `max` exactly. Another order
-    differs in the last place, and decides on which side of a limit an
-    output within rounding of it falls.
+    Settled since by rule 7.7.5, which gives the order: `kp·error` and the
+    derivative first, then the integral with its addition made. The core
+    first worked `kp·error + (integral + addition) + derivative`, which
+    differs in the last place, and now follows the rule.
 28. **Rule 7.7.12, "what it was before this one" on the tick of a
     reset.** The integral before this tick's addition, which on a reset's
     tick is zero and not what it held before the reset. Both readings take
