@@ -291,6 +291,7 @@ Status read_block(const Setting &given, std::size_t position, Time period, const
     BlockSetup setup;
     setup.id = draft.id;
     setup.settings = settings != nullptr ? settings : &kNoKeys;
+    setup.type = type->as_text();
     setup.connections = connections;
     setup.period = period;
     Result<std::unique_ptr<Block>> made = maker(setup);
@@ -377,24 +378,96 @@ void fingerprint(const Setting &setting, std::uint64_t &hash) {
     }
 }
 
-// Whether `from` can reach `to` by following what each block reads, direct or deferred.
-bool reads_through(const std::vector<Draft> &drafts, int from, int to) {
-    std::vector<bool> seen(drafts.size(), false);
-    std::vector<int> stack = {from};
-    while (!stack.empty()) {
-        const int at = stack.back();
-        stack.pop_back();
-        for (int read : drafts[static_cast<std::size_t>(at)].readers_of) {
-            if (read == to) {
-                return true;
-            }
-            if (read >= 0 && !seen[static_cast<std::size_t>(read)]) {
-                seen[static_cast<std::size_t>(read)] = true;
-                stack.push_back(read);
+// For each block, the blocks it can reach by following what each reads, direct or deferred.
+std::vector<std::vector<bool>> reach_of(const std::vector<Draft> &drafts) {
+    std::vector<std::vector<bool>> reaches(drafts.size(), std::vector<bool>(drafts.size(), false));
+    for (std::size_t from = 0; from < drafts.size(); ++from) {
+        std::vector<std::size_t> stack = {from};
+        while (!stack.empty()) {
+            const std::size_t at = stack.back();
+            stack.pop_back();
+            for (int read : drafts[at].readers_of) {
+                if (read >= 0 && !reaches[from][static_cast<std::size_t>(read)]) {
+                    reaches[from][static_cast<std::size_t>(read)] = true;
+                    stack.push_back(static_cast<std::size_t>(read));
+                }
             }
         }
     }
-    return false;
+    return reaches;
+}
+
+// Rule 7.8.8: the blocks that can each reach every other are a loop, and a block that reads its own output is
+// one by itself. A loop that holds a model block holds one and no more, with `settle` written, and what else
+// remembers in it adds up to no more than that. Gives, for each block, the loop it is on among `loops`, or -1.
+Status find_loops(const std::vector<Draft> &drafts, const std::vector<std::vector<bool>> &reaches,
+                  std::vector<int> &loop_of, std::vector<LoopSpec> &loops) {
+    loop_of.assign(drafts.size(), -1);
+    std::vector<bool> seen(drafts.size(), false);
+    for (std::size_t first = 0; first < drafts.size(); ++first) {
+        if (seen[first] || !reaches[first][first]) {
+            continue;
+        }
+        std::vector<std::size_t> members;
+        std::vector<std::size_t> models;
+        bool estimator = false;
+        std::uint64_t remembered = 0;
+        for (std::size_t other = first; other < drafts.size(); ++other) {
+            if (other != first && !(reaches[first][other] && reaches[other][first])) {
+                continue;
+            }
+            seen[other] = true;
+            members.push_back(other);
+            const LoopRole role = drafts[other].block->loop_role();
+            if (role.kind == LoopRole::Kind::model) {
+                models.push_back(other);
+            } else if (role.kind == LoopRole::Kind::estimator) {
+                estimator = true;
+            } else if (role.kind == LoopRole::Kind::remembers) {
+                // A sum of what blocks remember, each at most 2^63 ticks: kept from wrapping by stopping at the top.
+                remembered = role.ticks > UINT64_MAX - remembered ? UINT64_MAX : remembered + role.ticks;
+            }
+        }
+        if (models.empty()) {
+            continue;  // rule 5.6: a loop that holds no model has no memory that fades, and no rule for it
+        }
+        if (models.size() > 1) {
+            std::string names;
+            for (std::size_t model : models) {
+                names += std::format("{}'{}'", names.empty() ? "" : ", ", drafts[model].id);
+            }
+            return graph_error(
+                std::format("blocks {} are model blocks on one loop, which puts them a tick apart: "
+                            "write them as one model (a linear takes any number of states)",
+                            names));
+        }
+        const Draft &model = drafts[models[0]];
+        if (estimator) {
+            return graph_error(
+                std::format("block '{}': a loop that holds a model block and an estimator is refused", model.id));
+        }
+        const LoopRole role = model.block->loop_role();
+        if (!role.settle_written) {
+            return graph_error(
+                std::format("block '{}': a model block on a loop has to have its settle written in the "
+                            "graph: a model's own time constant is not the loop's",
+                            model.id));
+        }
+        if (remembered > role.ticks) {
+            return graph_error(
+                std::format("block '{}': the delays, windows and low-passes on its loop remember {} "
+                            "ticks between them, which is more than its settle of {}",
+                            model.id, remembered, role.ticks));
+        }
+        for (std::size_t member : members) {
+            loop_of[member] = static_cast<int>(loops.size());
+        }
+        LoopSpec loop;
+        loop.blocks = members;  // as drafts for now: put in evaluation order by the caller
+        loop.settle = role.ticks;
+        loops.push_back(std::move(loop));
+    }
+    return {};
 }
 
 // Section 5: one order, in which a block comes after every block it reads through a direct input, with ties
@@ -585,10 +658,37 @@ Result<Program> compile_graph(const Setting &graph) {
     }
 
     // A block that can reach its own input is on a loop, and is told so (rule 5.4).
+    const std::vector<std::vector<bool>> reaches = reach_of(drafts);
     for (std::size_t i = 0; i < drafts.size(); ++i) {
-        if (reads_through(drafts, static_cast<int>(i), static_cast<int>(i))) {
+        if (reaches[i][i]) {
             if (Status status = drafts[i].block->on_loop(); !status) {
                 return status.error();
+            }
+        }
+    }
+    std::vector<int> loop_of;
+    if (Status status = find_loops(drafts, reaches, loop_of, program.loops); !status) {
+        return status.error();
+    }
+    // For a loop that holds a model block: which inputs are read from outside it, and which outputs a block of
+    // the loop is connected to (rule 7.8.8).
+    for (std::size_t i = 0; i < drafts.size(); ++i) {
+        if (loop_of[i] < 0) {
+            continue;
+        }
+        LoopSpec &loop = program.loops[static_cast<std::size_t>(loop_of[i])];
+        for (std::size_t port = 0; port < drafts[i].sources.size(); ++port) {
+            Source &source = drafts[i].sources[port];
+            if (source.kind != Source::Kind::signal) {
+                continue;
+            }
+            const int writer = drafts[i].readers_of[port];
+            if (writer >= 0 && loop_of[static_cast<std::size_t>(writer)] == loop_of[i]) {
+                if (std::find(loop.watched.begin(), loop.watched.end(), source.slot) == loop.watched.end()) {
+                    loop.watched.push_back(source.slot);
+                }
+            } else {
+                source.outside_loop = true;
             }
         }
     }
@@ -669,9 +769,20 @@ Result<Program> compile_graph(const Setting &graph) {
     if (Status status = evaluation_order(drafts, order); !status) {
         return status.error();
     }
+    std::vector<std::size_t> place(drafts.size(), 0);  // where each draft comes in the order
+    for (std::size_t at = 0; at < order.size(); ++at) {
+        place[order[at]] = at;
+    }
+    for (LoopSpec &loop : program.loops) {
+        for (std::size_t &member : loop.blocks) {
+            member = place[member];
+        }
+        std::sort(loop.blocks.begin(), loop.blocks.end());
+    }
     for (std::size_t index : order) {
         Draft &draft = drafts[index];
         BlockSpec spec;
+        spec.loop = loop_of[index];
         spec.id = std::move(draft.id);
         spec.block = std::move(draft.block);
         spec.sources = std::move(draft.sources);

@@ -125,6 +125,10 @@ public:
 
     std::span<const OutputPort> outputs() const override { return outputs_; }
 
+    LoopRole loop_role() const override { return LoopRole{LoopRole::Kind::remembers, settle_, false}; }
+
+    void loop_settled() override { now_.doubted = false; }  // rule 7.8.8: its doubt is cleared
+
     void give(const Tick &tick, std::span<const Value> in, std::span<Value> out) override {
         const Value &x = in[0];
         next_ = now_;

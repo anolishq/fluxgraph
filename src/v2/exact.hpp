@@ -80,6 +80,8 @@ bool is_zero(const Length &length);
 /// The ratio of `period` to the length, worked exactly and then taken as the nearest double, for a setting that
 /// only scales a value (rule 6.3; Appendix A, `integrate`). The period is more than zero and the length is not zero.
 double period_over(Time period, const Length &length);
+/// The length in seconds, worked exactly and taken as the nearest double. The length is not zero.
+double seconds_of(const Length &length);
 /// `times` of the length, in periods, rounded up to a whole number, exactly (rule 6.3). False where that does
 /// not fit in 64 bits.
 bool periods_rounded_up(const Length &length, std::uint32_t times, Time period, std::uint64_t &ticks);

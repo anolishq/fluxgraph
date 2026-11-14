@@ -511,15 +511,83 @@ bool Formula::parse(std::string_view text, std::string &problem) {
         return false;
     }
     scratch_.assign(nodes_.size(), Value{});
+    node_used_.assign(nodes_.size(), false);
+    used_known_ = false;
     return true;
 }
 
 void Formula::connect(std::span<const std::size_t> places) {
+    std::size_t most = 0;
     for (Node &node : nodes_) {
         if (node.op == Op::input) {
             node.input = places[node.input];
+            most = std::max(most, node.input + 1);
         }
     }
+    place_used_.assign(most, false);
+}
+
+bool Formula::used(std::size_t place) const {
+    if (!used_known_) {
+        // From the formula down: a node that was used uses its operands as its rule says. Every node comes
+        // after its operands, so one pass from the last to the first reaches each after all that use it.
+        std::fill(node_used_.begin(), node_used_.end(), false);
+        std::fill(place_used_.begin(), place_used_.end(), false);
+        node_used_.back() = true;
+        for (std::size_t i = nodes_.size(); i-- > 0;) {
+            if (!node_used_[i]) {
+                continue;
+            }
+            const Node &node = nodes_[i];
+            const Value &a = scratch_[node.a];
+            const Value &b = scratch_[node.b];
+            switch (node.op) {
+                case Op::number:
+                case Op::boolean:
+                    break;
+                case Op::input:
+                    place_used_[node.input] = true;
+                    break;
+                case Op::negate:
+                case Op::abs:
+                case Op::exp:
+                case Op::ln:
+                case Op::sqrt:
+                case Op::logical_not:
+                    node_used_[node.a] = true;
+                    break;
+                case Op::logical_and:
+                case Op::logical_or: {  // rule 7.1.2
+                    const bool deciding = node.op == Op::logical_or;
+                    const bool a_decides = a.is_usable() && a.boolean == deciding;
+                    const bool b_decides = b.is_usable() && b.boolean == deciding;
+                    if (!a_decides && !b_decides) {
+                        node_used_[node.a] = node_used_[node.b] = true;  // rule 7.1.1: both
+                        break;
+                    }
+                    // Of those that decide: the good ones, each of which decides by itself, or all of them
+                    // where none is good.
+                    const bool a_good = a_decides && a.state == State::good;
+                    const bool b_good = b_decides && b.state == State::good;
+                    const bool any_good = a_good || b_good;
+                    node_used_[node.a] = node_used_[node.a] || (any_good ? a_good : a_decides);
+                    node_used_[node.b] = node_used_[node.b] || (any_good ? b_good : b_decides);
+                    break;
+                }
+                case Op::when:  // rule 7.1.3: the condition, and the branch it chose
+                    node_used_[node.a] = true;
+                    if (a.is_usable()) {
+                        node_used_[a.boolean ? node.b : node.c] = true;
+                    }
+                    break;
+                default:  // arithmetic, the two-operand functions and the comparisons: both operands
+                    node_used_[node.a] = node_used_[node.b] = true;
+                    break;
+            }
+        }
+        used_known_ = true;
+    }
+    return place < place_used_.size() && place_used_[place];
 }
 
 bool Formula::type(std::span<const std::optional<Type>> inputs, std::optional<Type> &type, std::string &problem) const {
@@ -621,6 +689,7 @@ Value number_or_bad(double number, State state) {
 }  // namespace
 
 Value Formula::evaluate(std::span<const Value> inputs) {
+    used_known_ = false;
     for (std::size_t i = 0; i < nodes_.size(); ++i) {
         const Node &node = nodes_[i];
         const Value &a = scratch_[node.a];

@@ -27,7 +27,7 @@ using detail::after_by_more_than;
 using detail::kTimeMax;
 using detail::span_between;
 
-constexpr std::uint64_t kStateMagic = 0x3276'4746'5846'4c46ULL;  // a state this engine wrote, in this layout
+constexpr std::uint64_t kStateMagic = 0x3376'4746'5846'4c46ULL;  // a state this engine wrote, in this layout
 
 // A write that waits, or stands (rule 6.8).
 struct Written {
@@ -41,6 +41,13 @@ struct InputState {
     bool stands = false;
     Written standing;
     std::vector<Written> waiting;  // in the order they were written
+};
+
+// What is kept of a loop that holds a model block (rule 7.8.8): its doubt, the latest tick at which a block in it
+// used a value that was not good, read from outside the loop, or gave an output that was not usable to the loop.
+struct LoopState {
+    bool doubted = false;
+    std::int64_t doubt = 0;
 };
 
 // A rebase the host has asked for and no call has yet followed (rule 8.5).
@@ -59,6 +66,9 @@ struct Engine::Impl {
     std::vector<Value> slots;  // every signal as it is at the tick being run
     std::vector<Value> in;     // room for one block's inputs and outputs
     std::vector<Value> out;
+    std::vector<bool> gave_unusable;  // for each slot: what its block gave at this tick, before any fallback
+    std::vector<LoopState> loops;
+    std::vector<bool> settling;  // for each loop: within `settle` of its doubt at the tick being run
     std::vector<Output> outputs;
 
     std::uint64_t thrown = 0;  // since the last call that ran a tick
@@ -77,6 +87,7 @@ struct Engine::Impl {
     void run_tick(std::int64_t number, Time time, Time limit);
     Value read_input(const detail::InputSpec &spec, const InputState &state, Time time) const;
     void save(StateWriter &writer) const;
+    bool load(StateReader &reader);
 };
 
 // ---- writes (rules 6.7, 6.8 and 6.11)
@@ -187,7 +198,19 @@ void Engine::Impl::run_tick(std::int64_t number, Time time, Time limit) {
         slots[i] = read_input(program.inputs[i], held, time);
     }
 
-    const Tick tick{number, time};
+    // Rule 7.8.8: a loop is judged at a tick by its latest doubt before it. Where it is not within `settle` of
+    // that, what its delays, windows and low-passes took in as uncertain at an earlier tick becomes good.
+    for (std::size_t i = 0; i < loops.size(); ++i) {
+        const detail::LoopSpec &loop = program.loops[i];
+        settling[i] = loops[i].doubted && span_between(loops[i].doubt, number) <= loop.settle;  // doubt < number
+        if (!settling[i]) {
+            for (std::size_t member : loop.blocks) {
+                program.blocks[member].block->loop_settled();
+            }
+        }
+    }
+
+    Tick tick{number, time};
     const auto gather = [this](const detail::BlockSpec &spec, bool second_phase) {
         for (std::size_t port = 0; port < spec.sources.size(); ++port) {
             const detail::Source &source = spec.sources[port];
@@ -205,6 +228,8 @@ void Engine::Impl::run_tick(std::int64_t number, Time time, Time limit) {
         gather(spec, false);
         const std::size_t count = spec.outputs.size();
         std::fill_n(out.begin(), count, Value{});
+        tick.on_model_loop = spec.loop >= 0;
+        tick.loop_settling = spec.loop >= 0 && settling[static_cast<std::size_t>(spec.loop)];
         spec.block->give(tick, std::span<const Value>(in.data(), spec.sources.size()),
                          std::span<Value>(out.data(), count));
         for (std::size_t port = 0; port < count; ++port) {
@@ -214,6 +239,7 @@ void Engine::Impl::run_tick(std::int64_t number, Time time, Time limit) {
             if (value.is_usable() && output.type == Type::number && !std::isfinite(value.number)) {
                 value.state = State::bad;  // rule 3.6, whatever the block
             }
+            gave_unusable[spec.first_slot + port] = !value.is_usable();
             if (!value.is_usable()) {
                 if (output.has_fallback) {
                     value = output.fallback;  // section 7.10: uncertain, and no sample time
@@ -227,9 +253,31 @@ void Engine::Impl::run_tick(std::int64_t number, Time time, Time limit) {
             slots[spec.first_slot + port] = value;
         }
     }
+    // Rule 7.8.8: what starts a loop's doubt at this tick. It is seen from the next tick.
+    for (std::size_t i = 0; i < loops.size(); ++i) {
+        const detail::LoopSpec &loop = program.loops[i];
+        // An output that was not usable, on a port a block of the loop is connected to, fallback or not.
+        bool doubt = false;
+        for (std::size_t slot : loop.watched) {
+            doubt = doubt || gave_unusable[slot];
+        }
+        // A value that was not good, read from outside the loop and used.
+        for (std::size_t member : loop.blocks) {
+            const detail::BlockSpec &spec = program.blocks[member];
+            for (std::size_t port = 0; port < spec.sources.size() && !doubt; ++port) {
+                const detail::Source &source = spec.sources[port];
+                doubt = source.outside_loop && slots[source.slot].state != State::good && spec.block->used(port);
+            }
+        }
+        if (doubt) {
+            loops[i] = LoopState{true, number};
+        }
+    }
     // The second phase: every block updates its state.
     for (detail::BlockSpec &spec : program.blocks) {
         gather(spec, true);
+        tick.on_model_loop = spec.loop >= 0;
+        tick.loop_settling = spec.loop >= 0 && settling[static_cast<std::size_t>(spec.loop)];
         spec.block->update(tick, std::span<const Value>(in.data(), spec.sources.size()));
     }
 }
@@ -262,6 +310,9 @@ Result<Engine> Engine::compile(const Setting &graph) {
         most_inputs = std::max(most_inputs, spec.sources.size());
         most_outputs = std::max(most_outputs, spec.outputs.size());
     }
+    impl->gave_unusable.assign(program.slot_types.size(), false);
+    impl->loops.assign(program.loops.size(), LoopState{});
+    impl->settling.assign(program.loops.size(), false);
     impl->in.resize(most_inputs);
     impl->out.resize(most_outputs);
     for (const detail::Published &published : program.published) {
@@ -381,9 +432,17 @@ Result<TickReport> Engine::tick(Time now) {
         s.initial_stands_in = false;
     }
     if (gap) {  // rule 8.6: before the tick runs, every block is told
-        const Gap told{skipped_known, skipped, rebased};
+        // The number of the tick that runs is at least 1: the first tick is never a gap.
+        const std::int64_t first_run = static_cast<std::int64_t>(static_cast<std::uint64_t>(last_number) - (due - 1));
+        const Gap told{skipped_known, skipped, rebased, first_run};
         for (detail::BlockSpec &spec : s.program.blocks) {
             spec.block->gap(told);
+        }
+        if (!skipped_known || skipped > 0) {
+            // The tick before the one that runs is a doubt of a model block, and its loop's if it is on one.
+            for (LoopState &loop : s.loops) {
+                loop = LoopState{true, first_run - 1};
+            }
         }
     }
     for (std::uint64_t i = 0; i < due; ++i) {
@@ -454,6 +513,7 @@ void Engine::reset() {
     for (detail::BlockSpec &spec : s.program.blocks) {
         spec.block->reset();
     }
+    std::fill(s.loops.begin(), s.loops.end(), LoopState{});
     s.forget_writes();
     s.thrown = 0;
     s.has_last_now = false;
@@ -465,15 +525,46 @@ void Engine::reset() {
     }
 }
 
-// Rule 8.2: what the blocks remember, and the number of the last tick run. Not what stands, what waits, the
-// clock, a rebase not yet followed by its call, or the count of writes thrown away.
+// Rule 8.2: what the blocks remember, their counters, each loop's doubt and the number of the last tick run. Not
+// what stands, what waits, the clock, a rebase not yet followed by its call, or the count of writes thrown away.
 void Engine::Impl::save(StateWriter &writer) const {
     writer.u64(kStateMagic);
     writer.u64(program.fingerprint);
     writer.u64(static_cast<std::uint64_t>(last_tick));
+    for (const LoopState &loop : loops) {
+        writer.flag(loop.doubted);
+        writer.u64(static_cast<std::uint64_t>(loop.doubt));
+    }
     for (const detail::BlockSpec &spec : program.blocks) {
         spec.block->save(writer);
     }
+}
+
+// Takes back what save() wrote after its first two words. False where the state is not whole, and the engine
+// is then in no state to run.
+bool Engine::Impl::load(StateReader &reader) {
+    std::uint64_t last = 0;
+    if (!reader.u64(last) ||
+        (last != static_cast<std::uint64_t>(std::int64_t{-1}) && last > detail::kTimeMaxUnsigned)) {
+        return false;
+    }
+    for (LoopState &loop : loops) {
+        std::uint64_t doubt = 0;
+        if (!reader.flag(loop.doubted) || !reader.u64(doubt)) {
+            return false;
+        }
+        loop.doubt = static_cast<std::int64_t>(doubt);
+    }
+    for (detail::BlockSpec &spec : program.blocks) {
+        if (!spec.block->restore(reader)) {
+            return false;
+        }
+    }
+    if (!reader.at_end()) {
+        return false;
+    }
+    last_tick = static_cast<std::int64_t>(last);
+    return true;
 }
 
 SavedState Engine::save() const {
@@ -487,37 +578,24 @@ Status Engine::restore(const SavedState &state) {
     StateReader reader(state.bytes);
     std::uint64_t magic = 0;
     std::uint64_t fingerprint = 0;
-    std::uint64_t last = 0;
     if (!reader.u64(magic) || magic != kStateMagic || !reader.u64(fingerprint) ||
         fingerprint != s.program.fingerprint) {
         return Error{Errc::state_refused, "the state was not saved from this graph"};
     }
-    const bool before_any_tick = reader.u64(last) && last == static_cast<std::uint64_t>(std::int64_t{-1});
-    if (!before_any_tick && last > detail::kTimeMaxUnsigned) {
-        return Error{Errc::state_refused, "the state is not one this engine wrote"};
-    }
     StateWriter held;
     s.save(held);  // to put back, should the state turn out not to be whole
-    bool whole = true;
-    for (detail::BlockSpec &spec : s.program.blocks) {
-        whole = whole && spec.block->restore(reader);
-    }
-    if (!whole || !reader.at_end()) {
+    if (!s.load(reader)) {
         StateReader back(held.bytes());
         std::uint64_t unused = 0;
         back.u64(unused);
         back.u64(unused);
-        back.u64(unused);
-        for (detail::BlockSpec &spec : s.program.blocks) {
-            spec.block->restore(back);
-        }
+        s.load(back);
         return Error{Errc::state_refused, "the state is not one this engine wrote"};
     }
-    if (before_any_tick) {
+    if (s.last_tick < 0) {
         reset();  // rule 8.3: restoring a state saved before any tick had run is a reset
         return {};
     }
-    s.last_tick = static_cast<std::int64_t>(last);
     s.forget_writes();
     s.rebase = PendingRebase{true, false, 0};  // rule 8.5: a restore puts back "nobody knows"
     s.has_last_now = false;

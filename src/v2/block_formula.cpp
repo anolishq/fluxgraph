@@ -113,6 +113,8 @@ public:
         return {};
     }
 
+    bool used(std::size_t input) const override { return formula_.used(input); }
+
     void give(const Tick &tick, std::span<const Value> in, std::span<Value> out) override {
         Value y = formula_.evaluate(in);
         if (y.is_usable()) {  // rule 3.7

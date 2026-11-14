@@ -6,13 +6,16 @@ add_library(fluxgraph_v2 STATIC
     block_hold.cpp
     block_integrate.cpp
     block_logic.cpp
+    block_model.cpp
     block_pid.cpp
     block_window.cpp
     blocks.cpp
     compiler.cpp
     engine.cpp
     exact.cpp
+    exact_step.cpp
     formula.cpp
+    model.cpp
     setting.cpp
     state.cpp
 )

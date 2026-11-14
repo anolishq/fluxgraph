@@ -56,6 +56,16 @@ public:
         return {};
     }
 
+    LoopRole loop_role() const override { return LoopRole{LoopRole::Kind::remembers, held_.size(), false}; }
+
+    void loop_settled() override {
+        for (Value &value : held_) {  // rule 7.8.8: every such value it holds, and not only the one it gives next
+            if (value.state == State::uncertain) {
+                value.state = State::good;
+            }
+        }
+    }
+
     void give(const Tick & /*tick*/, std::span<const Value> /*in*/, std::span<Value> out) override {
         out[0] = held_[next_];
     }

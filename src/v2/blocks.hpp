@@ -42,6 +42,14 @@ public:
     bool period_over(std::string_view key, double &ratio, std::uint32_t times, std::uint64_t &ticks);
     /// A number that is not negative.
     bool not_negative(std::string_view key, double &value);
+    /// A number that is more than zero.
+    bool positive(std::string_view key, double &value);
+    /// A length of time that only scales a value: any length more than zero, in seconds.
+    bool seconds(std::string_view key, double &value);
+    /// The setting as it was given, for a block that reads it itself: a list or a map. Null where not given.
+    const Setting *raw(std::string_view key) { return take(key); }
+    Time period() const { return setup_.period; }
+    std::string_view id() const { return setup_.id; }
 
     /// Records a fault of the block, unless one is held already. `what` follows "block '<id>': ".
     void fail(std::string what);
@@ -106,5 +114,7 @@ Result<std::unique_ptr<Block>> make_held_for(const BlockSetup &setup);
 Result<std::unique_ptr<Block>> make_since_true(const BlockSetup &setup);
 Result<std::unique_ptr<Block>> make_latch(const BlockSetup &setup);
 Result<std::unique_ptr<Block>> make_pid(const BlockSetup &setup);
+/// Any of the model blocks: `setup.type` says which model it hosts.
+Result<std::unique_ptr<Block>> make_model(const BlockSetup &setup);
 
 }  // namespace fluxgraph::v2::detail

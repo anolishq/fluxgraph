@@ -62,6 +62,16 @@ public:
     std::span<const OutputPort> outputs() const override { return outputs_; }
     Status bind(std::span<const std::optional<Type>> /*input_types*/) override { return {}; }
 
+    LoopRole loop_role() const override { return LoopRole{LoopRole::Kind::remembers, slots_.size(), false}; }
+
+    void loop_settled() override {
+        for (Slot &slot : slots_) {  // rule 7.8.8: it holds such a sample as a good one from then on
+            if (slot.state == State::uncertain) {
+                slot.state = State::good;
+            }
+        }
+    }
+
     void give(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out) override {
         const Value &x = in[0];
         pending_ = Slot{x.state, x.number};

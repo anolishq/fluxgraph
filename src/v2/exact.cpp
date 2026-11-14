@@ -249,18 +249,19 @@ BigUint power_of_ten(unsigned digits) {
 
 }  // namespace
 
-double period_over(Time period, const Length &length) {
-    // period / (scaled / 10^f) is (period * 10^f) / scaled. The quotient is taken with enough bits below the
-    // point that its top 64 are all of the quotient that a double can show, and what is dropped is kept as one
-    // "something was there" bit, so the rounding to 53 bits is the rounding of the true ratio.
-    const BigUint top = BigUint(static_cast<std::uint64_t>(period)).times(power_of_ten(length.fraction_digits));
-    const std::size_t shift = 64 + length.scaled.bits();
+namespace {
+
+// top / bottom as the nearest double, for a top and a bottom that are not zero. The quotient is taken with enough
+// bits below the point that its top 64 are all of the quotient that a double can show, and what is dropped is
+// kept as one "something was there" bit, so the rounding to 53 bits is the rounding of the true ratio.
+double nearest_double(const BigUint &top, const BigUint &bottom) {
+    const std::size_t shift = 64 + bottom.bits();
     BigUint scaled_up = top;
     for (std::size_t i = 0; i < shift; ++i) {
         scaled_up.multiply(2);
     }
     BigUint remainder;
-    BigUint quotient = scaled_up.divided_by(length.scaled, remainder);  // at least 2^64, since top is at least 1
+    BigUint quotient = scaled_up.divided_by(bottom, remainder);  // at least 2^64, since top is at least 1
     bool sticky = !remainder.is_zero();
     std::size_t dropped = 0;
     while (quotient.bits() > 64) {
@@ -278,6 +279,19 @@ double period_over(Time period, const Length &length) {
     // The exponent is small beside an int: the lengths are a few hundred bits at the very most.
     const int exponent = 11 + static_cast<int>(dropped) - static_cast<int>(shift);
     return std::ldexp(static_cast<double>(mantissa), exponent);
+}
+
+}  // namespace
+
+double period_over(Time period, const Length &length) {
+    // period / (scaled / 10^f) is (period * 10^f) / scaled.
+    return nearest_double(BigUint(static_cast<std::uint64_t>(period)).times(power_of_ten(length.fraction_digits)),
+                          length.scaled);
+}
+
+double seconds_of(const Length &length) {
+    // (scaled / 10^f) nanoseconds is scaled / 10^(f + 9) seconds.
+    return nearest_double(length.scaled, power_of_ten(length.fraction_digits + 9));
 }
 
 bool periods_rounded_up(const Length &length, std::uint32_t times, Time period, std::uint64_t &ticks) {

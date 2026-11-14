@@ -16,7 +16,7 @@ struct BuiltType {
 };
 
 // Adding a block type is a row here and a maker: nothing in the compiler or the engine names a type.
-constexpr std::array<BuiltType, 13> kBuilt = {{
+constexpr std::array<BuiltType, 21> kBuilt = {{
     {"formula", &detail::make_formula},
     {"all_good", &detail::make_all_good},
     {"delay", &detail::make_delay},
@@ -30,18 +30,42 @@ constexpr std::array<BuiltType, 13> kBuilt = {{
     {"since_true", &detail::make_since_true},
     {"latch", &detail::make_latch},
     {"pid", &detail::make_pid},
+    {"linear", &detail::make_model},
+    {"thermal_mass", &detail::make_model},
+    {"thermal_rc2", &detail::make_model},
+    {"first_order_process", &detail::make_model},
+    {"second_order_process", &detail::make_model},
+    {"mass_spring_damper", &detail::make_model},
+    {"dc_motor", &detail::make_model},
+    {"state_space", &detail::make_model},
 }};
 
-constexpr std::array<std::string_view, 13> kBuiltNames = {
-    "formula",    "all_good",   "delay",    "window",     "integrate", "deadband", "lowpass",
-    "rate_limit", "hysteresis", "held_for", "since_true", "latch",     "pid",
+constexpr std::array<std::string_view, 21> kBuiltNames = {
+    "formula",
+    "all_good",
+    "delay",
+    "window",
+    "integrate",
+    "deadband",
+    "lowpass",
+    "rate_limit",
+    "hysteresis",
+    "held_for",
+    "since_true",
+    "latch",
+    "pid",
+    "linear",
+    "thermal_mass",
+    "thermal_rc2",
+    "first_order_process",
+    "second_order_process",
+    "mass_spring_damper",
+    "dc_motor",
+    "state_space",
 };
 
 // The rest of Appendix A's catalogue.
-constexpr std::array<std::string_view, 9> kPlannedNames = {
-    "linear",   "thermal_mass", "thermal_rc2", "first_order_process", "second_order_process", "mass_spring_damper",
-    "dc_motor", "state_space",  "estimator",
-};
+constexpr std::array<std::string_view, 1> kPlannedNames = {"estimator"};
 
 }  // namespace
 
@@ -236,6 +260,38 @@ bool SettingsReader::period_over(std::string_view key, double &ratio, std::uint3
         fail(std::format("setting '{}' is {}, which is past what this engine can count", key, setting->shown()));
         return false;
     }
+    return true;
+}
+
+bool SettingsReader::positive(std::string_view key, double &value) {
+    double given = 0.0;
+    if (!number(key, given)) {
+        return false;
+    }
+    if (!(given > 0.0)) {
+        fail(std::format("setting '{}' is {}, and has to be more than zero", key, given));
+        return false;
+    }
+    value = given;
+    return true;
+}
+
+bool SettingsReader::seconds(std::string_view key, double &value) {
+    const Setting *setting = take(key);
+    if (setting == nullptr) {
+        return false;
+    }
+    Length length;
+    if (!read_length(*setting, length)) {
+        fail(std::format("setting '{}' is {}, and has to be a length of time: a number and a unit, as in '2s'", key,
+                         setting->shown()));
+        return false;
+    }
+    if (is_zero(length)) {
+        fail(std::format("setting '{}' is {}, and has to be more than zero", key, setting->shown()));
+        return false;
+    }
+    value = seconds_of(length);
     return true;
 }
 

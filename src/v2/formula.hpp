@@ -34,6 +34,10 @@ public:
     /// The value and the state of the formula (section 7.1). The sample time is the block's business.
     Value evaluate(std::span<const Value> inputs);
 
+    /// Whether the last evaluation used the input at `place`, as rule D counts it: not an operand that did not
+    /// decide, not an uncertain operand beside a good one that decides by itself, not a branch it did not take.
+    bool used(std::size_t place) const;
+
 private:
     enum class Op : std::uint8_t {
         number,
@@ -80,6 +84,10 @@ private:
     std::vector<Node> nodes_;  // every node comes after its operands; the last is the formula
     std::vector<std::string> names_;
     std::vector<Value> scratch_;  // one per node, so that evaluating allocates nothing
+    // What the last evaluation used, worked out when first asked for.
+    mutable bool used_known_ = false;
+    mutable std::vector<bool> node_used_;
+    mutable std::vector<bool> place_used_;
 };
 
 }  // namespace fluxgraph::v2::detail

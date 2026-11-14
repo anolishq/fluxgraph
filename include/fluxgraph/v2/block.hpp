@@ -45,6 +45,8 @@ struct Connection {
 /// What a block type is given to configure one block.
 struct BlockSetup {
     std::string_view id;
+    /// The block's `type`, for a maker that makes more than one.
+    std::string_view type;
     /// The block's `settings`: a map, with no keys where the graph gave none.
     const Setting *settings = nullptr;
     /// The ports the graph's `in` names, in the order it names them.
@@ -57,6 +59,10 @@ struct BlockSetup {
 struct Tick {
     std::int64_t number = 0;
     Time time = 0;
+    /// The block is on a loop that holds a model block (rule 7.8.8).
+    bool on_model_loop = false;
+    /// That loop is within `settle` of its doubt at this tick, judged by its latest doubt before the tick.
+    bool loop_settling = false;
 };
 
 /// Ticks nobody saw (rule 8.6).
@@ -66,6 +72,21 @@ struct Gap {
     std::uint64_t ticks = 0;
     /// A rebase and not a stall: every sample time the block remembers or holds is forgotten (rule 8.5).
     bool rebase = false;
+    /// The number of the tick the gap runs. It is at least 1.
+    std::int64_t tick = 0;
+};
+
+/// What a block is to a loop it stands on (rule 7.8.8).
+struct LoopRole {
+    enum class Kind {
+        other,      ///< It follows its own rules, and is not held against the loop's `settle`.
+        remembers,  ///< A delay, a window or a low-pass: `ticks` of memory, held against the loop's `settle`.
+        model,      ///< A model block: `ticks` is its `settle`, and `settle_written` whether the graph wrote it.
+        estimator,  ///< It hosts a model but is not a model block.
+    };
+    Kind kind = Kind::other;
+    std::uint64_t ticks = 0;
+    bool settle_written = false;
 };
 
 /// Writes what a block remembers (rule 8.2).
@@ -119,6 +140,18 @@ public:
     /// Told, when the graph is compiled, that the block can reach its own input through some chain of inputs,
     /// direct or deferred. A block that cannot stand on a loop as it is configured refuses (rule 5.4).
     virtual Status on_loop() { return {}; }
+
+    /// What the block is to a loop it stands on, as it is configured.
+    virtual LoopRole loop_role() const { return {}; }
+
+    /// Whether the block used input `input` at the tick it has just given its outputs for, for a loop's doubt
+    /// (rule 7.8.8). Every block counts as using every input it has, in either phase, but a formula, which
+    /// uses what rule D says.
+    virtual bool used(std::size_t /*input*/) const { return true; }
+
+    /// Told, before a tick, that the loop it is on holds a model block and is not within `settle` of its doubt:
+    /// what it took in as `uncertain` at an earlier tick becomes `good`, and stays so (rule 7.8.8).
+    virtual void loop_settled() {}
 
     /// The first phase. `in` is in the order of inputs(); an entry for a deferred input, or for an input left
     /// unconnected, is `not_ready` and is not to be used. `out` is in the order of outputs(). The engine sees
