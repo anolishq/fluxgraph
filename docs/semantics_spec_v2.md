@@ -122,7 +122,10 @@ time. **Amendments so far:**
    that takes only new samples, and how deep a formula may nest. The
    second slice asked for the order of a PID's sum, which three
    implementations had taken three ways, and how a low-pass raises its
-   decay to a power.
+   decay to a power. The third slice, the models and the loop rule,
+   showed that the exact step is not kept in ordinary double arithmetic at
+   the stiffness bound: one of the two readings in `conformance/` was out
+   by 2.8 parts in 10⁹ there, and had agreed with every vector.
 
 Nothing is left on the list of what is known to be wrong as it stands.
 What each amendment gives up is at the end of section 7, and for time
@@ -938,7 +941,11 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    value if that was no more than `ride_through` ago, counted as in rule
    7.4.3, ticks a gap passed over among them. Otherwise it does not step.
    After a gap of no known length it does not, until the input is usable
-   again. It keeps the value for rule 5.
+   again: that is so of each input by itself. An input that has never been
+   usable has no last value, and the model does not step, on zero or on
+   anything else. An input given a constant is unusable at a tick a gap
+   passed over like any other, and is ridden through. It keeps the value
+   for rule 5.
 5. **A model never gives up its state.** Its outputs are always usable,
    unless rule 3.6 makes one `bad`. Where its outputs read a direct input
    that is unusable, they are worked out on that input's last usable value,
@@ -992,7 +999,13 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    the model and the period and on nothing else, so the engine works them
    out when the graph is compiled. How it does so is its own affair: what
    is specified is the result, to within rounding, and the vectors compare
-   to one part in 10⁹ (rule 11.5). That is a promise of `Ad` and of `Bd`,
+   to one part in 10⁹ (rule 11.5). The period is the period as the graph
+   writes it, and not the double nearest it in seconds: at the bound below
+   that difference alone is a part in 10¹². **Ordinary double arithmetic
+   does not keep this at the bound.** Scaling and squaring in doubles is
+   out by a few parts in 10⁹ in a `Bd` of a lightly damped rotation there;
+   the same in arithmetic of twice the digits, two doubles to a number,
+   is within a part in 10¹⁶ everywhere up to the bound. That is a promise of `Ad` and of `Bd`,
    which is of one step: over many ticks a state that does not decay
    carries each step's rounding forward, and two engines that agree on
    every step drift apart in an oscillator with no damping by about one
@@ -1059,7 +1072,8 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    - the model in it is `uncertain` for `settle` after the loop's doubt,
      in place of its own in rule 6, and otherwise as rule 5 says. Its
      counters are its own;
-   - at a tick where the loop is not within `settle` of its doubt, what a
+   - at a tick where the loop is not within `settle` of its doubt, before
+     any block gives its outputs, and at a tick before any doubt too, what a
      delay, a window or a low-pass in it took in as `uncertain` at an
      earlier tick becomes `good`, and stays so: a later doubt of the loop
      does not turn it back. That is every such value the block holds, and
@@ -1426,7 +1440,9 @@ to write the stricter thing.
    blocks remember, their counters, each loop's doubt and the number of
    the next tick. It does not hold what stands on an input, the writes
    waiting, the clock, a `rebase` not yet followed by its call, or the
-   count of writes thrown away, which stays the engine's own.
+   count of writes thrown away, which stays the engine's own. A loop's
+   doubt, and a model block's, are held and can never show: a restore is
+   a gap, and the gap sets a doubt later than any that was saved.
 3. A **gap** is ticks nobody saw: they were due, and were not run. One
    tick runs at a gap, and the ticks before it are **passed over**. There
    are two kinds.
@@ -1712,6 +1728,9 @@ what the vectors pin down.
 | `estimator` | the model's inputs, deferred, and one per measurement | `model`, `q`, `p0`, `measure`, `consistency`, `gate` (none), `max_refused`, `sigma_max` (none) | see 7.9.8 |
 
 A setting with a value in brackets may be left out and takes that value.
+One with none is required, unless its entry below says what it is when
+left out: a `thermal_mass` has to give `initial`, and a `thermal_rc2`
+`initial_a` and `initial_b`, where the other models start from zero.
 `settle` is written as a length of time, like any other counted length. An
 input is required and direct unless the table or the block's rule says
 otherwise. An output is a number unless the table says otherwise. `formula`
