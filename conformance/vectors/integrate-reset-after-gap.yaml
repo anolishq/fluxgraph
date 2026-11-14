@@ -1,0 +1,13 @@
+# 7.7.2, 7.7.4, 8.6: a total with no max_missed is good after a gap of no
+# known length, and a reset after it is a reset.
+rules: [7.7.2, 7.7.4, 8.6]
+period: 1s
+inputs: {x: {max_age: none}, r: {type: boolean, max_age: none}}
+blocks:
+  - {id: i, type: integrate, in: {x: x, reset: r}, out: {y: total}}
+calls:
+  - {x: 1, r: false, total: 1}
+  - {$save: a}
+  - {$restore: a}
+  - {now: 10, gap: true, x: 1, r: false, total: 2}
+  - {now: 11, x: 1, r: true, total: 1}

@@ -1,0 +1,8 @@
+# 6.3: refused: a timer that is not a whole number of periods.
+rules: [6.3]
+period: 1s
+inputs: {x: {type: boolean, max_age: none}}
+blocks:
+  - {id: h, type: held_for, in: {x: x}, settings: {time: 500ms, on_bad: reset}}
+expect: compile_error
+error_mentions: [time]

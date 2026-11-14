@@ -1,0 +1,19 @@
+# 7.8.8: a window on a loop that holds a model counts what it took in as
+# uncertain as good, once the loop has settled. The window needs both its
+# samples, so at tick 0 its mean is not_ready: an output that is not usable,
+# read in the loop, and the loop's doubt. settle is 3 ticks. At tick 4 the
+# window holds the 2.5 it took in as uncertain, and is good.
+rules: [7.8.8, 7.3.3, 7.3.4]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 3s}, out: {y: y}}
+  - {id: w, type: window, in: {x: plant.y}, settings: {window: 2s}, out: {mean: m}}
+  - {id: ctl, type: formula, in: {r: r, m: w.mean}, settings: {expr: "r - m"}, out: {y: e}}
+calls:
+  - {r: 4, y: 0, m: not_ready, e: not_ready}        # tick 0: the loop's doubt, and no step
+  - {r: 4, y: {u: 0}, m: {u: 0}, e: {u: 4}}
+  - {r: 4, y: {u: 2}, m: {u: 1}, e: {u: 3}}
+  - {r: 4, y: {u: 2.5}, m: {u: 2.25}, e: {u: 1.75}}
+  - {r: 4, y: 2.125, m: 2.3125, e: 1.6875}          # tick 4: settled
+  - {r: 4, y: 1.90625, m: 2.015625, e: 1.984375}

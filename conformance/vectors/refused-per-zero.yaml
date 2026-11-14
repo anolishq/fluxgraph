@@ -1,0 +1,8 @@
+# A: refused: an integrator per zero time.
+rules: [A]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: i, type: integrate, in: {x: x}, settings: {per: 0s}}
+expect: compile_error
+error_mentions: [per]

@@ -1,0 +1,16 @@
+# 7.7.11, 8.6: a gap whose tick is the tick of a PID's reset is counted:
+# the reset returns the integral and the counts to zero, and gaps is one.
+rules: [7.7.11, 7.7.10, 8.6]
+period: 1s
+max_catch_up: 1
+inputs: {sp: {max_age: none}, r: {type: boolean, max_age: none}}
+blocks:
+  - id: c
+    type: pid
+    in: {setpoint: sp, measurement: 0, reset: r}
+    settings: {kp: 1, ki: 1}
+    out: {y: y, integral: integral, elapsed: elapsed, doubtful: doubtful, gaps: gaps}
+calls:
+  - {now: 0, sp: 1, r: false, y: 2, integral: 1, elapsed: 1, doubtful: 0, gaps: 0}
+  - {now: 3, gap: true, skipped: 2, sp: 1, r: true, y: 2, integral: 1, elapsed: 1, doubtful: 0, gaps: 1}
+  - {now: 4, r: false, y: 3, integral: 2, elapsed: 2, doubtful: 0, gaps: 1}

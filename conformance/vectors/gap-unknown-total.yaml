@@ -1,0 +1,16 @@
+# 8.6, 7.7.2: a gap of no known length is more than any max_missed. A total
+# that is given one is bad until a reset; one that is not is good, and only
+# gaps says there was one.
+rules: [8.6, 7.7.2, 7.7.4]
+period: 1s
+inputs: {x: {max_age: none}, r: {type: boolean, max_age: none}}
+blocks:
+  - {id: i, type: integrate, in: {x: x}, out: {y: total, gaps: gaps}}
+  - {id: s, type: integrate, in: {x: x, reset: r}, settings: {max_missed: 2s}, out: {y: strict}}
+calls:
+  - {x: 2, r: false, total: 2, gaps: 0, strict: 2}
+  - {$save: a}
+  - {$restore: a}
+  - {now: 50, gap: true, skipped: unknown, x: 2, r: false, total: 4, gaps: 1, strict: bad}
+  - {now: 51, x: 2, r: false, total: 6, gaps: 1, strict: bad}
+  - {now: 52, x: 2, r: true, total: 8, gaps: 1, strict: 2}

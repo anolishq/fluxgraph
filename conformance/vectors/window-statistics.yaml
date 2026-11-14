@@ -1,0 +1,18 @@
+# Appendix A: the statistics of a window of four ticks.
+rules: [A.window, 7.3.1]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - id: w
+    type: window
+    in: {x: x}
+    settings: {window: 4s}
+    out: {mean: mean, median: median, min: lo, max: hi, spread: spread, slope: slope, count: count}
+calls:
+  - {x: 1, mean: not_ready, median: not_ready, lo: not_ready, hi: not_ready, spread: not_ready, slope: not_ready, count: 1}
+  - {x: 3, mean: not_ready, count: 2}
+  - {x: 2, mean: not_ready, count: 3}
+  # 1 3 2 8: slope = 10 / 5
+  - {x: 8, mean: 3.5, median: 2.5, lo: 1, hi: 8, spread: 7, slope: 2, count: 4}
+  # 3 2 8 4: slope = 4.5 / 5
+  - {x: 4, mean: 4.25, median: 3.5, lo: 2, hi: 8, spread: 6, slope: 0.9, count: 4}

@@ -1,0 +1,21 @@
+# 7.8.8: what a window on a settled loop takes in at the tick itself is as
+# its own rule says. The window needs both its samples and is filling at
+# tick 0, the loop's doubt; settle is 2 ticks. The loop is settled at tick
+# 4, when the setpoint is uncertain: the window holds that sample as
+# uncertain, at ticks 4 and 5.
+rules: [7.8.8, 7.3.4]
+period: 1s
+inputs: {r: {max_age: none}, sel: {type: boolean, max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: m}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: y}}
+  - {id: ctl, type: formula, in: {r: r, y: plant.y, sel: sel}, settings: {expr: "when(sel, r, r - y)"}}
+  - {id: w, type: window, in: {x: ctl.y}, settings: {window: 2s}, out: {mean: m}}
+calls:
+  - {r: 4, sel: true, y: 0, m: not_ready}
+  - {r: 4, y: {u: 0}, m: 4}
+  - {r: 4, y: {u: 2}, m: 4}
+  - {r: 4, y: 3, m: 4}
+  - {r: {v: 4, state: uncertain}, y: 3.5, m: {u: 4}}        # tick 4
+  - {r: 4, y: {u: 3.75}, m: {u: 4}}
+  - {r: 4, y: {u: 3.875}, m: 4}
+  - {r: 4, y: 3.9375, m: 4}

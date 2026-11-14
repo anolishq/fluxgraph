@@ -1,0 +1,12 @@
+# 8.1: a reset does away with every write not yet taken up, and with what stood.
+rules: [8.1]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+calls:
+  - {now: 0, x: 1, y: 1}
+  - {now: 0.2, ran: 0, x: {v: 7, at: 0.2}}
+  - {$reset: true}
+  - {now: 0.4, y: not_ready}
+  - {now: 1.4, y: not_ready}

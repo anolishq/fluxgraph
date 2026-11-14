@@ -1,0 +1,20 @@
+# 6.8: a tick the host did not call for sees what had been sampled by its
+# time. The tick thread stalls from 0 to 8 s while writes go on: `over`
+# false and 0 kW from 0.5 s. Tick 1 takes that up. Under the rule this
+# replaces, the eight ticks ran on tick 0's values: a latched trip and 800.
+rules: [6.8]
+period: 1s
+inputs: {over: {type: boolean, max_age: 10s}, kw: {max_age: 10s}}
+blocks:
+  - {id: h, type: held_for, in: {x: over}, settings: {time: 5s, on_bad: reset}}
+  - {id: l, type: latch, in: {set: h.y}, out: {y: trip}}
+  - {id: i, type: integrate, in: {x: kw}, out: {y: energy}}
+calls:
+  - {now: 0, over: true, kw: 100, trip: false, energy: 100}
+  - now: 8
+    ran: 8
+    first: {over: {v: false, at: 0.5}, kw: {v: 0, at: 0.5}}
+    over: {v: false, at: 7.5}
+    kw: {v: 0, at: 7.5}
+    trip: false
+    energy: 100

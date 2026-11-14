@@ -1,0 +1,8 @@
+# 7.8.7: refused: substeps, which a model no longer has.
+rules: [7.8.7]
+period: 1s
+inputs: {p: {max_age: none}, a: {max_age: none}}
+blocks:
+  - {id: m, type: thermal_mass, in: {power: p, ambient: a}, settings: {thermal_mass: 1, heat_transfer: 1, initial: 0, substeps: 2}}
+expect: compile_error
+error_mentions: [substeps]

@@ -1,0 +1,16 @@
+# 7.7.10, 7.7.11: a usable, true reset returns the integral and the counts
+# to zero before that tick's addition; an uncertain one makes the tick
+# uncertain. doubtful counts the ticks on which either input was not good.
+rules: [7.7.10, 7.7.11, 7.7.8, 7.7.9]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}, r: {type: boolean, max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, reset: r}, settings: {kp: 0, ki: 1}, out: {y: y, integral: i, elapsed: el, doubtful: db, gaps: gaps}}
+calls:
+  - {sp: 1, pv: 0, r: false, y: 1, i: 1, el: 1, db: 0, gaps: 0}
+  - {pv: {state: uncertain, v: 0}, y: {u: 2}, i: {u: 2}, el: 2, db: 1, gaps: 0}
+  - {pv: 0, r: true, y: 1, i: 1, el: 1, db: 0, gaps: 0}
+  - {r: {state: uncertain, v: true}, y: {u: 1}, i: {u: 1}, el: 1, db: 0, gaps: 0}
+  - {r: bad, y: 2, i: 2, el: 2, db: 0, gaps: 0}
+  - {r: false, pv: bad, y: bad, i: 2, el: 3, db: 1, gaps: 0}
+  - {r: {state: uncertain, v: false}, pv: 0, y: 3, i: 3, el: 4, db: 1, gaps: 0}

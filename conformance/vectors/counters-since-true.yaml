@@ -1,0 +1,14 @@
+# 7.6.2: elapsed and doubtful count from the tick the clock was last set.
+rules: [7.6.2, 7]
+period: 1s
+inputs: {x: {type: boolean, max_age: none}}
+blocks:
+  - {id: s, type: since_true, in: {x: x}, settings: {time: 2s, on_bad: assume_false}, out: {y: y, elapsed: elapsed, doubtful: doubtful}}
+calls:
+  - {x: false, y: false, elapsed: 1, doubtful: 0}
+  - {x: false, y: false, elapsed: 2, doubtful: 0}
+  - {x: {v: false, state: uncertain}, y: {u: false}, elapsed: 3, doubtful: 1}
+  - {x: false, y: true, elapsed: 4, doubtful: 1}
+  - {x: true, y: false, elapsed: 1, doubtful: 0}
+  - {x: bad, y: {u: false}, elapsed: 2, doubtful: 1}
+  - {x: false, y: false, elapsed: 3, doubtful: 1}

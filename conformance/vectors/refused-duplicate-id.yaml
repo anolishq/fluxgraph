@@ -1,0 +1,8 @@
+# 9.4: refused: two blocks with one id.
+rules: [9.4]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}}
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 2"}}
+expect: compile_error

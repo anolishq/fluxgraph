@@ -1,0 +1,15 @@
+# Appendix A: thermal_rc2 with nothing equal. Masses 2 and 4 J/K, losses 1
+# and 3 W/K, joined by 2 W/K, heated at 11 W in an ambient of 5: they settle
+# at 10 and 7, and start from 20 and -4. Worked by the eigenvectors of
+# [[-3/2, 1], [1/2, -5/4]]: the start's share along each decays at that
+# one's rate. Period 500 ms.
+rules: [7.8.7, A.thermal_rc2]
+period: 500ms
+inputs: {p: {max_age: none}, a: {max_age: none}}
+blocks:
+  - {id: m, type: thermal_rc2, in: {power: p, ambient: a}, settings: {thermal_mass_a: 2, thermal_mass_b: 4, heat_transfer_a: 1, heat_transfer_b: 3, coupling: 2, initial_a: 20, initial_b: -4}, out: {temp_a: ta, temp_b: tb}}
+calls:
+  - {p: 11, a: 5, ta: 20.0, tb: -3.999999999999999}
+  - {p: 11, a: 5, ta: 12.209463167742445, tb: 2.0395961332379136}
+  - {p: 11, a: 5, ta: 9.838338071377976, tb: 4.467747280972398}
+  - {p: 11, a: 5, ta: 9.268191107848871, tb: 5.541686581692665}

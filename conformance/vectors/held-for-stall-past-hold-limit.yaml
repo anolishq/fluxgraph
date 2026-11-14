@@ -1,0 +1,14 @@
+# 8.6, 7.6.1: with `hold` the unusable stretch grows by the ticks a gap
+# passed over. One unusable tick and two passed over are a stretch of 3 s,
+# longer than the limit of 2 s: the timer stops. The input is true on the
+# gap's tick, so a new timer starts there.
+rules: [8.6, 7.6.1]
+period: 1s
+max_catch_up: 1
+inputs: {x: {type: boolean, max_age: none}}
+blocks:
+  - {id: h, type: held_for, in: {x: x}, settings: {time: 1s, on_bad: hold, hold_limit: 2s}, out: {y: y, elapsed: elapsed, doubtful: doubtful, gaps: gaps}}
+calls:
+  - {now: 0, x: true, y: false, elapsed: 1, doubtful: 0, gaps: 0}
+  - {now: 1, x: bad, y: {u: false}, elapsed: 2, doubtful: 1, gaps: 0}
+  - {now: 4, gap: true, skipped: 2, x: true, y: false, elapsed: 1, doubtful: 0, gaps: 1}

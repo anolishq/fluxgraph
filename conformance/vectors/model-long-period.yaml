@@ -1,0 +1,13 @@
+# 7.8.7: no step is too long for a model. A thermal mass with a time
+# constant of 1 s, at a period of 2.5 s, cools from 100 towards an ambient
+# of 0 by e^-2.5 a tick. (Stepped by the Runge-Kutta rule 1.x has, it
+# gave 42.05 at 5 s, where the answer is 0.67.)
+rules: [7.8.7, A.thermal_mass]
+period: 2500ms
+inputs: {p: {max_age: none}, a: {max_age: none}}
+blocks:
+  - {id: m, type: thermal_mass, in: {power: p, ambient: a}, settings: {thermal_mass: 1, heat_transfer: 1, initial: 100}, out: {temp: temp}}
+calls:
+  - {now: 0, p: 0, a: 0, temp: 100}
+  - {now: 2.5, temp: 8.20849986238988}
+  - {now: 5, temp: 0.6737946999085467}

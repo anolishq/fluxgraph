@@ -1,0 +1,18 @@
+# 8.6, 7.4.3, 7.4.5: at a stall a deadband and a low-pass ride through the
+# ticks nobody saw if the last of them is within ride_through, 2 ticks, of
+# their last usable input, and forget if it is not. The low-pass decays
+# over the ticks it missed: a = 0.5. Two ticks are passed over before tick
+# 4, and three before tick 9.
+rules: [8.6, 7.4.3, 7.4.4, 7.4.5, 7.4.6]
+period: 1s
+max_catch_up: 1
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: db, type: deadband, in: {x: x}, settings: {step: 5, ride_through: 2s}, out: {y: held}}
+  - {id: lp, type: lowpass, in: {x: x}, settings: {tau: 1.4426950408889634s, ride_through: 2s, settle: 0s}, out: {y: smooth}}
+calls:
+  - {now: 0, x: 8, held: 8, smooth: 8}
+  - {now: 1, x: 9, held: 8, smooth: 8.5}
+  - {now: 4, gap: true, skipped: 2, x: 9, held: 8, smooth: 8.9375}        # three ticks of decay
+  - {now: 5, x: 9, held: 8, smooth: 8.96875}
+  - {now: 9, gap: true, skipped: 3, x: 10, held: 10, smooth: 10}          # a first input: within the step of the 8 it held

@@ -1,0 +1,20 @@
+# 3.7: a formula's output carries the sample time of the input sample_of
+# names; with one signal input, that input's; otherwise the tick's. z is
+# written at ticks 0 and 3, bias on every tick. Each window counts the new
+# samples among its last four ticks.
+rules: [3.7, A.formula, 7.3.8]
+period: 1s
+inputs: {z: {max_age: none}, bias: {max_age: none}}
+blocks:
+  - {id: named, type: formula, in: {z: z, b: bias}, settings: {expr: "z - b", sample_of: z}}
+  - {id: both, type: formula, in: {z: z, b: bias}, settings: {expr: "z - b"}}
+  - {id: one, type: formula, in: {z: z, k: 2}, settings: {expr: "z * k"}}
+  - {id: wn, type: window, in: {x: named.y}, settings: {window: 4s, min_good: 0.25, only_new: true}, out: {count: named}}
+  - {id: wb, type: window, in: {x: both.y}, settings: {window: 4s, min_good: 0.25, only_new: true}, out: {count: both}}
+  - {id: wo, type: window, in: {x: one.y}, settings: {window: 4s, min_good: 0.25, only_new: true}, out: {count: one}}
+calls:
+  - {z: 5, bias: 1, named: 1, both: 1, one: 1}
+  - {bias: 1, named: 1, both: 2, one: 1}
+  - {bias: 1, named: 1, both: 3, one: 1}
+  - {z: 6, bias: 1, named: 2, both: 4, one: 2}
+  - {bias: 1, named: 1, both: 4, one: 1}

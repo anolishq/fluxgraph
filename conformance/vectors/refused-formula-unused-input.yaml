@@ -1,0 +1,8 @@
+# Appendix A: refused: an input the formula does not use.
+rules: [A.formula]
+period: 1s
+inputs: {x: {max_age: none}, y: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x, y: y}, settings: {expr: "x + 1"}}
+expect: compile_error
+error_mentions: [f]

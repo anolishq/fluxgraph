@@ -1,0 +1,8 @@
+# A.second_order_process: refused: a zeta less than zero.
+rules: [A.second_order_process]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: second_order_process, in: {u: u}, settings: {omega_n: 1, zeta: -0.1}}
+expect: compile_error
+error_mentions: [zeta]

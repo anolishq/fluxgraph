@@ -1,0 +1,8 @@
+# A.rate_limit: refused: a rate limit with no up.
+rules: [A.rate_limit]
+period: 1s
+inputs: {sp: {max_age: none}}
+blocks:
+  - {id: c, type: rate_limit, in: {x: sp}, settings: {down: 1}}
+expect: compile_error
+error_mentions: [c]

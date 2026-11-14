@@ -1,0 +1,11 @@
+# 8.5: restoring a state saved before any tick had run does away with the writes waiting.
+rules: [8.5, 8.3]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+calls:
+  - {$save: start}
+  - {$write: [x, good, 9.0, 0]}
+  - {$restore: start}
+  - {now: 0, tick: 0, y: not_ready}

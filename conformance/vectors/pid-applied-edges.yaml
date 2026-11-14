@@ -1,0 +1,16 @@
+# 7.7.12: an uncertain applied is used. An addition cut short at max and
+# then taken back leaves the integral what it was before the tick, not
+# less the whole addition. After a tick with an unusable input there is
+# no addition to take back.
+rules: [7.7.12, 7.7.6]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}, ap: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, applied: ap}, settings: {kp: 0, ki: 1, max: 3}, out: {y: y, integral: i}}
+calls:
+  - {sp: 2, pv: 0, ap: {state: uncertain, v: 1}, y: 2, i: 2}   # short: back to 0
+  - {ap: 9, y: 2, i: 2}
+  - {ap: 1, y: 3, i: 3}             # 2 + 2 cut to 3, then taken back to 2
+  - {sp: 0.5, ap: 9, y: 2.5, i: 2.5}
+  - {pv: bad, ap: 0, y: bad, i: 2.5}  # no addition this tick: nothing is taken back
+  - {pv: 0, ap: 9, y: 3, i: 3}

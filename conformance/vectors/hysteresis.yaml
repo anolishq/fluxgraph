@@ -1,0 +1,26 @@
+# 7.5: true at or above rise, false at or below fall, unchanged between.
+# not_ready while undecided. With a usable input the output takes the
+# input's state; an unusable one shows, and changes nothing.
+rules: [7.5.1, 7.5.2, 7.5.3, 7.5.4]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: h, type: hysteresis, in: {x: x}, settings: {rise: 10, fall: 5}, out: {y: y}}
+  - {id: i, type: hysteresis, in: {x: x}, settings: {rise: 10, fall: 5, initial: false}, out: {y: z}}
+calls:
+  - {x: 7, y: not_ready, z: false}
+  - {x: 10, y: true, z: true}
+  - {x: 7, y: true}
+  - {x: 5, y: false}
+  - {x: 7, y: false}
+  - {x: bad, y: bad}
+  - {x: 7, y: false}                            # back, and good: nothing is remembered of the gap
+  - {x: {v: 12, state: uncertain}, y: {u: true}}     # switched, on an uncertain input
+  - {x: not_ready, y: not_ready}
+  - {x: 7, y: true}
+  - {x: 10, y: true}                                 # a good input at a threshold
+  - {x: 7, y: true}
+  - {x: {v: 7, state: uncertain}, y: {u: true}}      # an uncertain input, between
+  - {x: 7, y: true}                                  # and a good one after it
+  - {x: {v: 4, state: uncertain}, y: {u: false}}     # switched on an uncertain input
+  - {x: 7, y: false}                            # good again on a good input

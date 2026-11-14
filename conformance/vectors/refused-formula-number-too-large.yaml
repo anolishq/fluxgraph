@@ -1,0 +1,8 @@
+# Appendix A: refused: a number too large for a double.
+rules: [A.formula]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1e999"}}
+expect: compile_error
+error_mentions: [f]

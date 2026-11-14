@@ -1,0 +1,21 @@
+# 8.6, 7.6.2: since_true follows on_bad at a gap. After one of no known
+# length, its input was last true longer ago than anything it counts: it
+# is true, and its counts start again at the gap's tick. The time is 2 s.
+# Ticks 0 to 2, a restore, ticks 3 to 8; the input is true at tick 5.
+rules: [8.6, 7.6.2]
+period: 1s
+inputs: {x: {type: boolean, max_age: none}}
+blocks:
+  - {id: s, type: since_true, in: {x: x}, settings: {time: 2s, on_bad: assume_false}, out: {y: quiet, elapsed: elapsed, gaps: gaps}}
+calls:
+  - {x: false, quiet: false, elapsed: 1, gaps: 0}
+  - {x: false, quiet: false, elapsed: 2, gaps: 0}
+  - {x: false, quiet: false, elapsed: 3, gaps: 0}
+  - {$save: a}
+  - {$restore: a}
+  - {now: 10, gap: true, skipped: unknown, x: false, quiet: true, elapsed: 1, gaps: 1}
+  - {now: 11, x: false, quiet: true, elapsed: 2, gaps: 1}
+  - {now: 12, x: true, quiet: false, elapsed: 1, gaps: 0}
+  - {now: 13, x: false, quiet: false, elapsed: 2, gaps: 0}
+  - {now: 14, x: false, quiet: false, elapsed: 3, gaps: 0}
+  - {now: 15, x: false, quiet: true, elapsed: 4, gaps: 0}

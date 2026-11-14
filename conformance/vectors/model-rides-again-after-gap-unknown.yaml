@@ -1,0 +1,16 @@
+# 7.8.4, 8.6: after a gap of no known length a model does not ride through
+# until the input is usable again. Once it has been, it rides through as
+# before. x' = 0.5 x + u from 4, with a ride_through of 2 s: tick 0 steps
+# to 3; the gap's tick has u again and steps to 2.5; the next tick has no
+# u and steps on the 1 it holds, to 2.25.
+rules: [7.8.4, 8.6]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: state_space, in: {u: u}, settings: {A: [[0.5]], B: [1], C: [1], initial: [4], ride_through: 2s}, out: {y: y, doubtful: doubtful, gaps: gaps}}
+calls:
+  - {now: 0, u: 1, y: 4, doubtful: 0, gaps: 0}
+  - {$rebase: true}
+  - {now: 50, gap: true, skipped: unknown, u: 1, y: 3, doubtful: 0, gaps: 1}
+  - {now: 51, u: bad, y: 2.5, doubtful: 0, gaps: 1}
+  - {now: 52, y: 2.25, doubtful: 1, gaps: 1}

@@ -1,0 +1,11 @@
+# 6.11: a call is refused if its time is earlier than that of the last call
+# that was not refused, whether or not that call ran a tick.
+rules: [6.11]
+period: 1s
+blocks:
+  - {id: i, type: integrate, in: {x: 1}, out: {y: n}}
+calls:
+  - {now: 0, n: 1}
+  - {now: 0.3, ran: 0}
+  - {now: 0.2, refused: true}
+  - {now: 1, n: 2}

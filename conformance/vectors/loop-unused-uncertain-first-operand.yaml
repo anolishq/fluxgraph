@@ -1,0 +1,14 @@
+# 7.8.8, rule D: a formula does not use an uncertain operand beside a good
+# one that decides by itself, whichever side it is on. p is uncertain and
+# true and comes first; q is good and true and decides the `or`. p starts
+# no doubt of the loop, and the model stays good. x' = 0.5 x + 0.5 (r - x).
+rules: [7.8.8, D, 7.1.2]
+period: 1s
+inputs: {p: {type: boolean, max_age: none}, q: {type: boolean, max_age: none}, r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: ctl.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 3s}, out: {y: y}}
+  - {id: ctl, type: formula, in: {p: p, q: q, r: r, y: plant.y}, settings: {expr: "when(p or q, r - y, 0 - y)"}, out: {y: u}}
+calls:
+  - {p: {v: true, state: uncertain}, q: true, r: 1, y: 0, u: 1}
+  - {y: 0.5, u: 0.5}
+  - {y: 0.5, u: 0.5}

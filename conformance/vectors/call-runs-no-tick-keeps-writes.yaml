@@ -1,0 +1,11 @@
+# 6.8: a write made before a call that runs no tick waits, and is taken up
+# at the tick its time comes.
+rules: [6.8, 6.6]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+calls:
+  - {now: 0, x: 1, y: 1}
+  - {now: 0.2, ran: 0, x: {v: 7, at: 0.2}}
+  - {now: 1, y: 7}

@@ -1,0 +1,16 @@
+# 8.6, 7.8.8: at a gap the tick before it is the loop's doubt, so the plant
+# is uncertain from the gap's tick, for settle, 2 ticks.
+rules: [8.6, 7.8.8]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: y}}
+  - {id: ctl, type: formula, in: {r: r, y: plant.y}, settings: {expr: "r - y"}, out: {y: e}}
+calls:
+  - {r: 4, y: 0, e: 4}
+  - {r: 4, y: 2, e: 2}
+  - {$save: a}
+  - {$restore: a}
+  - {now: 50, gap: true, r: 4, y: {u: 2}, e: {u: 2}}
+  - {now: 51, r: 4, y: {u: 2}, e: {u: 2}}
+  - {now: 52, r: 4, y: 2, e: 2}

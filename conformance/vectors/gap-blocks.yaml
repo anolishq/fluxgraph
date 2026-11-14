@@ -1,0 +1,28 @@
+# 8.6: what each block does at a gap. Ticks 0 to 2, a save and a restore,
+# then ticks 3 to 5.
+rules: [8.6]
+period: 1s
+inputs: {x: {max_age: none}, b: {type: boolean, max_age: none}}
+blocks:
+  - {id: d, type: delay, in: {x: x}, out: {y: delayed}}
+  - {id: db, type: deadband, in: {x: x}, settings: {step: 5}, out: {y: held}}
+  - {id: lp, type: lowpass, in: {x: x}, settings: {tau: 1.4426950408889634s, settle: 0s}, out: {y: smooth}}
+  - {id: h, type: hysteresis, in: {x: x}, settings: {rise: 10, fall: 5}, out: {y: hot}}
+  - {id: hf, type: held_for, in: {x: b}, settings: {time: 1s, on_bad: reset}, out: {y: long}}
+  - {id: st, type: since_true, in: {x: b}, settings: {time: 1s, on_bad: assume_false}, out: {y: quiet}}
+  - {id: nb, type: formula, in: {b: b}, settings: {expr: "not b"}}
+  - {id: unset, type: latch, in: {set: nb.y}, out: {y: unset}}
+  - {id: lit, type: latch, in: {set: b}, out: {y: lit}}
+  - {id: m, type: state_space, in: {u: 1}, settings: {A: [[1]], B: [1], C: [1], settle: 2s}, out: {y: ramp}}
+calls:
+  - {x: 12, b: true, delayed: not_ready, held: 12, smooth: 12, hot: true, long: false, quiet: false, unset: false, lit: true, ramp: 0}
+  - {x: 12, b: true, delayed: 12, held: 12, smooth: 12, hot: true, long: false, quiet: false, unset: false, lit: true, ramp: 1}
+  - {x: 12, b: true, delayed: 12, held: 12, smooth: 12, hot: true, long: true, quiet: false, unset: false, lit: true, ramp: 2}
+  - {$save: a}
+  - {$restore: a}
+  # tick 3, after a gap of no known length. delay: nothing to give. deadband and low-pass: a first input.
+  # hysteresis: unchanged.
+  # held_for: started again. since_true: the clock is set. latch: unchanged. model: uncertain for 2 ticks, this one the first.
+  - {now: 50, gap: true, x: 9, b: true, delayed: not_ready, held: 9, smooth: 9, hot: true, long: false, quiet: false, unset: false, lit: true, ramp: {u: 3}}
+  - {now: 51, x: 9, b: true, delayed: 9, held: 9, smooth: 9, hot: true, long: false, quiet: false, unset: false, lit: true, ramp: {u: 4}}
+  - {now: 52, x: 9, b: true, delayed: 9, held: 9, smooth: 9, hot: true, long: true, quiet: false, unset: false, lit: true, ramp: 5}

@@ -1,0 +1,14 @@
+# 8.5: after a restore, what was written before it and not yet seen is
+# dropped. What is written after it is taken up.
+rules: [8.5]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+calls:
+  - {x: 1, y: 1}
+  - {$save: a}
+  - {now: 0.3, ran: 0, x: 9}     # written, and not taken up: no tick was due
+  - {$restore: a}
+  - {now: 5, gap: true, y: not_ready}
+  - {now: 6, x: 3, y: 3}

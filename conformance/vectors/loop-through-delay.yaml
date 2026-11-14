@@ -1,0 +1,15 @@
+# 5.3, 4.4: a loop through a deferred input is accepted. The delay gives the
+# sum as it was a tick ago. A bad input poisons the loop for good: a running
+# total wants the integrate block, which has a rule for it.
+rules: [5.3, 4.4]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: prev, type: delay, in: {x: acc}, settings: {initial: 0}}
+  - {id: sum, type: formula, in: {p: prev.y, x: x}, settings: {expr: "p + x"}, out: {y: acc}}
+calls:
+  - {x: 1, acc: 1}
+  - {x: 2, acc: 3}
+  - {x: 3, acc: 6}
+  - {x: bad, acc: bad}
+  - {x: 1, acc: bad}

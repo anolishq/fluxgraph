@@ -1,0 +1,13 @@
+# Appendix A: the same motor with a torque constant of 2 and a back_emf of
+# 1, which leaves the rates as they were. From rest with 2 V and no load
+# the speed is 2 (1 - 2 e^-t + e^-2t), the current is half its rate of
+# change, and the torque is twice the current.
+rules: [7.8.7, A.dc_motor]
+period: 1s
+inputs: {v: {max_age: none}, load: {max_age: none}}
+blocks:
+  - {id: m, type: dc_motor, in: {voltage: v, load_torque: load}, settings: {resistance: 3, inductance: 1, back_emf: 1, torque_constant: 2, inertia: 1, friction: 0}, out: {speed: w, current: i, torque: tq}}
+calls:
+  - {v: 2, load: 0, w: 0, i: 0, tq: 0}
+  - {v: 2, load: 0, w: 0.7991528017874561, i: 0.46508831586965926, tq: 0.9301766317393185}
+  - {v: 2, load: 0, w: 1.4952901448310176, i: 0.23403928869575705, tq: 0.4680785773915141}

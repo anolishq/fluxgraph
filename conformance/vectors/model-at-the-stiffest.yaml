@@ -1,0 +1,10 @@
+# 7.8.7: at the bound, 100,000, a model is accepted. A lag of 10 microseconds
+# at a period of 1 s is at its input by the next tick.
+rules: [7.8.7, A.linear]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: linear, in: {u: u}, settings: {A: [[-100000]], B: [[100000]], C: [[1]]}, out: {y: y}}
+calls:
+  - {u: 3, y: 0}
+  - {u: 3, y: 3}

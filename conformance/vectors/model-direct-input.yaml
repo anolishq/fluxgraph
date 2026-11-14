@@ -1,0 +1,16 @@
+# 4.3, 7.8.2, 7.8.5, 7.8.6: with D not zero the input is direct. y = x + u
+# and x' = u, so y is this tick's input plus the last one's. settle is 1 tick.
+rules: [4.3, 7.8.2, 7.8.5]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: s, type: state_space, in: {u: u}, settings: {A: [[0]], B: [1], C: [1], D: 1, settle: 1s}, out: {y: y}}
+calls:
+  - {u: 1, y: 1}
+  - {u: 2, y: 3}
+  - {u: {v: 3, state: uncertain}, y: {u: 5}}     # read directly
+  - {u: bad, y: {u: 6}}                          # worked out on the 3 it last had
+  - {u: 5, y: {u: 8}}                                 # no step at tick 3: the tick after that doubt
+  - {u: 5, y: 10}
+  - {u: bad, y: {u: 10}}                         # tick 6, with no doubt behind it: uncertain, and not bad
+  - {u: 5, y: {u: 10}}

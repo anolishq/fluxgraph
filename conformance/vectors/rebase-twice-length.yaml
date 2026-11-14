@@ -1,0 +1,20 @@
+# 8.5: of two rebases before one call, the second's length, or its having
+# none, is the one that counts.
+rules: [8.5]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: i, type: integrate, in: {x: x}, out: {y: total, missed: missed}}
+calls:
+  - {now: 0, x: 2, total: 2, missed: 0}
+  - {now: 1, x: 2, total: 4, missed: 0}
+  - {$rebase: 5}
+  - {$rebase: true}
+  - {now: 100, gap: true, skipped: unknown, tick: 2, x: 2, total: 6, missed: 0}
+  - {$rebase: true}
+  - {$rebase: 3}
+  - {now: 500, gap: true, skipped: 2, tick: 5, x: 2, total: 8, missed: 2}
+  - {$save: a}
+  - {$rebase: 5}
+  - {$restore: a}                          # a restore puts back "nobody knows"
+  - {now: 900, gap: true, skipped: unknown, tick: 6, x: 2, total: 10, missed: 2}

@@ -1,0 +1,23 @@
+# 7.9.2, 7.9.9: with a model input that has never been usable the state
+# stays and the covariance is P + N for each step, those for the ticks a
+# stall passed over among them. A thermal mass with a rate of 1 and q of
+# 2 has N = 1 - e^-2. From a variance of 4, with 2 ticks passed over and
+# then the step to the tick that runs: 4 + 3 N.
+rules: [7.9.2, 7.9.9, 7.9.7]
+period: 1s
+max_catch_up: 1
+inputs: {p: {max_age: none}, a: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {power: p, ambient: a, z: z}
+    settings:
+      model: {type: thermal_mass, thermal_mass: 1, heat_transfer: 1, initial: 5}
+      q: {temp: 2}
+      p0: {temp: 4}
+      measure: {z: {of: temp, r: 1}}
+      consistency: none
+    out: {temp: temp, sigma_temp: sigma}
+calls:
+  - {now: 0, temp: 5, sigma: 2}
+  - {now: 3, gap: true, skipped: 2, temp: {u: 5}, sigma: {u: 2.5678773627823746}}

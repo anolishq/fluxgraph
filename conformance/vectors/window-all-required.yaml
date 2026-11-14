@@ -1,0 +1,18 @@
+# 7.3.2, 7.3.3: with min_good left at 1 every tick of the window must hold a
+# usable sample. Short of that the outputs take the worst state among the
+# ticks that hold none; a tick before the start counts as not_ready.
+rules: [7.3.2, 7.3.3, 7.3.6]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 3s}, out: {mean: mean, count: count}}
+calls:
+  - {x: 1, mean: not_ready, count: 1}
+  - {x: 2, mean: not_ready, count: 2}
+  - {x: 3, mean: 2, count: 3}
+  - {x: bad, mean: bad, count: 2}
+  - {x: 4, mean: bad, count: 2}
+  - {x: 5, mean: bad, count: 2}
+  - {x: 6, mean: 5, count: 3}
+  - {x: not_ready, mean: not_ready, count: 2}
+  - {x: bad, mean: bad, count: 1}

@@ -1,0 +1,8 @@
+# 5.3: a loop of direct inputs is refused, and the refusal names its blocks.
+rules: [5.3]
+period: 1s
+blocks:
+  - {id: alpha, type: lowpass, in: {x: beta.y}, settings: {tau: 2s}}
+  - {id: beta, type: deadband, in: {x: alpha.y}, settings: {step: 1}, out: {y: y}}
+expect: compile_error
+error_mentions: [alpha, beta]

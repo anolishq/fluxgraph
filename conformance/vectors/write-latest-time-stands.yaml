@@ -1,0 +1,21 @@
+# 6.8: what stands is the write with the latest time. An older sample that
+# arrives late does not displace it, nor does an old failed read. Of two
+# with the same time, the one written later stands.
+rules: [6.8, 6.7]
+period: 1s
+inputs: {x: {max_age: 5s}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+calls:
+  - {now: 0, x: 1, y: 1}
+  - {now: 1, x: 5, y: 5}
+  - {now: 2, x: {v: 9, at: 0.5}, y: 5, thrown: 1, waiting: 0}   # older than what stands: thrown away as it is made
+  - {now: 3, x: {v: bad, at: 0.7}, y: 5, thrown: 1}
+  - {now: 4, x: {v: 7, at: -5000}, y: 5}          # very old: accepted, and never stands
+  - {now: 5, x: {v: 6, at: 1}, y: 6, thrown: 0}   # the same time as what stands, written later
+  - {now: 6, first: {x: {v: 20, at: 5.9}}, x: {v: 30, at: 5.5}, y: 20}   # two before one call: the later time
+  - {now: 7, y: 20}
+  - {now: 8, x: {v: bad, at: 7.5}, y: bad}        # a failed read with a later time displaces a value
+  - {now: 9, x: {v: 1, at: 7}, y: bad}            # and a value with an earlier time does not displace it
+  - {now: 10, x: {v: 2, at: 7.5}, y: 2}           # one with the same time, written later, does
+  - {now: 11, x: {v: bad, at: 7.5}, y: bad}       # and so does a failed read with the same time

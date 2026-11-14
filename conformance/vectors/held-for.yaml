@@ -1,0 +1,22 @@
+# 7.6.1: true once the input has been true for longer than the time. The
+# tick it becomes true counts as no time. With reset, an unusable input
+# stops the timer. The output takes the input's state.
+rules: [7.6.1, A.held_for]
+period: 1s
+inputs: {x: {type: boolean, max_age: none}}
+blocks:
+  - {id: h, type: held_for, in: {x: x}, settings: {time: 2s, on_bad: reset}, out: {y: y}}
+calls:
+  - {x: true, y: false}
+  - {x: true, y: false}
+  - {x: true, y: false}                             # 2 s: not longer than 2 s
+  - {x: true, y: true}
+  - {x: false, y: false}
+  - {x: true, y: false}                             # started again at tick 5
+  - {x: {v: true, state: uncertain}, y: {u: false}}
+  - {x: true, y: false}
+  - {x: true, y: true}
+  - {x: bad, y: bad}
+  - {x: true, y: false}                             # started again
+  - {x: not_ready, y: not_ready}
+  - {x: {v: false, state: uncertain}, y: {u: false}}

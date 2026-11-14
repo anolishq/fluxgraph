@@ -1,0 +1,11 @@
+# 8.5: a reset after a rebase is a reset, and the next call is not a gap.
+rules: [8.5, 8.1]
+period: 1s
+blocks:
+  - {id: i, type: integrate, in: {x: 1}, out: {y: n}}
+calls:
+  - {now: 10, n: 1}
+  - {$rebase: true}
+  - {$reset: true}
+  - {now: 3, tick: 0, n: 1}
+  - {now: 4, n: 2}

@@ -1,0 +1,12 @@
+# 7.7.3, 8.6: a gap whose tick is the tick of a reset is counted.
+rules: [7.7.3, 7.7.4, 8.6]
+period: 1s
+inputs: {x: {max_age: none}, r: {type: boolean, max_age: none}}
+blocks:
+  - {id: i, type: integrate, in: {x: x, reset: r}, out: {y: total, elapsed: elapsed, gaps: gaps}}
+calls:
+  - {x: 2, r: false, total: 2, elapsed: 1, gaps: 0}
+  - {$save: a}
+  - {$restore: a}
+  - {now: 50, gap: true, x: 2, r: true, total: 2, elapsed: 1, gaps: 1}
+  - {now: 51, x: 2, r: false, total: 4, elapsed: 2, gaps: 1}

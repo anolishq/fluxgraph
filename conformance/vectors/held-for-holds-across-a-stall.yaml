@@ -1,0 +1,13 @@
+# 8.6, 7.6.1: with `hold`, a gap within hold_limit leaves the timer
+# running: it runs on over the two ticks passed over, elapsed and doubtful
+# go up by them, and gaps by one. At tick 3 the timer started 3 ticks ago,
+# which is longer than 2 s.
+rules: [8.6, 7.6.1]
+period: 1s
+max_catch_up: 1
+inputs: {x: {type: boolean, max_age: none}}
+blocks:
+  - {id: h, type: held_for, in: {x: x}, settings: {time: 2s, on_bad: hold, hold_limit: 3s}, out: {y: y, elapsed: elapsed, doubtful: doubtful, gaps: gaps}}
+calls:
+  - {now: 0, x: true, y: false, elapsed: 1, doubtful: 0, gaps: 0}
+  - {now: 3, gap: true, skipped: 2, x: true, y: true, elapsed: 4, doubtful: 2, gaps: 1}

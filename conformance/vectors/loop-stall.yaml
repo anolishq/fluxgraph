@@ -1,0 +1,17 @@
+# 8.4, 8.6, 7.8.8: a stall is a gap, and the tick before the one it runs is
+# the loop's doubt: the plant is uncertain from that tick, for settle, 2
+# ticks. Ticks 0 and 1, then a call 8 s late: tick 10 runs, and 8 are
+# passed over.
+rules: [8.4, 8.6, 7.8.8]
+period: 1s
+max_catch_up: 3
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: y}}
+  - {id: ctl, type: formula, in: {r: r, y: plant.y}, settings: {expr: "r - y"}, out: {y: e}}
+calls:
+  - {now: 0, r: 4, y: 0, e: 4}
+  - {now: 1, r: 4, y: 2, e: 2}
+  - {now: 10, gap: true, skipped: 8, tick: 10, r: 4, y: {u: 2}, e: {u: 2}}
+  - {now: 11, r: 4, y: {u: 2}, e: {u: 2}}
+  - {now: 12, r: 4, y: 2, e: 2}

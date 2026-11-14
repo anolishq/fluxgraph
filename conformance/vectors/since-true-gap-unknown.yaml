@@ -1,0 +1,15 @@
+# 7.6.2, 8.6: after a gap of no known length the input was last true longer
+# ago than `time`: the output is true until the clock is next set, though
+# the clock had been set one tick before the gap. The counts start again
+# at the gap's tick, gaps at one.
+rules: [7.6.2, 8.6]
+period: 1s
+inputs: {x: {type: boolean, max_age: none}}
+blocks:
+  - {id: s, type: since_true, in: {x: x}, settings: {time: 3s, on_bad: assume_false}, out: {y: y, elapsed: elapsed, doubtful: doubtful, gaps: gaps}}
+calls:
+  - {now: 0, x: true, y: false, elapsed: 1, doubtful: 0, gaps: 0}
+  - {$rebase: true}
+  - {now: 50, gap: true, skipped: unknown, x: false, y: true, elapsed: 1, doubtful: 0, gaps: 1}
+  - {now: 51, y: true, elapsed: 2, doubtful: 0, gaps: 1}
+  - {now: 52, x: true, y: false, elapsed: 1, doubtful: 0, gaps: 0}

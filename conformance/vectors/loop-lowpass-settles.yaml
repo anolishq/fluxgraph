@@ -1,0 +1,19 @@
+# 7.8.8: a low-pass on a loop that holds a model has no doubt once the loop
+# has settled. a = 0.5; its own settle is 2 ticks and the loop's is 3. The
+# setpoint is uncertain at tick 2; the low-pass last takes an uncertain
+# input at tick 5, and at tick 6 it is good.
+rules: [7.8.8, 7.4.7, 7.4.8]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 3s}, out: {y: y}}
+  - {id: f, type: lowpass, in: {x: plant.y}, settings: {tau: 1.4426950408889634s, settle: 2s}, out: {y: s}}
+  - {id: ctl, type: formula, in: {r: r, s: f.y}, settings: {expr: "r - s"}, out: {y: e}}
+calls:
+  - {r: 4, y: 0, s: 0, e: 4}
+  - {r: 4, y: 2, s: 1, e: 3}
+  - {r: {v: 4, state: uncertain}, y: 2.5, s: 1.75, e: {u: 2.25}}        # tick 2: the loop's doubt
+  - {r: 4, y: {u: 2.375}, s: {u: 2.0625}, e: {u: 1.9375}}
+  - {r: 4, y: {u: 2.15625}, s: {u: 2.109375}, e: {u: 1.890625}}
+  - {r: 4, y: {u: 2.0234375}, s: {u: 2.06640625}, e: {u: 1.93359375}}
+  - {r: 4, y: 1.978515625, s: 2.0224609375, e: 1.9775390625}            # tick 6: settled

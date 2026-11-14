@@ -1,0 +1,19 @@
+# Appendix A, 7.8.6: y'' + 2 zeta omega_n y' + omega_n^2 y = omega_n^2 gain u.
+# The first has omega_n 1, zeta 1 and a gain of 2: from rest with u at 1,
+# y = 2 (1 - (1 + t) e^-t) and its rate is 2 t e^-t. Its states decay at 1 a
+# second, so its settle is 3 ticks: u is uncertain at tick 1, and it is
+# uncertain at ticks 2 to 4. The second has omega_n 2 and no damping:
+# y = 1 - cos 2t. Nothing of it decays, it has no settle, and it is good.
+rules: [7.8.7, 7.8.6, A.second_order_process]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: second_order_process, in: {u: u}, settings: {omega_n: 1, zeta: 1, gain: 2}, out: {y: y, rate: rate}}
+  - {id: o, type: second_order_process, in: {u: u}, settings: {omega_n: 2, zeta: 0}, out: {y: swing, doubtful: od}}
+calls:
+  - {u: 1, y: 0, rate: 0, swing: 0, od: 0}
+  - {u: {v: 1, state: uncertain}, y: 0.5284822353142307, rate: 0.7357588823428847, swing: 1.4161468365471424, od: 0}
+  - {u: 1, y: {u: 1.1879883005803238}, rate: {u: 0.5413411329464508}, swing: 1.6536436208636118, od: 1}
+  - {u: 1, y: {u: 1.6017034530570884}, rate: {u: 0.29872241020718365}, swing: 0.03982971334963403, od: 1}
+  - {u: 1, y: {u: 1.8168436111126582}, rate: {u: 0.14652511110987343}, swing: 1.1455000338086134, od: 1}
+  - {u: 1, y: 1.9191446360109743, rate: 0.06737946999085467, swing: 1.8390715290764525, od: 1}

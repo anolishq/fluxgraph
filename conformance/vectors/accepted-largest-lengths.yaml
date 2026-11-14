@@ -1,0 +1,11 @@
+# 6.2, Appendix A: the largest of each is accepted: a maximum age of the
+# most nanoseconds 64 bits hold, and a max_catch_up of 2,147,483,647.
+rules: [6.2, 6.9]
+period: 1s
+max_catch_up: 2147483647
+max_waiting: 2147483647
+inputs: {x: {max_age: 9223372036854775807ns}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}, out: {y: y}}
+calls:
+  - {x: 1, y: 2}

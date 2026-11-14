@@ -1,0 +1,9 @@
+# Appendix A: the names in each of a linear block's lists are distinct. Two
+# states of one name are refused, though a state's name is no port's.
+rules: [A.linear]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: linear, in: {u: u}, settings: {A: [[-1, 0], [0, -2]], B: [[1], [1]], C: [[1, 1]], states: [x, x]}}
+expect: compile_error
+error_mentions: [states]

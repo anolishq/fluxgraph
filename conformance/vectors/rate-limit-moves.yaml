@@ -1,0 +1,17 @@
+# 7.4.9, 7.4.10: a rate limit takes its first input as it is, then moves
+# towards its input by at most up or down times the period, and takes an
+# input within reach. limited is true when the output is not the input.
+rules: [7.4.9, 7.4.10]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x}, settings: {up: 2, down: 1}, out: {y: y, limited: lim}}
+calls:
+  - {x: 7, y: 7, lim: false}
+  - {x: 12, y: 9, lim: true}
+  - {x: 12, y: 11, lim: true}
+  - {x: 12, y: 12, lim: false}     # 1 away, within a reach of 2
+  - {x: 10, y: 11, lim: true}
+  - {x: 10, y: 10, lim: false}
+  - {x: 9.5, y: 9.5, lim: false}
+  - {x: 11.5, y: 11.5, lim: false}  # exactly its reach away

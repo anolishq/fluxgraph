@@ -1,0 +1,13 @@
+# 7.2.2: an input never written is not_ready until the graph has run for
+# longer than its maximum age, and bad from then on.
+rules: [7.2.1]
+period: 1s
+inputs: {x: {max_age: 2s}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+calls:
+  - {y: not_ready}
+  - {y: not_ready}
+  - {y: not_ready}          # has run 2 s: not longer than 2 s
+  - {y: bad}
+  - {x: 1, y: 1}

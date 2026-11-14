@@ -1,0 +1,8 @@
+# Appendix A: refused: logic on numbers: a number is not a truth value.
+rules: [A.formula]
+period: 1s
+inputs: {x: {max_age: none}, y: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x, y: y}, settings: {expr: "x and y"}}
+expect: compile_error
+error_mentions: [f]

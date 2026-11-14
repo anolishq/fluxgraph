@@ -1,0 +1,13 @@
+# 7.7, 7.8.8: a PID driving a first-order process and reading it back. The
+# process gives its state at the tick, and steps on the PID's output:
+# with tau of one period, x' = a x + (1 - a) u.
+rules: [7.7.5, 7.8.1, 5.3]
+period: 1s
+inputs: {sp: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: plant.y}, settings: {kp: 1, max: 1}, out: {y: u, limited: lim}}
+  - {id: plant, type: first_order_process, in: {u: c.y}, settings: {tau: 1s, settle: 1s}, out: {y: x}}
+calls:
+  - {sp: 4, u: 1, lim: true, x: 0}
+  - {u: 1, lim: true, x: 0.6321205588285577}
+  - {u: 1, lim: true, x: 0.8646647167633873}

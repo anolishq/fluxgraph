@@ -1,0 +1,19 @@
+# 7.9.6: a mean that is exactly the limit is not over it. Over 2, limit 4:
+# 8 and 0.
+rules: [7.9.6]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: state_space, A: [[1]], B: [0], C: [1]}
+      q: {x0: 0}
+      p0: {x0: 1}
+      measure: {z: {of: y, r: 1}}
+      consistency: {over: 2, limit: 4}
+    out: {x0: x, nis_z: nis}
+calls:
+  - {u: 0, z: 4, x: 2, nis: 8}
+  - {z: 2, x: 2, nis: 0}

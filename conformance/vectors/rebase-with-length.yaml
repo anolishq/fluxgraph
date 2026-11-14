@@ -1,0 +1,24 @@
+# 8.5, 8.6, 6.10: a host that knows how long the graph was away says so,
+# and the rebase is then a gap of that many ticks: those that would have
+# been due in that time, less the one that runs. 5 s away is 4 passed
+# over; 0.4 s is none; 1.5 s is one, since a tick half a period ahead is
+# due; and with no length nobody knows, and only gaps counts it.
+rules: [8.5, 8.6, 6.10, 7.7.3]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: i, type: integrate, in: {x: x}, out: {y: total, missed: missed, elapsed: elapsed, gaps: gaps}}
+calls:
+  - {now: 0, x: 2, total: 2, missed: 0, elapsed: 1, gaps: 0}
+  - {now: 1, x: 2, total: 4, missed: 0, elapsed: 2, gaps: 0}
+  - {$rebase: 5}
+  - {now: 1000, gap: true, skipped: 4, tick: 6, time: 1000, x: 2, total: 6, missed: 4, elapsed: 7, gaps: 1}
+  - {now: 1001, skipped: 0, tick: 7, x: 2, total: 8, missed: 4, elapsed: 8, gaps: 1}
+  - {$rebase: 0.4}
+  - {now: 5000, gap: true, skipped: 0, tick: 8, x: 2, total: 10, missed: 4, elapsed: 9, gaps: 2}
+  - {$rebase: true}
+  - {now: 9000, gap: true, skipped: unknown, tick: 9, x: 2, total: 12, missed: 4, elapsed: 10, gaps: 3}
+  - {$rebase: 1.5}
+  - {now: 9500, gap: true, skipped: 1, tick: 11, x: 2, total: 14, missed: 5, elapsed: 12, gaps: 4}
+  - {$refused_rebase: -1}
+  - {now: 9501, tick: 12, x: 2, total: 16, missed: 5, elapsed: 13, gaps: 4}

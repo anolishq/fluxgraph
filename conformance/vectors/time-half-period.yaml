@@ -1,0 +1,11 @@
+# 6.6: a tick exactly half a period after the call is run. One a little
+# more than that is not.
+rules: [6.6]
+period: 1s
+blocks:
+  - {id: i, type: integrate, in: {x: 1}, out: {y: n}}
+calls:
+  - {now: 0, n: 1}
+  - {now: 0.5, n: 2}              # tick 1 is at 1.0
+  - {now: 1.4, ran: 0}            # tick 2 is at 2.0
+  - {now: 1.5, n: 3}

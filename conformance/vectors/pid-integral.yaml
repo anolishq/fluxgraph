@@ -1,0 +1,13 @@
+# 7.7.6: ki times the error times the period is added on each usable tick,
+# and the value at a tick includes that tick's addition. With no limit
+# nothing stops it, and limited is false. An unusable tick adds nothing.
+rules: [7.7.6, 7.7.8]
+period: 500ms
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 1, ki: 2}, out: {y: y, integral: i, limited: lim}}
+calls:
+  - {sp: 4, pv: 0, y: 8, i: 4, lim: false}
+  - {y: 12, i: 8, lim: false}
+  - {pv: bad, y: bad, i: 8, lim: bad}
+  - {pv: 6, y: 4, i: 6, lim: false}

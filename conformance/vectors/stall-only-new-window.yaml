@@ -1,0 +1,12 @@
+# 8.6, 8.5: at a stall, which is on one clock, a window with only_new keeps
+# its samples: only a rebase empties it. One tick is passed over.
+rules: [8.6, 8.5, 7.3.8]
+period: 1s
+max_catch_up: 1
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 4s, min_good: 0.25, only_new: true}, out: {count: count}}
+calls:
+  - {now: 0, x: 1, count: 1}
+  - {now: 1, x: 2, count: 2}
+  - {now: 3, gap: true, skipped: 1, x: 3, count: 3}

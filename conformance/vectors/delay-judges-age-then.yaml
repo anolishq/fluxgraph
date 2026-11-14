@@ -1,0 +1,12 @@
+# Appendix A: a delay gives its input as that input was then. A value that
+# was still young enough at its own tick is usable when the delay gives it.
+rules: [A.delay]
+period: 1s
+inputs: {x: {max_age: 1s}}
+blocks:
+  - {id: d, type: delay, in: {x: x}, out: {y: y}}
+calls:
+  - {x: 5, y: not_ready}
+  - {y: 5}
+  - {y: 5}        # tick 1: age 1 s, usable
+  - {y: bad}      # tick 2: age 2 s

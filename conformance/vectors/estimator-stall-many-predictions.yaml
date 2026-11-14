@@ -1,0 +1,23 @@
+# 7.9.9, 8.6: told that 99 ticks were passed over, an estimator predicts 99
+# times more on the model inputs it last had. x' = 0.5 x + u with u at 1
+# and q of 1, from 0 with a variance of 1: after k predictions x is
+# 2 (1 - 0.5^k) and the variance 0.25^k + (1 - 0.25^k) / 0.75. Tick 100 is
+# the hundredth: 2, and a sigma of the root of 4/3.
+rules: [7.9.9, 8.6, 7.9.2]
+period: 1s
+max_catch_up: 1
+inputs: {z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: 1, z: z}
+    settings:
+      model: {type: state_space, A: [[0.5]], B: [1], C: [1]}
+      q: {x0: 1}
+      p0: {x0: 1}
+      measure: {z: {of: y, r: 1}}
+      consistency: none
+    out: {x0: x, sigma_x0: sigma}
+calls:
+  - {now: 0, x: 0, sigma: 1}
+  - {now: 100, gap: true, skipped: 99, x: {u: 2}, sigma: {u: 1.1547005383792517}}

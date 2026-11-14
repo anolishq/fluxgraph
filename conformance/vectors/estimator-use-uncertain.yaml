@@ -1,0 +1,20 @@
+# 7.9.3, 7.9.7: an uncertain measurement is considered where its port gives
+# r_uncertain, with that variance, and its tick is uncertain. Tick 0 does
+# not predict: innovation 2, spread 1 + 3, gain 0.25.
+rules: [7.9.3]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: state_space, A: [[1]], B: [0], C: [1]}
+      q: {x0: 0}
+      p0: {x0: 1}
+      measure: {z: {of: y, r: 1, r_uncertain: 3}}
+      consistency: none
+    out: {x0: x, sigma_x0: sigma}
+calls:
+  - {u: 0, z: {v: 2, state: uncertain}, x: {u: 0.5}, sigma: {u: 0.8660254037844386}}
+  - {u: 0, x: 0.5, sigma: 0.8660254037844386}

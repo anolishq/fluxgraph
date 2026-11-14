@@ -1,0 +1,15 @@
+# 8.6, 7.5.4: at a stall a hysteresis stays as it was. The ticks passed
+# over are ticks on which its input was not good: elapsed and doubtful go
+# up by them, and gaps by one. Ticks 0 and 1, then ticks 2 and 3 are passed
+# over and tick 4 runs.
+rules: [8.6, 7.5.4]
+period: 1s
+max_catch_up: 1
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: h, type: hysteresis, in: {x: x}, settings: {rise: 2, fall: 1}, out: {y: y, elapsed: elapsed, doubtful: doubtful, gaps: gaps}}
+calls:
+  - {now: 0, x: 3, y: true, elapsed: 1, doubtful: 0, gaps: 0}
+  - {now: 1, x: 3, y: true, elapsed: 2, doubtful: 0, gaps: 0}
+  - {now: 4, gap: true, skipped: 2, x: 3, y: true, elapsed: 5, doubtful: 2, gaps: 1}
+  - {now: 5, x: 3, y: true, elapsed: 6, doubtful: 2, gaps: 1}

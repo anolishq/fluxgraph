@@ -1,0 +1,15 @@
+# 8.5, 6.8: after a rebase a write stamped too far ahead is thrown away at
+# the call like any other, and one stamped ahead within max_ahead waits:
+# the rebase's tick is at the call's time, and may see no later.
+rules: [8.5, 6.8]
+period: 1s
+inputs: {x: {max_age: none}, w: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+  - {id: g, type: formula, in: {w: w}, settings: {expr: "w + 0"}, out: {y: v}}
+calls:
+  - {now: 100, x: 1, w: 1, y: 1, v: 1}
+  - {$rebase: true}
+  - {$write: [x, good, 9.0, 500]}
+  - {now: 5, gap: true, w: {v: 3, at: 5.5}, y: not_ready, v: not_ready, thrown: 1, waiting: 1}
+  - {now: 6, y: not_ready, v: 3}

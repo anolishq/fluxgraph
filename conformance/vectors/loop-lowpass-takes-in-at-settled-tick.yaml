@@ -1,0 +1,21 @@
+# 7.8.8: what a low-pass on a settled loop takes in at the tick itself is
+# as its own rule says. The loop is settled at tick 4, when the setpoint
+# is uncertain: that is the low-pass's doubt, and it is uncertain for its
+# settle, 2 ticks, after. The controller gives the setpoint as it is, so
+# the low-pass's input is good again at tick 5. a = 0.5.
+rules: [7.8.8, 7.4.7, 7.4.8]
+period: 1s
+inputs: {r: {max_age: none}, sel: {type: boolean, max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: s}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: y}}
+  - {id: ctl, type: formula, in: {r: r, y: plant.y, sel: sel}, settings: {expr: "when(sel, r, r - y)"}}
+  - {id: f, type: lowpass, in: {x: ctl.y}, settings: {tau: 1.4426950408889634s, settle: 2s}, out: {y: s}}
+calls:
+  - {r: 4, sel: true, y: 0, s: 4}
+  - {r: 4, y: 2, s: 4}
+  - {r: 4, y: 3, s: 4}
+  - {r: 4, y: 3.5, s: 4}
+  - {r: {v: 4, state: uncertain}, y: 3.75, s: {u: 4}}       # tick 4
+  - {r: 4, y: {u: 3.875}, s: {u: 4}}
+  - {r: 4, y: {u: 3.9375}, s: {u: 4}}
+  - {r: 4, y: 3.96875, s: 4}

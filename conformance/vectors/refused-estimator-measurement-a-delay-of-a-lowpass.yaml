@@ -1,0 +1,10 @@
+# 7.9.3: refused: a measurement read through a delay from a low-pass: the delay carries on a time that is the tick's.
+rules: [7.9.3]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - {id: f, type: lowpass, in: {x: z}, settings: {tau: 2s}}
+  - {id: d, type: delay, in: {x: f.y}}
+  - {id: k, type: estimator, in: {u: u, z: d.y}, settings: {model: {type: state_space, A: [[0.5]], B: [1], C: [1]}, q: {x0: 1}, p0: {x0: 4}, measure: {z: {of: y, r: 1}}, consistency: none}}
+expect: compile_error
+error_mentions: [z]

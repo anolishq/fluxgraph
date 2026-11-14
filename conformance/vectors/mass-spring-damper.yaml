@@ -1,0 +1,13 @@
+# Appendix A: m x'' + c x' + k x = F, with m 2, c 6, k 4 and F 4, which is
+# x'' + 3 x' + 2 x = 2: from rest, x = 1 - 2 e^-t + e^-2t and its velocity
+# is 2 e^-t - 2 e^-2t. Period 500 ms.
+rules: [7.8.7, A.mass_spring_damper]
+period: 500ms
+inputs: {f: {max_age: none}}
+blocks:
+  - {id: m, type: mass_spring_damper, in: {force: f}, settings: {mass: 2, damping: 6, stiffness: 4}, out: {position: x, velocity: v}}
+calls:
+  - {f: 4, x: 0, v: 0}
+  - {f: 4, x: 0.15481812174617549, v: 0.4773024370823822}
+  - {f: 4, x: 0.39957640089372803, v: 0.46508831586965926}
+  - {f: 4, x: 0.6035267480710044, v: 0.34668618356113173}
