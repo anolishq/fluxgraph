@@ -16,35 +16,31 @@ struct BuiltType {
 };
 
 // Adding a block type is a row here and a maker: nothing in the compiler or the engine names a type.
-constexpr std::array<BuiltType, 5> kBuilt = {{
+constexpr std::array<BuiltType, 13> kBuilt = {{
     {"formula", &detail::make_formula},
     {"all_good", &detail::make_all_good},
     {"delay", &detail::make_delay},
     {"window", &detail::make_window},
     {"integrate", &detail::make_integrate},
+    {"deadband", &detail::make_deadband},
+    {"lowpass", &detail::make_lowpass},
+    {"rate_limit", &detail::make_rate_limit},
+    {"hysteresis", &detail::make_hysteresis},
+    {"held_for", &detail::make_held_for},
+    {"since_true", &detail::make_since_true},
+    {"latch", &detail::make_latch},
+    {"pid", &detail::make_pid},
 }};
 
-constexpr std::array<std::string_view, 5> kBuiltNames = {"formula", "all_good", "delay", "window", "integrate"};
+constexpr std::array<std::string_view, 13> kBuiltNames = {
+    "formula",    "all_good",   "delay",    "window",     "integrate", "deadband", "lowpass",
+    "rate_limit", "hysteresis", "held_for", "since_true", "latch",     "pid",
+};
 
 // The rest of Appendix A's catalogue.
-constexpr std::array<std::string_view, 17> kPlannedNames = {
-    "deadband",
-    "lowpass",
-    "hysteresis",
-    "held_for",
-    "since_true",
-    "latch",
-    "rate_limit",
-    "pid",
-    "linear",
-    "thermal_mass",
-    "thermal_rc2",
-    "first_order_process",
-    "second_order_process",
-    "mass_spring_damper",
-    "dc_motor",
-    "state_space",
-    "estimator",
+constexpr std::array<std::string_view, 9> kPlannedNames = {
+    "linear",   "thermal_mass", "thermal_rc2", "first_order_process", "second_order_process", "mass_spring_damper",
+    "dc_motor", "state_space",  "estimator",
 };
 
 }  // namespace
@@ -215,7 +211,12 @@ bool SettingsReader::counted(std::string_view key, std::uint64_t &ticks) {
     return true;
 }
 
-bool SettingsReader::scale(std::string_view key, double &nanoseconds) {
+bool SettingsReader::period_over(std::string_view key, double &ratio) {
+    std::uint64_t unused = 0;
+    return period_over(key, ratio, 0, unused);
+}
+
+bool SettingsReader::period_over(std::string_view key, double &ratio, std::uint32_t times, std::uint64_t &ticks) {
     const Setting *setting = take(key);
     if (setting == nullptr) {
         return false;
@@ -226,11 +227,28 @@ bool SettingsReader::scale(std::string_view key, double &nanoseconds) {
                          setting->shown()));
         return false;
     }
-    nanoseconds = nanoseconds_as_double(length);
-    if (!std::isfinite(nanoseconds)) {
-        fail(std::format("setting '{}' is {}, which is more than a double holds", key, setting->shown()));
+    if (is_zero(length)) {
+        fail(std::format("setting '{}' is {}, and has to be more than zero", key, setting->shown()));
         return false;
     }
+    ratio = detail::period_over(setup_.period, length);
+    if (!std::isfinite(ratio) || !periods_rounded_up(length, times, setup_.period, ticks)) {
+        fail(std::format("setting '{}' is {}, which is past what this engine can count", key, setting->shown()));
+        return false;
+    }
+    return true;
+}
+
+bool SettingsReader::not_negative(std::string_view key, double &value) {
+    double given = 0.0;
+    if (!number(key, given)) {
+        return false;
+    }
+    if (given < 0.0) {
+        fail(std::format("setting '{}' is {}, and is not to be negative", key, given));
+        return false;
+    }
+    value = given;
     return true;
 }
 

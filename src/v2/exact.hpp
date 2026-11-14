@@ -4,6 +4,7 @@
 // lengths and fractions a graph gives, which are worked from their decimal text (rule 6.3). Nothing here uses a
 // type wider than 64 bits: the wide cases go through BigUint.
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -50,6 +51,10 @@ public:
     /// Divides in place and returns the remainder. `divisor` is not zero.
     std::uint32_t divide(std::uint32_t divisor);
     BigUint times(const BigUint &other) const;
+    /// The whole quotient by `divisor`, which is not zero, with what is left over in `remainder`.
+    BigUint divided_by(const BigUint &divisor, BigUint &remainder) const;
+    /// How many bits the value takes: zero for zero.
+    std::size_t bits() const;
     /// False where the value does not fit.
     bool to_u64(std::uint64_t &value) const;
     std::string decimal() const;
@@ -70,8 +75,14 @@ bool parse_length(std::string_view text, Length &length);
 enum class WholeLength { ok, not_whole, too_large };
 /// The length in whole nanoseconds, where it is one and fits in 64 bits, signed.
 WholeLength whole_nanoseconds(const Length &length, Time &nanoseconds);
-/// The length in nanoseconds as the nearest double, for a setting that only scales a value (rule 6.3).
-double nanoseconds_as_double(const Length &length);
+/// Whether the length is zero.
+bool is_zero(const Length &length);
+/// The ratio of `period` to the length, worked exactly and then taken as the nearest double, for a setting that
+/// only scales a value (rule 6.3; Appendix A, `integrate`). The period is more than zero and the length is not zero.
+double period_over(Time period, const Length &length);
+/// `times` of the length, in periods, rounded up to a whole number, exactly (rule 6.3). False where that does
+/// not fit in 64 bits.
+bool periods_rounded_up(const Length &length, std::uint32_t times, Time period, std::uint64_t &ticks);
 
 /// `fraction * count` rounded up to a whole number, worked exactly from the shortest decimal that reads back as
 /// `fraction` (rule 6.3). For a finite fraction more than zero and at most one, so the result is at most `count`.

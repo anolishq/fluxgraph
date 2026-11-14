@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <cstddef>
 
 namespace fluxgraph::v2::detail {
@@ -80,6 +81,54 @@ BigUint BigUint::times(const BigUint &other) const {
         product.limbs_.pop_back();
     }
     return product;
+}
+
+std::size_t BigUint::bits() const {
+    if (limbs_.empty()) {
+        return 0;
+    }
+    std::size_t top = 0;
+    for (std::uint32_t limb = limbs_.back(); limb != 0; limb >>= 1) {
+        ++top;
+    }
+    return (limbs_.size() - 1) * 32 + top;
+}
+
+BigUint BigUint::divided_by(const BigUint &divisor, BigUint &remainder) const {
+    // Long division a bit at a time: slow, and only ever run when a graph is compiled.
+    const auto less = [](const BigUint &a, const BigUint &b) {
+        if (a.limbs_.size() != b.limbs_.size()) {
+            return a.limbs_.size() < b.limbs_.size();
+        }
+        for (std::size_t i = a.limbs_.size(); i-- > 0;) {
+            if (a.limbs_[i] != b.limbs_[i]) {
+                return a.limbs_[i] < b.limbs_[i];
+            }
+        }
+        return false;
+    };
+    BigUint quotient;
+    remainder = BigUint();
+    for (std::size_t bit = bits(); bit-- > 0;) {
+        remainder.multiply(2);
+        remainder.add((limbs_[bit / 32] >> (bit % 32)) & 1u);
+        quotient.multiply(2);
+        if (!less(remainder, divisor)) {
+            // remainder -= divisor: it is at least the divisor, so the borrow runs out within it.
+            std::uint64_t borrow = 0;
+            for (std::size_t i = 0; i < remainder.limbs_.size(); ++i) {
+                const std::uint64_t take = (i < divisor.limbs_.size() ? divisor.limbs_[i] : 0) + borrow;
+                const std::uint64_t have = remainder.limbs_[i];
+                borrow = have < take ? 1 : 0;
+                remainder.limbs_[i] = static_cast<std::uint32_t>((have + (borrow << 32)) - take);
+            }
+            while (!remainder.limbs_.empty() && remainder.limbs_.back() == 0) {
+                remainder.limbs_.pop_back();
+            }
+            quotient.add(1);
+        }
+    }
+    return quotient;
 }
 
 bool BigUint::to_u64(std::uint64_t &value) const {
@@ -185,14 +234,62 @@ WholeLength whole_nanoseconds(const Length &length, Time &nanoseconds) {
     return WholeLength::ok;
 }
 
-double nanoseconds_as_double(const Length &length) {
-    // The exact decimal, read by the library's correctly rounded conversion.
-    std::string text = length.scaled.decimal();
-    text += "e-";
-    text += std::to_string(length.fraction_digits);
-    double value = 0.0;
-    std::from_chars(text.data(), text.data() + text.size(), value);
-    return value;
+bool is_zero(const Length &length) { return length.scaled.is_zero(); }
+
+namespace {
+
+// 10^digits, to put a length's fraction on the other side of a ratio.
+BigUint power_of_ten(unsigned digits) {
+    BigUint power(1);
+    for (unsigned i = 0; i < digits; ++i) {
+        power.multiply(10);
+    }
+    return power;
+}
+
+}  // namespace
+
+double period_over(Time period, const Length &length) {
+    // period / (scaled / 10^f) is (period * 10^f) / scaled. The quotient is taken with enough bits below the
+    // point that its top 64 are all of the quotient that a double can show, and what is dropped is kept as one
+    // "something was there" bit, so the rounding to 53 bits is the rounding of the true ratio.
+    const BigUint top = BigUint(static_cast<std::uint64_t>(period)).times(power_of_ten(length.fraction_digits));
+    const std::size_t shift = 64 + length.scaled.bits();
+    BigUint scaled_up = top;
+    for (std::size_t i = 0; i < shift; ++i) {
+        scaled_up.multiply(2);
+    }
+    BigUint remainder;
+    BigUint quotient = scaled_up.divided_by(length.scaled, remainder);  // at least 2^64, since top is at least 1
+    bool sticky = !remainder.is_zero();
+    std::size_t dropped = 0;
+    while (quotient.bits() > 64) {
+        sticky = quotient.divide(2) != 0 || sticky;
+        ++dropped;
+    }
+    std::uint64_t leading = 0;
+    quotient.to_u64(leading);  // exactly 64 bits: the top one is set
+    std::uint64_t mantissa = leading >> 11;
+    const bool half = ((leading >> 10) & 1u) != 0;
+    sticky = sticky || (leading & 0x3FFu) != 0;
+    if (half && (sticky || (mantissa & 1u) != 0)) {
+        ++mantissa;  // to nearest, ties to even; at most 2^53, which a double holds
+    }
+    // The exponent is small beside an int: the lengths are a few hundred bits at the very most.
+    const int exponent = 11 + static_cast<int>(dropped) - static_cast<int>(shift);
+    return std::ldexp(static_cast<double>(mantissa), exponent);
+}
+
+bool periods_rounded_up(const Length &length, std::uint32_t times, Time period, std::uint64_t &ticks) {
+    BigUint top = length.scaled;
+    top.multiply(times);
+    const BigUint bottom = BigUint(static_cast<std::uint64_t>(period)).times(power_of_ten(length.fraction_digits));
+    BigUint remainder;
+    BigUint quotient = top.divided_by(bottom, remainder);
+    if (!remainder.is_zero()) {
+        quotient.add(1);
+    }
+    return quotient.to_u64(ticks);
 }
 
 std::uint64_t ceil_of_fraction(double fraction, std::uint64_t count) {

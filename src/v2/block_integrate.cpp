@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "blocks.hpp"
+#include "exact.hpp"
 
 namespace fluxgraph::v2::detail {
 
@@ -28,15 +29,16 @@ class IntegrateBlock : public Block {
 public:
     Status configure(const BlockSetup &setup) {
         SettingsReader settings(setup);
-        double per = 1e9;  // 1s
-        if (settings.scale("per", per) && !(per > 0.0)) {
-            settings.fail("setting 'per' has to be more than zero");
+        // Appendix A: it adds x times the ratio of the period to `per`, the ratio worked once, exactly.
+        if (!settings.period_over("per", scale_) && !settings.failed()) {
+            Length second;  // `per` is 1s unless given
+            parse_length("1s", second);
+            scale_ = detail::period_over(setup.period, second);
         }
         has_max_missed_ = settings.counted("max_missed", max_missed_);
         if (Status status = settings.finish(); !status) {
             return status;
         }
-        scale_ = static_cast<double>(setup.period) / per;  // Appendix A: it adds x * period / per
         period_seconds_ = static_cast<double>(setup.period) / 1e9;
         return {};
     }

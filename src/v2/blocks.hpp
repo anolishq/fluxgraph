@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -35,8 +36,12 @@ public:
     bool constant(std::string_view key, Value &value);
     /// A length of time the block counts: a whole number of periods (rule 6.3).
     bool counted(std::string_view key, std::uint64_t &ticks);
-    /// A length of time that only scales a value: any length, as nanoseconds.
-    bool scale(std::string_view key, double &nanoseconds);
+    /// A length of time that only scales a value: any length more than zero, as the ratio of the period to it.
+    bool period_over(std::string_view key, double &ratio);
+    /// The same, and with it `times` of the length in periods, rounded up to whole ticks.
+    bool period_over(std::string_view key, double &ratio, std::uint32_t times, std::uint64_t &ticks);
+    /// A number that is not negative.
+    bool not_negative(std::string_view key, double &value);
 
     /// Records a fault of the block, unless one is held already. `what` follows "block '<id>': ".
     void fail(std::string what);
@@ -49,6 +54,27 @@ private:
     const BlockSetup &setup_;
     std::vector<bool> taken_;
     std::string problem_;
+};
+
+/// The counters of section 7, as counts of ticks. Every tick counted has a number of its own that fits in 64
+/// bits, signed, so none of these passes 2^63 and no addition to one can wrap.
+struct Counters {
+    std::uint64_t elapsed = 0;
+    std::uint64_t doubtful = 0;
+    std::uint64_t gaps = 0;
+
+    void save(StateWriter &writer) const {
+        writer.u64(elapsed);
+        writer.u64(doubtful);
+        writer.u64(gaps);
+    }
+    bool restore(StateReader &reader) { return reader.u64(elapsed) && reader.u64(doubtful) && reader.u64(gaps); }
+    /// Gives `elapsed` and `doubtful` in seconds and `gaps` as a count, all good, to three ports in that order.
+    void give(std::span<Value> out, std::size_t first, double period_seconds) const {
+        out[first] = Value::of(static_cast<double>(elapsed) * period_seconds);
+        out[first + 1] = Value::of(static_cast<double>(doubtful) * period_seconds);
+        out[first + 2] = Value::of(static_cast<double>(gaps));
+    }
 };
 
 using BlockMaker = Result<std::unique_ptr<Block>> (*)(const BlockSetup &setup);
@@ -72,5 +98,13 @@ Result<std::unique_ptr<Block>> make_all_good(const BlockSetup &setup);
 Result<std::unique_ptr<Block>> make_delay(const BlockSetup &setup);
 Result<std::unique_ptr<Block>> make_window(const BlockSetup &setup);
 Result<std::unique_ptr<Block>> make_integrate(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_deadband(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_lowpass(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_rate_limit(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_hysteresis(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_held_for(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_since_true(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_latch(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_pid(const BlockSetup &setup);
 
 }  // namespace fluxgraph::v2::detail
