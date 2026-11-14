@@ -100,50 +100,114 @@ double stiffness(const std::vector<double> &a, std::size_t n, Time period) {
     return largest * (static_cast<double>(period) / 1e9);
 }
 
-void exact_step(const std::vector<double> &a, std::size_t n, const std::vector<double> &b, std::size_t m, Time period,
-                std::vector<double> &ad, std::vector<double> &bd) {
-    // Scaling and squaring. With X = A * period / 2^s small, two series are summed:
-    //   E = exp(X)                      = I + X + X^2/2! + ...
-    //   P = (exp(X) - I) / X, in effect = I + X/2! + X^2/3! + ...
-    // P times the length of the step is the integral of exp(A t) over the step. Doubling the step s times:
-    //   P <- (P + E P) / 2,   E <- E E
-    // since the integral over two steps is the integral over one, and that again carried forward by E.
-    const Wide length = seconds(period);
+namespace {
+
+// E = exp(A * period), P = the integral of exp(A t) over the period, over the period, and, where `q` is given,
+// N = the integral of exp(A t) Q exp(A' t) over the period, with Q having `q` on its diagonal.
+//
+// Scaling and squaring. With X = A * period / 2^s small, series are summed:
+//   E = exp(X)                      = I + X + X^2/2! + ...
+//   P = (exp(X) - I) / X, in effect = I + X/2! + X^2/3! + ...
+//   N / (the small step)            = Q + L1/2! + L2/3! + ...,  with L0 = Q and L(k+1) = X Lk + Lk X'
+// the last because the k-th derivative of exp(A t) Q exp(A' t) at zero is Lk in units of the small step.
+// Doubling the step s times:
+//   N <- N + E N E',   P <- (P + E P) / 2,   E <- E E
+// since what is added over two steps is what is added over one, and that again carried forward by E.
+struct Worked {
+    Wide length;  // the period, in seconds
+    Matrix e;
+    Matrix p;
+    Matrix noise;
+};
+
+Worked work(const std::vector<double> &a, std::size_t n, Time period, const std::vector<double> *q) {
+    Worked w;
+    w.length = seconds(period);
     int halvings = 0;
     for (double size = stiffness(a, n, period); size > 0.5 && halvings < 1100; size /= 2.0) {
         ++halvings;  // a size that is not a number, or is past any double, stops at once or at the cap
     }
     Matrix x(n * n);
     for (std::size_t i = 0; i < n * n; ++i) {
-        x[i] = halved(multiply(Wide{a[i], 0.0}, length), halvings);
+        x[i] = halved(multiply(Wide{a[i], 0.0}, w.length), halvings);
     }
-    Matrix e(n * n);
-    Matrix p(n * n);
+    w.e.assign(n * n, Wide{});
+    w.p.assign(n * n, Wide{});
     Matrix term(n * n);
     Matrix next(n * n);
+    Matrix other(n * n);
+    Matrix layer(q != nullptr ? n * n : 0);
     for (std::size_t i = 0; i < n; ++i) {
-        e[i * n + i] = p[i * n + i] = term[i * n + i] = Wide{1.0, 0.0};
+        w.e[i * n + i] = w.p[i * n + i] = term[i * n + i] = Wide{1.0, 0.0};
+        if (q != nullptr) {
+            layer[i * n + i] = Wide{(*q)[i], 0.0};
+        }
     }
-    // The size of X is at most a half, so term k is under 0.5^k / k!: by k = 30 it is far below the 32nd digit.
+    w.noise = layer;
+    // The size of X is at most a half, so term k is under 0.5^k / k!, and layer k under 1 / (k + 1)! of Q: by
+    // k = 30 both are far below the 32nd digit.
     for (int k = 1; k <= 30; ++k) {
         multiply(term, x, n, next);
         for (std::size_t i = 0; i < n * n; ++i) {
             term[i] = divide(next[i], static_cast<double>(k));  // X^k / k!
-            e[i] = add(e[i], term[i]);
-            p[i] = add(p[i], divide(term[i], static_cast<double>(k + 1)));
+            w.e[i] = add(w.e[i], term[i]);
+            w.p[i] = add(w.p[i], divide(term[i], static_cast<double>(k + 1)));
+        }
+        if (q != nullptr) {
+            multiply(x, layer, n, next);  // X Lk
+            for (std::size_t i = 0; i < n; ++i) {
+                for (std::size_t j = 0; j < n; ++j) {
+                    Wide sum;  // Lk X', whose entry (i, j) is the sum over c of Lk(i, c) X(j, c)
+                    for (std::size_t c = 0; c < n; ++c) {
+                        sum = add(sum, multiply(layer[i * n + c], x[j * n + c]));
+                    }
+                    other[i * n + j] = divide(add(next[i * n + j], sum), static_cast<double>(k));  // Lk / k!
+                }
+            }
+            layer = other;
+            for (std::size_t i = 0; i < n * n; ++i) {
+                w.noise[i] = add(w.noise[i], divide(layer[i], static_cast<double>(k + 1)));
+            }
+        }
+    }
+    if (q != nullptr) {
+        const Wide step = halved(w.length, halvings);
+        for (Wide &entry : w.noise) {
+            entry = multiply(entry, step);
         }
     }
     for (int doubling = 0; doubling < halvings; ++doubling) {
-        multiply(e, p, n, next);
-        for (std::size_t i = 0; i < n * n; ++i) {
-            p[i] = halved(add(p[i], next[i]), 1);
+        if (q != nullptr) {
+            multiply(w.e, w.noise, n, next);  // E N
+            for (std::size_t i = 0; i < n; ++i) {
+                for (std::size_t j = 0; j < n; ++j) {
+                    Wide sum;  // (E N) E'
+                    for (std::size_t c = 0; c < n; ++c) {
+                        sum = add(sum, multiply(next[i * n + c], w.e[j * n + c]));
+                    }
+                    other[i * n + j] = add(w.noise[i * n + j], sum);
+                }
+            }
+            w.noise = other;
         }
-        multiply(e, e, n, next);
-        e.swap(next);
+        multiply(w.e, w.p, n, next);
+        for (std::size_t i = 0; i < n * n; ++i) {
+            w.p[i] = halved(add(w.p[i], next[i]), 1);
+        }
+        multiply(w.e, w.e, n, next);
+        w.e.swap(next);
     }
+    return w;
+}
+
+}  // namespace
+
+void exact_step(const std::vector<double> &a, std::size_t n, const std::vector<double> &b, std::size_t m, Time period,
+                std::vector<double> &ad, std::vector<double> &bd) {
+    const Worked w = work(a, n, period, nullptr);
     ad.assign(n * n, 0.0);
     for (std::size_t i = 0; i < n * n; ++i) {
-        ad[i] = rounded(e[i]);
+        ad[i] = rounded(w.e[i]);
     }
     // Bd = (period * P) * B: the integral first, and B only then.
     bd.assign(n * m, 0.0);
@@ -151,10 +215,19 @@ void exact_step(const std::vector<double> &a, std::size_t n, const std::vector<d
         for (std::size_t k = 0; k < m; ++k) {
             Wide sum;
             for (std::size_t j = 0; j < n; ++j) {
-                sum = add(sum, multiply(multiply(p[i * n + j], length), Wide{b[j * m + k], 0.0}));
+                sum = add(sum, multiply(multiply(w.p[i * n + j], w.length), Wide{b[j * m + k], 0.0}));
             }
             bd[i * m + k] = rounded(sum);
         }
+    }
+}
+
+void exact_noise(const std::vector<double> &a, std::size_t n, const std::vector<double> &q, Time period,
+                 std::vector<double> &noise) {
+    const Worked w = work(a, n, period, &q);
+    noise.assign(n * n, 0.0);
+    for (std::size_t i = 0; i < n * n; ++i) {
+        noise[i] = rounded(w.noise[i]);
     }
 }
 

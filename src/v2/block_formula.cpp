@@ -101,7 +101,7 @@ public:
         formula_.connect(places);
         id_ = setup.id;
         text_ = text;
-        outputs_.push_back(OutputPort{"y", std::nullopt, true});
+        outputs_.push_back(OutputPort{"y", std::nullopt, true, sample_});
         return {};
     }
 

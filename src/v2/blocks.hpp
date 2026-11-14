@@ -116,5 +116,6 @@ Result<std::unique_ptr<Block>> make_latch(const BlockSetup &setup);
 Result<std::unique_ptr<Block>> make_pid(const BlockSetup &setup);
 /// Any of the model blocks: `setup.type` says which model it hosts.
 Result<std::unique_ptr<Block>> make_model(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_estimator(const BlockSetup &setup);
 
 }  // namespace fluxgraph::v2::detail

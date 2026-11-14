@@ -24,4 +24,10 @@ double stiffness(const std::vector<double> &a, std::size_t n, Time period);
 void exact_step(const std::vector<double> &a, std::size_t n, const std::vector<double> &b, std::size_t m, Time period,
                 std::vector<double> &ad, std::vector<double> &bd);
 
+/// What process noise has added by the end of one period (rule 7.9.2): the integral of exp(A s) Q exp(A' s) for s
+/// from zero to the period, n by n, where Q has `q`, a variance per second for each state, on its diagonal and
+/// nothing off it. Worked as exact_step() works its matrices, and on the same terms.
+void exact_noise(const std::vector<double> &a, std::size_t n, const std::vector<double> &q, Time period,
+                 std::vector<double> &noise);
+
 }  // namespace fluxgraph::v2::detail

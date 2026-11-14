@@ -23,6 +23,9 @@ struct InputPort {
     bool required = true;
     /// Read only in the second phase (rule 4.4). Declared by the block as it is configured, not by its type.
     bool deferred = false;
+    /// What is connected to it has to carry the time of a sample (rule 7.9.3): the compiler follows it back, by
+    /// the way the time comes, to an input from outside, and refuses the graph where it does not get there.
+    bool needs_sample_time = false;
 };
 
 /// An output port as a configured block declares it.
@@ -33,6 +36,9 @@ struct OutputPort {
     /// The block gives this output its sample time itself (rule 3.7), as a formula and a delay do. Otherwise
     /// the engine gives a usable output the time of the tick.
     bool own_sample_time = false;
+    /// Where the block gives the output its own sample time: the input whose sample time it carries (rule 3.7),
+    /// among inputs(). Empty where it carries the time of the tick, or none.
+    std::optional<std::size_t> sample_time_of = std::nullopt;
 };
 
 /// How one port of a block's `in` is connected: the compiler has not resolved signals when a block is configured.

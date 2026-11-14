@@ -254,9 +254,6 @@ Status read_block(const Setting &given, std::size_t position, Time period, const
         Wire wire;
         wire.port = in_map.keys[i];
         const Setting &to = in_map.values[i];
-        if (wire.port.empty()) {
-            return graph_error(std::format("block '{}': an input port has an empty name", draft.id));
-        }
         for (const Wire &other : draft.wires) {
             if (other.port == wire.port) {
                 return graph_error(std::format("block '{}': input '{}' is connected twice", draft.id, wire.port));
@@ -654,6 +651,52 @@ Result<Program> compile_graph(const Setting &graph) {
             source.kind = Source::Kind::signal;
             source.slot = named->second.slot;
             draft.readers_of[port] = named->second.writer;
+        }
+    }
+
+    // Rule 7.9.3: what is connected to a port that needs a sample's time carries one. It is followed back by the
+    // way the time comes: through a delay, and through a formula to the input whose sample time it takes, to an
+    // input from outside.
+    std::size_t most_hops = drafts.size();  // a way that comes back on itself never gets to an input
+    for (std::size_t i = 0; i < drafts.size(); ++i) {
+        const std::span<const InputPort> ports = drafts[i].block->inputs();
+        for (std::size_t port = 0; port < ports.size(); ++port) {
+            if (!ports[port].needs_sample_time) {
+                continue;
+            }
+            std::size_t block = i;
+            std::size_t at = port;
+            for (std::size_t hops = 0;; ++hops) {
+                const Draft &reader = drafts[block];
+                const Source &source = reader.sources[at];
+                const int writer = reader.readers_of[at];
+                if (source.kind == Source::Kind::signal && writer < 0) {
+                    break;  // an input from outside: it carries the time it was written with
+                }
+                std::string why;
+                if (source.kind != Source::Kind::signal) {
+                    why = block == i ? "a constant, which is no sample"
+                                     : std::format("block '{}', whose input '{}' is a constant", reader.id,
+                                                   reader.block->inputs()[at].name);
+                } else {
+                    const Draft &from = drafts[static_cast<std::size_t>(writer)];
+                    const OutputPort &output = from.block->outputs()[source.slot - from.first_slot];
+                    if (output.sample_time_of.has_value() && hops < most_hops) {
+                        block = static_cast<std::size_t>(writer);
+                        at = *output.sample_time_of;
+                        continue;
+                    }
+                    why = output.sample_time_of.has_value()
+                              ? std::format("block '{}', round a loop that no input from outside comes into", from.id)
+                              : std::format("'{}.{}', which carries the time of the tick and not of a sample", from.id,
+                                            output.name);
+                }
+                return graph_error(
+                    std::format("block '{}': its measurement '{}' has to carry the time of a sample: to "
+                                "be connected to an input, or to a delay or a formula that takes its "
+                                "sample time from one. It gets its time from {}",
+                                drafts[i].id, ports[port].name, why));
+            }
         }
     }
 

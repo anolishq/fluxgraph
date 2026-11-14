@@ -122,7 +122,7 @@ public:
 
 private:
     std::array<InputPort, 1> inputs_ = {{{"x", std::nullopt, true, true}}};
-    std::array<OutputPort, 1> outputs_ = {{{"y", std::nullopt, true}}};
+    std::array<OutputPort, 1> outputs_ = {{{"y", std::nullopt, true, 0}}};
     std::string id_;
     bool has_initial_ = false;
     Value initial_;

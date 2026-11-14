@@ -16,7 +16,7 @@ struct BuiltType {
 };
 
 // Adding a block type is a row here and a maker: nothing in the compiler or the engine names a type.
-constexpr std::array<BuiltType, 21> kBuilt = {{
+constexpr std::array<BuiltType, 22> kBuilt = {{
     {"formula", &detail::make_formula},
     {"all_good", &detail::make_all_good},
     {"delay", &detail::make_delay},
@@ -38,9 +38,10 @@ constexpr std::array<BuiltType, 21> kBuilt = {{
     {"mass_spring_damper", &detail::make_model},
     {"dc_motor", &detail::make_model},
     {"state_space", &detail::make_model},
+    {"estimator", &detail::make_estimator},
 }};
 
-constexpr std::array<std::string_view, 21> kBuiltNames = {
+constexpr std::array<std::string_view, 22> kBuiltNames = {
     "formula",
     "all_good",
     "delay",
@@ -62,10 +63,11 @@ constexpr std::array<std::string_view, 21> kBuiltNames = {
     "mass_spring_damper",
     "dc_motor",
     "state_space",
+    "estimator",
 };
 
-// The rest of Appendix A's catalogue.
-constexpr std::array<std::string_view, 1> kPlannedNames = {"estimator"};
+// The rest of Appendix A's catalogue: nothing, now.
+constexpr std::array<std::string_view, 0> kPlannedNames = {};
 
 }  // namespace
 
