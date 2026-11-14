@@ -11,6 +11,7 @@ there are any, and then sets an implementation against it at, near and far insid
 
   python3 conformance/steps.py            the reference
   python3 conformance/steps.py --second   the second implementation
+  python3 conformance/steps.py --cpp      the C++ core, with FLUXGRAPH_V2_DRIVER set
 
 `Ad` and `Bd` are read off the implementation through a `linear` block whose outputs are its states: started from
 one unit state with inputs of zero it gives a column of `Ad` at tick 1, and from zero with one input at one, a column of
@@ -468,6 +469,11 @@ def main():
         from second import adapter as second
 
         adapter = second
+    if sys.argv[1:] == ["--cpp"]:
+        from cpp import adapter as core
+
+        adapter = core
+        adapter.start()
     rng = random.Random(7_8_7)
     print(f"the decimal route against closed forms: out by at most {closed_forms():.1g}")
     tried, table = against_the_core(rng)

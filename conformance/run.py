@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Run the version 2 conformance vectors against the reference.
 
-  python3 conformance/run.py [--second] [vector.yaml ...]
+  python3 conformance/run.py [--second | --cpp] [vector.yaml ...]
 
 With no vectors named, runs every file in conformance/vectors/. Exits 1 if
 the implementation disagrees with any vector. With --second, the
-implementation is the one in second/ and not reference.py. Needs PyYAML.
+implementation is the one in second/ and not reference.py. With --cpp it is
+the C++ core, through the driver FLUXGRAPH_V2_DRIVER names: a vector that
+uses a block type the core has not built yet is skipped and counted, and
+is not among those that agree. Needs PyYAML.
 
 A vector is a YAML file:
 
@@ -214,19 +217,39 @@ def main():
         from second import adapter
 
         impl = adapter
+    if "--cpp" in args:
+        args.remove("--cpp")
+        from cpp import adapter
+
+        adapter.start()
+        impl = adapter
+    not_built = getattr(impl, "NotBuilt", ())  # raised for a graph with a block type not built yet
+    skipped = differ = 0
     paths = [Path(p) for p in args] or sorted((HERE / "vectors").glob("*.yaml"))
     ok = True
     print(f"{'vector':36s} {'calls':>5s} {'compared':>8s}  result")
     for path in paths:
         try:
             calls, compared, differences = run(path)
+        except not_built:
+            skipped += 1
+            print(f"{path.stem:36s} {'-':>5s} {'-':>8s}  skipped")
+            continue
         except Exception as exc:  # a vector that cannot run is a failure, with its reason
             calls, compared, differences = 0, 0, [f"{type(exc).__name__}: {exc}"]
         ok = ok and not differences
+        differ += bool(differences)
         print(f"{path.stem:36s} {calls:5d} {compared:8d}  {'agrees' if not differences else 'DIFFERS'}")
         for line in differences[: int(os.environ.get("SHOW", 4))]:
             print(f"    {line}")
-    print(f"{len(paths)} vectors: " + ("ALL AGREE" if ok else "DIFFERENCES FOUND"))
+    if not_built:
+        agree = len(paths) - skipped - differ
+        print(
+            f"{len(paths)} vectors: {agree} agree, {skipped} skipped (block types not built)"
+            + (f", {differ} DIFFER" if differ else "")
+        )
+    else:
+        print(f"{len(paths)} vectors: " + ("ALL AGREE" if ok else "DIFFERENCES FOUND"))
     sys.exit(0 if ok else 1)
 
 

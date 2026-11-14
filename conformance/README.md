@@ -627,6 +627,62 @@ state, many predictions across a stall with and without a model input,
 sample times kept for each port and forgotten at a reset, and a state
 left out of `q`.
 
+## The C++ core
+
+Four slices of a version 2 core in C++ are in `include/fluxgraph/v2/` and
+`src/v2/`, behind the CMake option `FLUXGRAPH_BUILD_V2`, which is off
+unless given. It was written from the proposal's text, without sight of
+either reading here. It has the engine, the compiler, the formula language,
+the loop rule (7.8.8) and all twenty-two block types of the catalogue: `formula`, `all_good`,
+`delay`, `window`, `integrate`, `deadband`, `lowpass`, `rate_limit`,
+`hysteresis`, `held_for`, `since_true`, `latch`, `pid`, and the eight
+model blocks, `linear`, `thermal_mass`, `thermal_rc2`,
+`first_order_process`, `second_order_process`, `mass_spring_damper`,
+`dc_motor` and `state_space`, and the `estimator`.
+
+`cpp/adapter.py` drives it through a small executable,
+`fluxgraph_v2_driver`, over a line protocol, so that the checks here run
+against it as they do against the readings:
+
+```bash
+cmake -S . -B build/v2 -G Ninja -DFLUXGRAPH_BUILD_V2=ON -DFLUXGRAPH_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build/v2 --target fluxgraph_v2_driver
+export FLUXGRAPH_V2_DRIVER=$PWD/build/v2/tools/fluxgraph_v2_driver/fluxgraph_v2_driver
+python3 conformance/run.py --cpp        # 426 vectors: 426 agree, 0 skipped (block types not built)
+python3 conformance/compare.py --cpp    # 235 graphs run, 0 skipped; 2165816 comparisons, 0 differences
+python3 conformance/contract.py --cpp   # 748648 sequences: ALL HOLD
+python3 conformance/cpp/edges.py        # 72514 checks: ALL HOLD
+python3 conformance/steps.py --cpp      # 750 checks: ALL HOLD; the worst error of the step is 1.81e-13
+python3 conformance/cpp/filter.py       # 1000 runs of 40 ticks each: EVERY MEAN IS 1, AS FAR AS CHANCE ALLOWS
+```
+
+A vector or a graph that needs a block type not built is skipped and
+counted, and never passed; with every type built none is. `cpp/edges.py` is for what the readings cannot
+show: they count in whole numbers of any size, and the core in 64 bits.
+It sets the core against a statement of sections 6, 7.2 and 8 at periods
+from 1 ns to the largest that fits and at clocks at both ends of the
+range. Of twelve ways of getting that arithmetic wrong that were tried,
+the vectors noticed four, `compare.py` none, and `edges.py` all twelve.
+`steps.py --cpp` is for the exact step of rule 7.8.7, where two readings
+that agree may both be wrong: it works `Ad` and `Bd` in decimal arithmetic
+of 150 digits, checks that against closed forms, and sets the core
+against it from far inside the bound on stiffness to just under it. The
+core works the step in arithmetic of twice a double's digits and is out
+by about one part in 10¹⁶; the same method in plain doubles is out by
+6 parts in 10⁹ in a `Bd` at the bound, which is past what is promised.
+It does the same for the process noise `N` of an estimator's step
+(rule 7.9.2), read off an estimator that starts all but certain: a
+variance of `N` is within 3 parts in 10¹⁶, and the figure the check ends
+on, 1.81e-13, is of two variances and a covariance read as one sum, where
+the sum itself cancels in doubles. `cpp/filter.py` checks the estimator
+as a filter, against statistics: on data drawn from its own model the
+normalised innovation squared and each state's normalised error squared
+average 1, for a thermal mass and a second-order process at a short
+period and a long one.
+The same six checks hold on a build with the address and undefined
+behaviour sanitizers. `cpp/ASSUMPTIONS.md` lists where the text left the
+C++ a choice.
+
 ## What this does not cover
 
 - **A fault both readings share.** `compare.py` only compares them. The
