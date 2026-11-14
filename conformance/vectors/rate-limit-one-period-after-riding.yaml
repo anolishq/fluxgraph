@@ -1,0 +1,15 @@
+# 7.4.9: the reach is of one period whatever went before. After riding
+# through two unusable ticks the output still moves by one period's worth:
+# an input 2 above what is held is out of reach, though three periods'
+# worth would have reached it.
+rules: [7.4.9, 7.4.11]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x}, settings: {up: 1, ride_through: 2s}, out: {y: y, limited: limited}}
+calls:
+  - {x: 0, y: 0, limited: false}
+  - {x: bad, y: {u: 0}, limited: bad}
+  - {x: bad, y: {u: 0}, limited: bad}
+  - {x: 2, y: 1, limited: true}
+  - {x: 2, y: 2, limited: false}

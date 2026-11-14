@@ -1830,6 +1830,9 @@ MUTATIONS = [
      "self.total += x.v * self.ratio", "self.total += x.v * self.period / float(self.s[\"per\"])"),
     ("A.formula a formula nested 100 deep is not read",
      "sys.setrecursionlimit(max(limit, 10000))", "sys.setrecursionlimit(limit)"),
+    ("7.7.5 the PID's sum is worked with the integral before the derivative",
+     "y, limited = rest + self.integral, False",
+     'y, limited = (self.s["kp"] * error + self.integral) - self.s["kd"] * self.f, False'),
 ]  # fmt: skip
 
 

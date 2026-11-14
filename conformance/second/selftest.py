@@ -5434,6 +5434,71 @@ def test_amendment_eight():
     check("a8 a rebase clears it", e.tick(0)[0], 1)
 
 
+def test_amendment_nine():
+    """Four sentences that pin arithmetic."""
+    # rule 7.7.5: the PID's sum in one order: kp.error and the derivative
+    # first, and to that the integral. kp, ki, kd 1, filter 1 s, setpoint
+    # 0, measurements 0.1 then 0.2: the other order differs in the last
+    # place. Compared exactly.
+    a = math.exp(-1.0)
+    e = pid_engine({"kp": 1, "ki": 1, "kd": 1, "filter": "1s"})
+    pid_step(e, 0, sp=0.0, me=0.1, r=False)
+    o = pid_step(e, 1, me=0.2)
+    p = 1.0 * -0.2
+    i = (0.0 + 1.0 * -0.1 * 1.0) + 1.0 * -0.2 * 1.0
+    d = -1.0 * (a * 0.0 + (1 - a) * ((0.2 - 0.1) / 1.0))
+    check("a9 pid sum, the orders differ", (p + d) + i != p + i + d, True)
+    check("a9 pid sum", o["y"][1] == (p + d) + i, True)
+    # the test of rule 6 is of that same sum: with `min` at the other
+    # order's value, a last place higher, this sum is below it and the
+    # addition is cut; in the other order it would be at `min` and whole
+    lo = p + i + d
+    e = pid_engine({"kp": 1, "ki": 1, "kd": 1, "filter": "1s", "min": lo})
+    pid_step(e, 0, sp=0.0, me=0.1, r=False)
+    o = pid_step(e, 1, me=0.2)
+    check("a9 pid test of the same sum: limited", o["limited"], ("good", True))
+    check("a9 pid test of the same sum: y", o["y"][1] == lo, True)
+    check("a9 pid test of the same sum: integral", o["integral"][1] == lo - (p + d), True)
+    # cut short at max: the integral becomes max less the first of the two
+    # (kp.error + derivative), and y is max itself. max 0.3, kp 0.1, ki 1,
+    # error 0.7: the integral is 0.3 - 0.1 * 0.7, exactly as doubles
+    e = pid_engine({"kp": 0.1, "ki": 1, "max": 0.3})
+    o = pid_step(e, 0, sp=0.7, me=0.0, r=False)
+    check("a9 pid cut y", o["y"][1] == 0.3, True)
+    check("a9 pid cut integral", o["integral"][1] == 0.3 - (0.1 * 0.7 + 0.0), True)
+    check("a9 pid cut limited", o["limited"], ("good", True))
+
+    # rule 7.4.5: a low-pass's decay over m ticks is a to the power m as
+    # C's pow gives it, not exp(-m period / tau): tau 3 s, three unusable
+    # ticks ridden through, so m is 4, where the two differ
+    a = math.exp(-1 / 3)
+    check("a9 lowpass: pow and exp differ at 4", math.pow(a, 4) != math.exp(-4 / 3), True)
+    got = run_seq(
+        {"type": "lowpass", "in": {"x": "x"}, "settings": {"tau": "3s", "ride_through": "3s"}},
+        "number",
+        [("good", 1.0), ("bad", None), ("bad", None), ("bad", None), ("good", 0.0)],
+    )
+    am = math.pow(a, 4)
+    check("a9 lowpass pow", got[4][1] == am * 1.0 + (1 - am) * 0.0, True)
+    # and a itself where m is 1
+    got = run_seq(
+        {"type": "lowpass", "in": {"x": "x"}, "settings": {"tau": "3s"}}, "number", [("good", 1.0), ("good", 0.0)]
+    )
+    check("a9 lowpass m of 1", got[1][1] == a * 1.0 + (1 - a) * 0.0, True)
+
+    # rule 7.7.12: on the tick of a reset, what the integral was before
+    # the addition is zero
+    e = pid_engine({"kp": 0, "ki": 1}, const={"applied": 0})
+    pid_step(e, 0, sp=1.0, me=0.0, r=False)  # taken back to 0 each tick
+    e = pid_engine({"kp": 0, "ki": 1})
+    for k in range(3):
+        pid_step(e, k, sp=1.0, me=0.0, r=False)  # integral 3
+    e2 = pid_engine({"kp": 0, "ki": 1}, const={"applied": -5})
+    o = pid_step(e2, 0, sp=1.0, me=0.0, r=True)
+    check("a9 applied at a reset, this tick", o["integral"], ("good", 1.0))
+    check("a9 applied at a reset, next", pid_step(e2, 1, r=False)["integral"], ("good", 1.0))
+
+
 def test_estimator():
     g = {
         "period": "1s",

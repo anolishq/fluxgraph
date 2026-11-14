@@ -20,9 +20,9 @@ the text says, not what it should say.
 | `contract.py` | Tries every short sequence of writes, calls, rebases, resets, saves and restores against what sections 6, 7.2 and 8 promise a host. |
 
 ```bash
-python3 conformance/run.py                 # 383 vectors: ALL AGREE
-python3 conformance/run.py --second        # 383 vectors: ALL AGREE
-python3 conformance/mutate.py              # 663 breakages: 663 noticed; every vector failed by one
+python3 conformance/run.py                 # 403 vectors: ALL AGREE
+python3 conformance/run.py --second        # 403 vectors: ALL AGREE
+python3 conformance/mutate.py              # 664 breakages: 664 noticed; every vector failed by one
 python3 conformance/compare.py             # 2165816 comparisons, 0 differences
 python3 conformance/contract.py            # 748648 sequences: ALL HOLD
 python3 conformance/contract.py --second   # 748648 sequences: ALL HOLD
@@ -558,6 +558,22 @@ say, and three vectors are new for them:
 - Ten vectors cited a rule by a number it no longer has, and one said in
   its comment the opposite of what it expects. Their expectations were
   right and are unchanged.
+
+### What the second slice in C++ asked
+
+The C++ core's next eight blocks were broken 119 ways. The vectors
+noticed 91, `compare.py` 25 more, and one nothing: a PID's `limited`
+exactly at `min`. Nearly all of the 25 were what a `held_for`, a
+`since_true`, a hysteresis or a latch does at a gap, and four of them
+showed on fewer than 31 of 1.27 million comparisons. 19 vectors are new,
+one or more for each of the 26, each worked from the text and shown to
+fail on the breakage it is for.
+
+It also showed the order of a PID's sum taken three ways by three
+implementations, each within the vectors' tolerance of the others and
+able to fall on either side of a limit. Rule 7.7.5 now gives the order,
+and `pid-sum-order` pins it with a formula's `==`: -0.5632120558828558
+in the order the text gives, and one less in the last place in another.
 
 ## What this does not cover
 

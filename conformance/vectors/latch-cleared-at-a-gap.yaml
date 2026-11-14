@@ -1,0 +1,13 @@
+# 8.6, 7.6.3: a latch cleared on the tick a gap runs counts from that tick,
+# and its gaps is one. It was set when the tick began, so the tick is not
+# doubtful.
+rules: [8.6, 7.6.3]
+period: 1s
+max_catch_up: 1
+inputs: {s: {type: boolean, max_age: none}, r: {type: boolean, max_age: none}}
+blocks:
+  - {id: l, type: latch, in: {set: s, reset: r}, out: {y: y, elapsed: elapsed, doubtful: doubtful, gaps: gaps}}
+calls:
+  - {now: 0, s: true, r: false, y: true, elapsed: 1, doubtful: 0, gaps: 0}
+  - {now: 3, gap: true, skipped: 2, s: false, r: true, y: false, elapsed: 1, doubtful: 0, gaps: 1}
+  - {now: 4, r: false, y: false, elapsed: 2, doubtful: 0, gaps: 1}

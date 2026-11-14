@@ -1,0 +1,12 @@
+# 7.4.1: the first usable input is taken as it is, however near nothing it
+# is: there is no value it has to move away from. After that the block
+# keeps what it holds until the input has moved by `step` or more.
+rules: [7.4.1]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: d, type: deadband, in: {x: x}, settings: {step: 5}, out: {y: y}}
+calls:
+  - {x: 2, y: 2}          # the first input, less than a step from zero
+  - {x: 4, y: 2}          # moved by 2
+  - {x: 7, y: 7}          # moved by 5: a step
