@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import collections
 import copy
+import decimal
 import math
 import sys
 import re
@@ -770,19 +771,26 @@ def matmul(a, b):
     return [[sum(a[i][m] * b[m][j] for m in range(len(b))) for j in range(len(b[0]))] for i in range(len(a))]
 
 
-def expm(m):
-    """e to a matrix, by scaling, a Taylor series and squaring. Any way to the same number will do (7.8 rule 7).
+DIGITS = 80  # of the arithmetic a step is worked in: doubles do not keep rule 7.8.7's promise at the bound
 
-    Each squaring doubles the rounding error, so it is scaled no further than to a row sum of 2, where the series
-    still loses nothing.
-    """
+
+def _wide(m):
+    return [[decimal.Decimal(v) for v in row] for row in m]
+
+
+def _narrow(m):
+    return [[float(v) for v in row] for row in m]
+
+
+def _expm(m):
+    """e to a matrix of Decimals, by scaling, a Taylor series and squaring, in the context it is called in."""
     n = len(m)
     norm = max(sum(abs(v) for v in row) for row in m)
     squarings = max(0, math.ceil(math.log2(norm)) - 1) if norm > 0 else 0
     scaled = [[v / 2**squarings for v in row] for row in m]
-    out = [[float(i == j) for j in range(n)] for i in range(n)]
+    out = [[decimal.Decimal(int(i == j)) for j in range(n)] for i in range(n)]
     term = [row[:] for row in out]
-    for order in range(1, 40):
+    for order in range(1, 60):
         term = [[v / order for v in row] for row in matmul(term, scaled)]
         out = [[out[i][j] + term[i][j] for j in range(n)] for i in range(n)]
     for _ in range(squarings):
@@ -790,16 +798,29 @@ def expm(m):
     return out
 
 
+def expm(m):
+    """e to a matrix. Any way to the same number will do (7.8 rule 7); this one works in DIGITS digits, since
+    each squaring doubles the rounding error and at the stiffness bound doubles lose more than is promised."""
+    with decimal.localcontext() as context:
+        context.prec = DIGITS
+        return _narrow(_expm(_wide(m)))
+
+
 def discretise(a, b, dt):
     """dx/dt = Ax + Bu with u held over dt -> x' = Ad x + Bd u, exactly.
 
     One exponential, of [[A, I], [0, 0]] dt, gives Ad and the integral of exp(A s) over the period; Bd is that
-    integral times B. B is kept out of the exponential, so that its size costs Ad nothing.
+    integral times B. B is kept out of the exponential, so that its size costs Ad nothing, and is multiplied in
+    before the result is rounded to doubles.
     """
     n = len(a)
-    big = [[v * dt for v in a[i]] + [dt * (i == j) for j in range(n)] for i in range(n)] + [[0.0] * (2 * n)] * n
-    e = expm(big)
-    return [row[:n] for row in e[:n]], matmul([row[n:] for row in e[:n]], b)
+    with decimal.localcontext() as context:
+        context.prec = DIGITS
+        step = decimal.Decimal(dt.numerator) / dt.denominator
+        wide = _wide(a)
+        big = [[v * step for v in wide[i]] + [step * int(i == j) for j in range(n)] for i in range(n)]
+        e = _expm(big + [[decimal.Decimal(0)] * (2 * n)] * n)
+        return _narrow([row[:n] for row in e[:n]]), _narrow(matmul([row[n:] for row in e[:n]], _wide(b)))
 
 
 STIFFEST = 100_000.0  # 7.8 rule 7: the most a row of A, summed, times the period, may be
@@ -817,22 +838,26 @@ def discretise_noise(a, q, dt):
     (k+1)!; and the step is doubled back up: N(2h) = N(h) + F N(h) F', with F = exp(A h).
     """
     n = len(a)
-    norm = max(sum(abs(v) for v in row) for row in a) * dt
-    doublings = max(0, math.ceil(math.log2(norm))) if norm > 0 else 0
-    h = dt / 2**doublings
-    term = [[q[i] * h if i == j else 0.0 for j in range(n)] for i in range(n)]
-    noise = [row[:] for row in term]
-    at = transpose(a)
-    for order in range(1, 40):
-        left, right = matmul(a, term), matmul(term, at)
-        term = [[(left[i][j] + right[i][j]) * h / (order + 1) for j in range(n)] for i in range(n)]
-        noise = [[noise[i][j] + term[i][j] for j in range(n)] for i in range(n)]
-    f = expm([[v * h for v in row] for row in a])
-    for _ in range(doublings):
-        carried = matmul(matmul(f, noise), transpose(f))
-        noise = [[noise[i][j] + carried[i][j] for j in range(n)] for i in range(n)]
-        f = matmul(f, f)
-    return noise
+    with decimal.localcontext() as context:
+        context.prec = DIGITS
+        a, q = _wide(a), [decimal.Decimal(v) for v in q]
+        dt = decimal.Decimal(dt.numerator) / dt.denominator
+        norm = max(sum(abs(v) for v in row) for row in a) * dt
+        doublings = max(0, math.ceil(math.log2(norm))) if norm > 0 else 0
+        h = dt / 2**doublings
+        term = [[q[i] * h if i == j else decimal.Decimal(0) for j in range(n)] for i in range(n)]
+        noise = [row[:] for row in term]
+        at = transpose(a)
+        for order in range(1, 60):
+            left, right = matmul(a, term), matmul(term, at)
+            term = [[(left[i][j] + right[i][j]) * h / (order + 1) for j in range(n)] for i in range(n)]
+            noise = [[noise[i][j] + term[i][j] for j in range(n)] for i in range(n)]
+        f = _expm([[v * h for v in row] for row in a])
+        for _ in range(doublings):
+            carried = matmul(matmul(f, noise), transpose(f))
+            noise = [[noise[i][j] + carried[i][j] for j in range(n)] for i in range(n)]
+            f = matmul(f, f)
+        return _narrow(noise)
 
 
 def compose(second, first):
@@ -858,8 +883,9 @@ class Model:
     continuous = True
     default_settle = False  # whether `settle` is three of its slowest time constant unless given
 
-    def __init__(self, p, period):
+    def __init__(self, p, period, exact):
         made = self.build(p)
+        self.exact = exact  # the period as the graph writes it: a step is of that, and not of the double nearest it
         self.inputs, self.states, self.outputs = (tuple(made[key]) for key in ("inputs", "states", "outputs"))
         a, b, self.c, self.d = ([[float(v) for v in row] for row in made[key]] for key in "ABCD")
         self.x0 = [float(v) for v in made["initial"]]
@@ -890,7 +916,7 @@ class Model:
                     f"is {stiff:g}, and may be {STIFFEST:g} at most. Leave out the state that has settled long "
                     f"before a tick, or put the states in units nearer each other"
                 )
-        self.ad, self.bd = discretise(a, b, period) if self.continuous else (a, b)
+        self.ad, self.bd = discretise(a, b, exact) if self.continuous else (a, b)
         if not all(math.isfinite(v) for row in (*self.ad, *self.bd) for v in row):
             raise CompileError("the model's step over this period is not finite: it grows too fast for the period")
         self.tau = self.slowest(a, made.get("det")) if self.continuous and self.default_settle else None
@@ -899,7 +925,7 @@ class Model:
     def noise(self, q):
         """7.9 rule 2: what process noise of intensities q adds to the covariance over one period."""
         if self.continuous:
-            return discretise_noise(self.a, q, self.period)
+            return discretise_noise(self.a, q, self.exact)
         return [[q[i] * self.period if i == j else 0.0 for j in range(len(q))] for i in range(len(q))]
 
     def build(self, p):
@@ -1190,7 +1216,7 @@ class ModelBlock(Block):
     def __init__(self, *a):
         super().__init__(*a)
         params = {name: self.s[name] for name in MODELS[self.model_type].params}
-        self.model = MODELS[self.model_type](params, self.period)
+        self.model = MODELS[self.model_type](params, self.period, a[1])
         self.settle_given = self.s["settle"] is not None  # rule 8 needs the author's, on a loop
         if self.s["settle"] is None and self.model.tau is not None:
             self.s["settle"] = round_up(3 * self.model.tau / self.period)
@@ -1293,7 +1319,7 @@ class Estimator(Block):
         kind = spec.pop("type", None)
         if kind not in MODELS:
             raise CompileError(f"model type {kind!r} is not a model")
-        self.model = MODELS[kind](read_settings("model", MODELS[kind].params, spec, None), self.period)
+        self.model = MODELS[kind](read_settings("model", MODELS[kind].params, spec, None), self.period, a[1])
         self.names = list(self.model.states)
         n = len(self.names)
 

@@ -17,13 +17,16 @@ the text says, not what it should say.
 | `run.py` | Runs the vectors against the reference, or with `--second` against the second reading. Needs PyYAML. |
 | `mutate.py` | Breaks the reference one rule at a time and checks that a vector notices. |
 | `compare.py` | Runs the two readings side by side on random inputs and call times and compares every output after every call. |
+| `steps.py` | Sets an implementation's exact step (rule 7.8.7) against arithmetic of 150 digits, up to the stiffness bound. |
 | `contract.py` | Tries every short sequence of writes, calls, rebases, resets, saves and restores against what sections 6, 7.2 and 8 promise a host. |
 
 ```bash
-python3 conformance/run.py                 # 403 vectors: ALL AGREE
-python3 conformance/run.py --second        # 403 vectors: ALL AGREE
-python3 conformance/mutate.py              # 664 breakages: 664 noticed; every vector failed by one
+python3 conformance/run.py                 # 414 vectors: ALL AGREE
+python3 conformance/run.py --second        # 414 vectors: ALL AGREE
+python3 conformance/mutate.py              # 663 breakages: 663 noticed; every vector failed by one
 python3 conformance/compare.py             # 2165816 comparisons, 0 differences
+python3 conformance/steps.py               # 418 checks: ALL HOLD; the worst error of the step is 1.08e-16
+python3 conformance/steps.py --second      # 418 checks: ALL HOLD; the worst error of the step is 1.08e-16
 python3 conformance/contract.py            # 748648 sequences: ALL HOLD
 python3 conformance/contract.py --second   # 748648 sequences: ALL HOLD
 python3 conformance/mutate.py --contract   # 170 breakages of sections 6, 7.2 and 8: contract.py notices 93
@@ -574,6 +577,32 @@ implementations, each within the vectors' tolerance of the others and
 able to fall on either side of a limit. Rule 7.7.5 now gives the order,
 and `pid-sum-order` pins it with a formula's `==`: -0.5632120558828558
 in the order the text gives, and one less in the last place in another.
+
+### What the third slice in C++ asked: the exact step
+
+The C++ core's models came with a check of the step itself, against
+decimal arithmetic of 150 digits by another route, on 396 matrices from
+far inside the stiffness bound to the bound. That check is `steps.py`
+here. Pointed at the two readings, the second held to 1.08e-16 and **the
+reference was out by 2.77e-9**, in a `Bd` of a lightly damped rotation of
+four states at the bound: past the one part in 10⁹ that rule 7.8.7
+promises. It worked its exponential in doubles. Every vector, every
+breakage and two million comparisons had agreed, because no vector sits
+at the bound and `compare.py` cannot see what both readings round alike.
+
+The reference now works a step in 80 digits, from the period as the graph
+writes it, and holds to 1.08e-16. Taking the period as the double nearest
+it had cost 2.8e-12 by itself. Broken back to doubles it fails `steps.py`
+at 2.78e-8, and no vector notices: that breakage is `steps.py`'s to
+catch and is not in `mutate.py`. The entry that put `B` into the
+exponential is gone too, since in 80 digits that costs nothing.
+
+Breaking the C++ models and loop rule 113 ways showed ten more thin
+places in the vectors, and 11 vectors are new for them: a model with an
+input it never had, riding through again after a gap nobody knows, a
+stall as a model's doubt, a reset of a loop's doubt, what a formula on a
+loop used at each tick, many steps across a rebase, a block the model
+reaches that is not on its loop, and two refusals.
 
 ## What this does not cover
 
