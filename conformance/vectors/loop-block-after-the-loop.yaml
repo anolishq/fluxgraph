@@ -1,0 +1,17 @@
+# 7.8.8: a loop is the blocks that can each reach every other. A delay that
+# reads the model and is read by nothing of the loop is not on it: its
+# ticks are not held against the loop's settle, and the graph is accepted
+# though the delay is longer than that. x' = 0.5 x + 0.5 (r - x).
+rules: [7.8.8]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: ctl.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 1s}, out: {y: y}}
+  - {id: ctl, type: formula, in: {r: r, y: plant.y}, settings: {expr: "r - y"}}
+  - {id: late, type: delay, in: {x: plant.y}, settings: {ticks: 3}, out: {y: was}}
+calls:
+  - {r: 1, y: 0, was: not_ready}
+  - {y: 0.5, was: not_ready}
+  - {y: 0.5, was: not_ready}
+  - {y: 0.5, was: 0}
+  - {y: 0.5, was: 0.5}

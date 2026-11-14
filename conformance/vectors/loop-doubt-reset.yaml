@@ -1,0 +1,16 @@
+# 8.1, 7.8.8: a reset does away with a loop's doubt. The uncertain setpoint
+# at tick 0 is the loop's doubt, and would make the model uncertain at
+# tick 1; after the reset the graph starts again with none.
+# x' = 0.5 x + 0.5 (r - x).
+rules: [8.1, 7.8.8]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: ctl.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 3s}, out: {y: y}}
+  - {id: ctl, type: formula, in: {r: r, y: plant.y}, settings: {expr: "r - y"}, out: {y: u}}
+calls:
+  - {r: {v: 1, state: uncertain}, y: 0, u: {u: 1}}
+  - {$reset: true}
+  - {r: 1, y: 0, u: 1}
+  - {y: 0.5, u: 0.5}
+  - {y: 0.5, u: 0.5}

@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
-"""Check the C++ core's exact step (rule 7.8.7) against arithmetic of many more digits.
+"""Check an implementation's exact step (rule 7.8.7) against arithmetic of many more digits.
 
 A model in continuous time is stepped by `Ad = exp(A * period)` and `Bd`, the integral of `exp(A s)` over the
 period times `B`, worked when the graph is compiled and promised to one part in 10^9 up to the bound on
-stiffness: the largest sum of absolute values along a row of `A`, times the period, at most 100,000. The readings
-in conformance/ work the same thing in doubles, so agreeing with them shows two engines alike and not either
-right. This works `Ad` and `Bd` in decimal arithmetic of 150 digits, by a route of its own, checks that route
-against closed forms where there are any, and then sets the core against it at, near and far inside the bound.
+stiffness: the largest sum of absolute values along a row of `A`, times the period, at most 100,000. Two
+implementations that agree on a step show that they are alike and not that either is right: the reference here
+worked its steps in doubles, was out by 2.8e-9 at the bound, and agreed with every vector. This works `Ad` and
+`Bd` in decimal arithmetic of 150 digits, by a route of its own, checks that route against closed forms where
+there are any, and then sets an implementation against it at, near and far inside the bound.
 
-  FLUXGRAPH_V2_DRIVER=build/v2/tools/fluxgraph_v2_driver/fluxgraph_v2_driver python3 conformance/cpp/steps.py
+  python3 conformance/steps.py            the reference
+  python3 conformance/steps.py --second   the second implementation
+  python3 conformance/steps.py --cpp      the C++ core, with FLUXGRAPH_V2_DRIVER set
 
-`Ad` and `Bd` are read off the core through a `linear` block whose outputs are its states: started from one unit
-state with inputs of zero it gives a column of `Ad` at tick 1, and from zero with one input at one, a column of
+`Ad` and `Bd` are read off the implementation through a `linear` block whose outputs are its states: started from
+one unit state with inputs of zero it gives a column of `Ad` at tick 1, and from zero with one input at one, a column of
 `Bd`.
 
 What is checked:
 
 1. The decimal route against closed forms: one state; two states with two real rates, by the formula for a
    triangular matrix; a rotation, by sines and cosines summed from their series.
-2. The core against the decimal route on families of matrices (thermal networks, rotations with a little
+2. The implementation against the decimal route on families of matrices (thermal networks, rotations with a little
    damping, triangular ones with rates many orders apart and large entries off the diagonal, ones that grow), from
    1 to 6 states, with the row sum times the period from 10^-8 to just under 100,000, at periods of 1 s, 37 ms
    and 2.5 s, and with `B` up to 10^150.
@@ -32,14 +35,13 @@ compares. Prints the worst of each family, and exits 1 if any is over 10^-9. Std
 from __future__ import annotations
 
 import math
-import os
 import random
 import sys
 from decimal import Decimal, getcontext
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import reference
 
-from cpp import adapter  # noqa: E402
+adapter = reference  # the implementation under test; --second swaps it
 
 getcontext().prec = 150
 PROMISED = 1e-9
@@ -320,7 +322,16 @@ def default_settles():
 
 
 def main():
-    adapter.start()
+    global adapter
+    if sys.argv[1:] == ["--second"]:
+        from second import adapter as second
+
+        adapter = second
+    if sys.argv[1:] == ["--cpp"]:
+        from cpp import adapter as core
+
+        adapter = core
+        adapter.start()
     rng = random.Random(7_8_7)
     print(f"the decimal route against closed forms: out by at most {closed_forms():.1g}")
     tried, table = against_the_core(rng)
