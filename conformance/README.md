@@ -577,14 +577,16 @@ in the order the text gives, and one less in the last place in another.
 
 ## The C++ core
 
-Two slices of a version 2 core in C++ are in `include/fluxgraph/v2/` and
+Three slices of a version 2 core in C++ are in `include/fluxgraph/v2/` and
 `src/v2/`, behind the CMake option `FLUXGRAPH_BUILD_V2`, which is off
 unless given. It was written from the proposal's text, without sight of
-either reading here. It has the engine, the compiler, the formula language
-and thirteen block types: `formula`, `all_good`, `delay`, `window`,
-`integrate`, `deadband`, `lowpass`, `rate_limit`, `hysteresis`,
-`held_for`, `since_true`, `latch` and `pid`. The model blocks and the
-estimator are not built.
+either reading here. It has the engine, the compiler, the formula language,
+the loop rule (7.8.8) and twenty-one block types: `formula`, `all_good`,
+`delay`, `window`, `integrate`, `deadband`, `lowpass`, `rate_limit`,
+`hysteresis`, `held_for`, `since_true`, `latch`, `pid`, and the eight
+model blocks, `linear`, `thermal_mass`, `thermal_rc2`,
+`first_order_process`, `second_order_process`, `mass_spring_damper`,
+`dc_motor` and `state_space`. The estimator is not built.
 
 `cpp/adapter.py` drives it through a small executable,
 `fluxgraph_v2_driver`, over a line protocol, so that the checks here run
@@ -594,10 +596,11 @@ against it as they do against the readings:
 cmake -S . -B build/v2 -G Ninja -DFLUXGRAPH_BUILD_V2=ON -DFLUXGRAPH_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
 cmake --build build/v2 --target fluxgraph_v2_driver
 export FLUXGRAPH_V2_DRIVER=$PWD/build/v2/tools/fluxgraph_v2_driver/fluxgraph_v2_driver
-python3 conformance/run.py --cpp        # 403 vectors: 262 agree, 141 skipped (block types not built)
-python3 conformance/compare.py --cpp    # 145 graphs run, 90 skipped; 1267788 comparisons, 0 differences
+python3 conformance/run.py --cpp        # 403 vectors: 354 agree, 49 skipped (block types not built)
+python3 conformance/compare.py --cpp    # 220 graphs run, 15 skipped; 1960679 comparisons, 0 differences
 python3 conformance/contract.py --cpp   # 748648 sequences: ALL HOLD
 python3 conformance/cpp/edges.py        # 72511 checks: ALL HOLD
+python3 conformance/cpp/steps.py        # 418 checks: ALL HOLD; the worst error of the step is 1.08e-16
 ```
 
 A vector or a graph that needs a block type not built yet is skipped and
@@ -607,7 +610,14 @@ It sets the core against a statement of sections 6, 7.2 and 8 at periods
 from 1 ns to the largest that fits and at clocks at both ends of the
 range. Of twelve ways of getting that arithmetic wrong that were tried,
 the vectors noticed four, `compare.py` none, and `edges.py` all twelve.
-The same four checks hold on a build with the address and undefined
+`cpp/steps.py` is for the exact step of rule 7.8.7, where two readings
+that agree may both be wrong: it works `Ad` and `Bd` in decimal arithmetic
+of 150 digits, checks that against closed forms, and sets the core
+against it from far inside the bound on stiffness to just under it. The
+core works the step in arithmetic of twice a double's digits and is out
+by about one part in 10¹⁶; the same method in plain doubles is out by
+6 parts in 10⁹ in a `Bd` at the bound, which is past what is promised.
+The same five checks hold on a build with the address and undefined
 behaviour sanitizers. `cpp/ASSUMPTIONS.md` lists where the text left the
 C++ a choice.
 

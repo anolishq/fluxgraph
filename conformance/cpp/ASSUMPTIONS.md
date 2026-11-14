@@ -6,8 +6,8 @@ written from `docs/semantics_spec_v2.md` as amended seven times, without
 sight of `reference.py`, `formula.py` or `second/impl.py`. It has `formula`,
 `all_good`, `delay`, `window` and `integrate`, and the whole of sections 6
 and 8. A second slice, written the same way from the text as amended
-eight times, adds eight block types; its entries are in a section of
-their own.
+eight times, adds eight block types, and a third the models and the loop
+rule; each has a section of its own.
 
 This lists each place where the text left a choice or could be read two
 ways, with the reading taken. A choice the second reading already
@@ -207,6 +207,116 @@ that passed over no tick does not start a PID's derivative again; a
 `held_for` holding across a gap measures the stretch from before the gap;
 `gaps` starts at one where a count starts again on the gap's own tick; a
 `reset` that is true clears a latch whatever `set` is.
+
+## The third slice: models, the exact step and the loop rule
+
+The eight model types, the step of rule 7.8.7 and the whole of rule 7.8.8
+were written from section 4.9, section 7.8, the head of section 7, section
+8's table and Appendix A. Every vector they opened agreed as first
+written, but for the wording of one refusal, and so did five probes of
+the loop rule and of gaps against the two readings. Each entry is a place
+where the words allowed another answer; the ones marked **(guess)** are
+where I could not tell from the text which was meant.
+
+40. **Rule 7.8.7, how the step is worked.** "How it does so is its own
+    affair." Scaling and squaring of the series for `exp(X)` and for
+    `(exp(X) - I) / X`, with `X = A · period / 2ˢ` of row sum at most a
+    half, in arithmetic of twice a double's digits, and rounded to doubles
+    once at the end. `Bd` is the integral times `B`, both still in the
+    wide arithmetic. Measured against 150-digit decimal arithmetic the
+    worst entry is out by 1.1 parts in 10¹⁶, at the bound as inside it.
+    The same steps in plain doubles are out by 2 parts in 10¹¹ in `Ad` and
+    by 6 parts in 10⁹ in a `Bd` at the bound, which is past the promise:
+    the rule's "in ordinary double arithmetic ... loses accuracy in
+    proportion to that number" is right, and the promise is not kept by
+    every ordinary method.
+41. **Rule 7.8.7, the bound.** The row sums of `A` in doubles, the largest
+    times the period in seconds as a double, refused where that is not at
+    most 100,000: one that is not a number is refused too. `state_space`
+    has no bound. "Not finite" is judged on `Ad` and `Bd` as doubles.
+42. **Rule 7.8.6, the arithmetic of a default `settle`.** `r` is three,
+    times minus one over the rate, over the period in seconds, in doubles
+    in that order, and `settle` is `ceil(r - 10⁻⁹)`. For one state the rate
+    is `A`'s entry. For two, `h` is half the sum of `A`'s diagonal as the
+    core holds it and `d` is from the settings. Where `h²` is more than
+    `d` and `h` is not below zero there is no constant; settings in their
+    ranges cannot reach that.
+43. **Appendix A, which settings of a named model are required.** Those
+    with no value in brackets: `initial` of a `thermal_mass` and
+    `initial_a`, `initial_b` of a `thermal_rc2` among them. **(guess)**:
+    the table gives 1.x's other initial values a default of zero and
+    these none.
+44. **Rule 7.8.4, an input that has never been usable.** There is no last
+    usable value to step on, so the model does not step, whatever its
+    `ride_through`. Its outputs, where they read it, are on zero (rule
+    7.8.5).
+45. **Rule 7.8.4, "until the input is usable again" after a gap of no
+    known length.** Kept for each input by itself: an input that comes
+    back is ridden through again when it next drops out, though another
+    has not come back yet. **(guess)**
+46. **Section 8's table, a model block's steps at a known gap.** A tick
+    passed over has "nothing usable on any of its inputs", an input given
+    a constant among them: each input rides on its last value while the
+    unusable ticks in a row before the gap and the ticks passed over so
+    far are within `ride_through`. Up to 64 such steps are taken one by
+    one; more are reached by squaring the step, which is the same to
+    within rounding ("what is specified is the result", rule 7.9.9).
+47. **Rule 7.8.6, which ticks are doubts.** A tick on which any input,
+    direct or deferred, is uncertain is a step on an uncertain value, and
+    a doubt. A direct input that is uncertain makes the outputs uncertain
+    on that tick as well (rule D).
+48. **Rule 7.8.8, what a loop is.** The blocks that can each reach every
+    other by connections of either kind, worked over blocks alone:
+    inputs from outside and constants are on no loop. A loop that holds
+    no model block is found and nothing is kept of it (rule 5.6).
+49. **Rule 7.8.8, "used a value that was not good, read from outside the
+    loop".** The value is what the block read: a value a fallback put in
+    for a block outside the loop is uncertain, and starts a doubt. It is
+    looked at once in the tick, after the first phase, for direct and
+    deferred inputs alike. A formula's use is worked from the top of the
+    formula down by rules 7.1.1 to 7.1.3: an operation uses both
+    operands; an `and` or an `or` that is decided uses its good deciders,
+    or all its deciders where none is good; a `when` uses its condition
+    and, where that is usable, the branch it took.
+50. **Rule 7.8.8, "gave an output that was not usable".** As the block
+    gave it, before any fallback, and after rule 3.6: an output that came
+    out not finite is one. The model block's own outputs count like any
+    other's.
+51. **Rule 7.8.8, when what was uncertain becomes good.** Before the
+    first phase of every tick at which the loop is not within `settle` of
+    its doubt, a tick with no doubt yet among them, the delays, windows
+    and low-passes of the loop are told, and change what they hold for
+    good. So a value taken in as uncertain at tick `k` is given as
+    uncertain only if the loop is in doubt at every tick from `k + 1` to
+    the tick it is given.
+52. **Rule 7.8.8, the model on a loop.** Its own doubt is kept and saved
+    and not looked at: only the loop's makes it uncertain, and a direct
+    input from outside that is uncertain or unusable at the tick itself
+    (rule 7.8.5).
+53. **Section 8's table, a loop at a gap.** "The tick before the one that
+    runs is a doubt, its loop's if it is on one": set for every loop that
+    holds a model block, at a stall and at a rebase alike, unless the gap
+    passed over no tick.
+54. **Rule 8.2, "each loop's doubt" in a saved state.** It is saved and
+    put back. It cannot show: a restore is a gap of no known length, and
+    that gap makes the tick before the one that runs the loop's doubt,
+    which is later than any that was saved. The same is so of a model
+    block's own doubt. Only a state saved before any tick is restored
+    without a gap, and it has no doubt.
+55. **Rule 7.8.8, the sum held against `settle`.** A delay's `ticks`, a
+    window's length in periods, and a low-pass's `settle` in ticks,
+    written or its default of three time constants rounded up.
+56. **Appendix A, `linear`.** `D` and `initial` left out are zeros. A row
+    of the wrong length is refused naming the setting and the row. The
+    names of inputs and of states may be those of model outputs; only an
+    output's may not. `state_space` takes `B` and `C` as lists of numbers
+    and `D` as one number.
+
+Read the same way as the second reading records them: a doubt at tick `k`
+does not shorten an earlier doubt that has not run out; a model on a loop
+keeps its own counters; a block of the loop that "is connected to" an
+output counts whether or not it used it; the arithmetic of `r` and of the
+bound; which eigenvalue gives `settle`.
 
 ## Recorded already, and read the same way
 
