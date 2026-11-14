@@ -2823,8 +2823,6 @@ class Engine:
                 continue
             for port, _c, _r, _ru in b.measures:
                 conn = b.conns[port]
-                if conn[0] == "const":
-                    raise b.err("measurement %r is given a constant, which is not a sample of anything" % port)
                 seen = set()
                 while conn[0] == "blk":
                     src = self._blocks[conn[1]]
@@ -2840,6 +2838,10 @@ class Engine:
                             "measurement %r does not carry the time of a sample: it comes by block %r, "
                             "which gives its output the time of the tick" % (port, conn[1])
                         )
+                if conn[0] != "in":
+                    # the path ends in a constant, at the port or behind
+                    # delays and formulas: it does not come from an input
+                    raise b.err("measurement %r comes from a constant, which is not a sample of anything" % port)
 
     # ------------------------------------------------------------- running
 

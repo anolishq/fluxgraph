@@ -125,7 +125,9 @@ time. **Amendments so far:**
    decay to a power. The third slice, the models and the loop rule,
    showed that the exact step is not kept in ordinary double arithmetic at
    the stiffness bound: one of the two readings in `conformance/` was out
-   by 2.8 parts in 10⁹ there, and had agreed with every vector.
+   by 2.8 parts in 10⁹ there, and had agreed with every vector. The
+   fourth, the estimator, found the other reading taking a measurement
+   from a delay of a constant, which rule 7.9.3 refuses.
 
 Nothing is left on the list of what is known to be wrong as it stands.
 What each amendment gives up is at the end of section 7, and for time
@@ -1137,11 +1139,15 @@ each measurement reads one output of the model.
    own variance. If some model input had never been usable by then, it
    does not step the state on this tick: the state stays and the
    covariance is `P + N`.
-3. **Correct.** Then, on every tick, for each measurement in the order they
+3. **Correct.** Then, on every tick, tick 0 among them, where there is
+   nothing to predict, for each measurement in the order they
    are declared: it is **considered** if its sample time is later than
    the sample time last considered on that port, and it is either `good`,
    or `uncertain` on a port that gives `r_uncertain`. A measurement with no
-   sample time is never considered. Its variance is the port's `r` if it
+   sample time is never considered. One that is not considered is not the
+   one last considered: an `uncertain` sample passed by on a port with no
+   `r_uncertain`, and written again as `good` with the same time, is
+   considered then. Its variance is the port's `r` if it
    is `good` and `r_uncertain` if it is `uncertain`. **A measurement
    carries the time of a sample**: its port is connected to an input, or
    to a delay or a formula that takes its sample time, through any number
@@ -1192,7 +1198,8 @@ each measurement reads one output of the model.
    - the step to this tick (rule 2) was on a model input that was
      `uncertain` or unusable at the tick before, or was not taken, or
      this tick is the one a gap ran (rule 8.6), unless the gap passed
-     over no tick;
+     over no tick. A gap of no known length is not one that passed over
+     none;
    - a measurement was refused at this tick, or one over the gate was
      used at this tick by rule 5: it has given in to what it was refusing,
      and cannot tell a sensor that is right from one that is stuck;
@@ -1203,6 +1210,8 @@ each measurement reads one output of the model.
      does not know where it is until one tells it. A refused measurement
      does not;
    - the state's sigma is more than its `sigma_max`, if one is given.
+     This clause is of that state alone, and its sigma exactly at
+     `sigma_max` is not over it; every other clause is of every state.
 
    The covariance is the estimator's own account of its memory, and
    stands in for a doubt: none of these lasts past its tick but the
@@ -1901,7 +1910,8 @@ and refused without it. `min_good` is required with `only_new: true`.
     variance per second, `p0` a variance.
   - `measure` maps each measurement port to `of`, the name of one of the
     model's outputs, `r`, a variance, and if wanted `r_uncertain`, a
-    variance not less than `r`. Its order is the order of rule 7.9.3.
+    variance not less than `r`. Its order is the order of rule 7.9.3. A
+    port does not have the name of one of the model's inputs.
   - `consistency` is `none`, or a map with `over`, a whole number at least
     1, and `limit`, more than zero.
   - `max_refused` is a whole number, not negative, given with `gate` and

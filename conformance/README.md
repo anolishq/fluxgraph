@@ -21,12 +21,12 @@ the text says, not what it should say.
 | `contract.py` | Tries every short sequence of writes, calls, rebases, resets, saves and restores against what sections 6, 7.2 and 8 promise a host. |
 
 ```bash
-python3 conformance/run.py                 # 414 vectors: ALL AGREE
-python3 conformance/run.py --second        # 414 vectors: ALL AGREE
-python3 conformance/mutate.py              # 663 breakages: 663 noticed; every vector failed by one
+python3 conformance/run.py                 # 426 vectors: ALL AGREE
+python3 conformance/run.py --second        # 426 vectors: ALL AGREE
+python3 conformance/mutate.py              # 664 breakages: 664 noticed; every vector failed by one
 python3 conformance/compare.py             # 2165816 comparisons, 0 differences
-python3 conformance/steps.py               # 418 checks: ALL HOLD; the worst error of the step is 1.08e-16
-python3 conformance/steps.py --second      # 418 checks: ALL HOLD; the worst error of the step is 1.08e-16
+python3 conformance/steps.py               # 750 checks: ALL HOLD; the worst error of the step is 1.81e-13
+python3 conformance/steps.py --second      # 750 checks: ALL HOLD; the worst error of the step is 7.75e-13
 python3 conformance/contract.py            # 748648 sequences: ALL HOLD
 python3 conformance/contract.py --second   # 748648 sequences: ALL HOLD
 python3 conformance/mutate.py --contract   # 170 breakages of sections 6, 7.2 and 8: contract.py notices 93
@@ -604,6 +604,29 @@ stall as a model's doubt, a reset of a loop's doubt, what a formula on a
 loop used at each tick, many steps across a rebase, a block the model
 reaches that is not on its loop, and two refusals.
 
+### What the fourth slice in C++ asked: the estimator
+
+`steps.py` has a fifth check, of the process noise `N` of rule 7.9.2,
+against decimal arithmetic by two routes that agree to 5e-93, on 332
+matrices up to the stiffness bound. A variance read alone is within
+2.07e-16 on the reference and 1.94e-13 on the second reading. The worst
+either shows, 1.81e-13 and 7.75e-13, is an estimator's own sum of two
+variances and a covariance cancelling in doubles, and not `N`.
+
+The C++ estimator, written from the text, refused a graph the second
+reading here took: **a measurement connected to a delay of a constant**,
+which rule 7.9.3 refuses and no vector had. The second reading followed
+the path back and did not look at where it ended. It is fixed, and
+`refused-estimator-measurement-a-delay-of-a-constant` is the vector.
+
+Breaking the C++ estimator 86 ways showed 13 more thin places, and 12
+vectors are new for them: a gate that is on the root of the variance and
+works both ways, what a consistency test keeps of a refused measurement
+and of one given in to, a sigma exactly at `sigma_max` and of its own
+state, many predictions across a stall with and without a model input,
+sample times kept for each port and forgotten at a reset, and a state
+left out of `q`.
+
 ## The C++ core
 
 Four slices of a version 2 core in C++ are in `include/fluxgraph/v2/` and
@@ -625,7 +648,7 @@ against it as they do against the readings:
 cmake -S . -B build/v2 -G Ninja -DFLUXGRAPH_BUILD_V2=ON -DFLUXGRAPH_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
 cmake --build build/v2 --target fluxgraph_v2_driver
 export FLUXGRAPH_V2_DRIVER=$PWD/build/v2/tools/fluxgraph_v2_driver/fluxgraph_v2_driver
-python3 conformance/run.py --cpp        # 414 vectors: 414 agree, 0 skipped (block types not built)
+python3 conformance/run.py --cpp        # 426 vectors: 426 agree, 0 skipped (block types not built)
 python3 conformance/compare.py --cpp    # 235 graphs run, 0 skipped; 2165816 comparisons, 0 differences
 python3 conformance/contract.py --cpp   # 748648 sequences: ALL HOLD
 python3 conformance/cpp/edges.py        # 72514 checks: ALL HOLD

@@ -1,0 +1,16 @@
+# 7.9.3: a measurement is considered if its sample time is later than the
+# one last considered on that port. The second port's sample is older than
+# the first port's, and is the first on its own port: it is considered.
+# With p0 and r of 1: the first gives x of 1 and a variance of 1/2; the
+# second has an innovation of 1 and a spread of 3/2, and gives x of 4/3.
+rules: [7.9.3, 7.9.4]
+period: 1s
+inputs: {a: {max_age: none}, b: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: 0, one: a, two: b}
+    settings: {model: {type: state_space, A: [[1]], B: [0], C: [1]}, q: {x0: 0}, p0: {x0: 1}, measure: {one: {of: y, r: 1}, two: {of: y, r: 1}}, consistency: none}
+    out: {x0: x, innovation_one: first_innovation, innovation_two: second_innovation}
+calls:
+  - {now: 0, a: 2, b: {v: 2, at: -1}, x: 1.3333333333333333, first_innovation: 2, second_innovation: 1}

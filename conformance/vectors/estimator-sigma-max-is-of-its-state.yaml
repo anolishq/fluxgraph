@@ -1,0 +1,19 @@
+# 7.9.7: "the state's sigma is more than its sigma_max" makes that state's
+# outputs uncertain, and no other state's.
+rules: [7.9.7]
+period: 1s
+inputs: {z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: 0, z: z}
+    settings:
+      model: {type: state_space, A: [[1, 0], [0, 1]], B: [0, 0], C: [1, 0]}
+      q: {x0: 0, x1: 0}
+      p0: {x0: 4, x1: 1}
+      measure: {z: {of: y, r: 1}}
+      consistency: none
+      sigma_max: {x0: 1}
+    out: {x0: a, sigma_x0: sigma_a, x1: b, sigma_x1: sigma_b}
+calls:
+  - {a: {u: 0}, sigma_a: {u: 2}, b: 0, sigma_b: 1}

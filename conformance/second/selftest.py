@@ -4079,6 +4079,42 @@ def test_estimator_round_three():
     refused("measure: a loop of a delay and a formula", reads("d.y", loop))
     # round four: a constant is refused: it is not a sample of anything
     refused("measure: a constant", reads(3))
+    # the path has to come from an input: a delay of a constant does not,
+    # however many delays and formulas stand between
+    const_delay = {"id": "d", "type": "delay", "in": {"x": 3}}
+    refused("measure: a delay of a constant", reads("d.y", [const_delay]))
+    refused(
+        "measure: a delay of a constant, with an initial", reads("d.y", [dict(const_delay, settings={"initial": 0})])
+    )
+    chain = [
+        const_delay,
+        formula("f", "a * 2", {"a": "d.y"}),
+        {"id": "d2", "type": "delay", "in": {"x": "f.y"}, "settings": {"ticks": 3}},
+        formula("g", "a + b", {"a": "d2.y", "b": "m"}, sample_of="a"),
+    ]
+    refused("measure: a chain ending in a constant", reads("g.y", chain))
+    # the same chain with its time taken from the input instead compiles
+    chain[3] = formula("g", "a + b", {"a": "d2.y", "b": "m"}, sample_of="b")
+    Engine(reads("g.y", chain))
+    # and with the first delay fed by an input
+    chain[0] = {"id": "d", "type": "delay", "in": {"x": "n"}}
+    chain[3] = formula("g", "a + b", {"a": "d2.y", "b": "m"}, sample_of="a")
+    Engine(reads("g.y", chain))
+    # `sample_of` naming an input that is a constant is refused by the
+    # formula itself (it names a signal), measurement or not
+    refused("measure: sample_of a constant", reads("f.y", [formula("f", "a + b", {"a": "m", "b": 3}, sample_of="b")]))
+    # a path that comes back on itself: two delays and a formula in a ring
+    ring = [
+        {"id": "d", "type": "delay", "in": {"x": "f.y"}, "settings": {"initial": 0}},
+        formula("f", "a + 0", {"a": "d2.y"}),
+        {"id": "d2", "type": "delay", "in": {"x": "d.y"}, "settings": {"initial": 0}},
+    ]
+    refused("measure: a ring of delays and a formula", reads("d2.y", ring))
+    # a delay that reads itself
+    refused(
+        "measure: a delay of itself",
+        reads("d.y", [{"id": "d", "type": "delay", "in": {"x": "d.y"}, "settings": {"initial": 0}}]),
+    )
     # a measurement by a formula is a new sample only when its input is:
     # written once, it is considered once
     e = Engine(reads("f.y", [formula("f", "a * 2", {"a": "m"})]))

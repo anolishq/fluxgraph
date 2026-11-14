@@ -1830,6 +1830,8 @@ MUTATIONS = [
     ("7.7.5 the PID's sum is worked with the integral before the derivative",
      "y, limited = rest + self.integral, False",
      'y, limited = (self.s["kp"] * error + self.integral) - self.s["kd"] * self.f, False'),
+    ("A.estimator a state left out of q or p0 is accepted",
+     "(required and set(given) != set(self.names))", "False"),
 ]  # fmt: skip
 
 
