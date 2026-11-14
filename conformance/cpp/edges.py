@@ -19,6 +19,7 @@ What is checked:
 2. The number of samples a window needs (rules 6.3 and 7.3.2), against exact fractions.
 3. Lengths of time (rule 9.3) that are, and are just not, whole nanoseconds that fit, in every unit.
 4. What the driver refuses because it cannot be handed to the core: a time that is not whole or does not fit.
+6. An estimator's `since_<port>`, further off than a signed 64-bit difference holds, and never below zero.
 5. Lengths that only scale a value (`per`, `tau`): the ratio and the rounding up are exact, at any period.
 
 Exits 1 on the first difference, and prints it. Stdlib only.
@@ -489,10 +490,37 @@ def ratios():
     return tried
 
 
+def since():
+    """6: an estimator's `since_<port>` is the true difference of the tick's time and a sample's (rule 7.9.8),
+    however far apart: more than 2^63 ns here, which a signed difference cannot hold. And not less than zero."""
+    period = 2**62
+    model = {"type": "state_space", "A": [[1.0]], "B": [0.0], "C": [1.0]}
+    settings = {"model": model, "q": {"x0": 1e-30}, "p0": {"x0": 1.0}, "consistency": "none"}
+    settings["measure"] = {"z": {"of": "y", "r": 1.0}}
+    block = {"id": "k", "type": "estimator", "in": {"u": 0.0, "z": "z"}, "settings": settings}
+    block["out"] = {"since_z": "since"}
+    x = {"max_age": "none", "max_ahead": f"{period}ns"}
+    engine = adapter.Engine({"period": f"{period}ns", "inputs": {"z": x}, "blocks": [block]})
+    engine.write("z", GOOD, 1.0, LOW)
+    ran, out = engine.tick(LOW)  # tick 0, at the earliest time there is
+    if ran != 1 or out["since"].v != 0.0:
+        fail("since, at the sample's own tick", ("gave", out))
+    ran, out = engine.tick(LOW + 2 * period)  # ticks 1 and 2: the last is 2^63 ns after the sample
+    want = float(2 * period) / 1e9
+    if ran != 2 or out["since"].v is None or not close(out["since"].v, want):
+        fail("since, further off than a signed difference holds", ("gave", (ran, out)), ("the text", want))
+    # a sample stamped after its tick, and seen by it because the call came later still (rule 6.8)
+    engine.write("z", GOOD, 1.0, LOW + 3 * period + 5)
+    ran, out = engine.tick(LOW + 3 * period + 10)
+    if ran != 1 or engine.info["time"] != LOW + 3 * period or out["since"].v != 0.0:
+        fail("since, of a sample stamped after its tick", ("gave", (ran, engine.info, out)))
+    return 3
+
+
 def main():
     adapter.start()
     rng = random.Random(20261113)
-    total = last_number() + needed(rng) + lengths() + limits() + ratios()
+    total = last_number() + needed(rng) + lengths() + limits() + ratios() + since()
     for period in (1, 2, 3, 7, 10**9, 2**61, 2**62, 2**62 + 1, 2**63 - 2, 2**63 - 1):
         tried = sequences(rng, period, runs=60, steps=120)
         total += tried

@@ -6,8 +6,8 @@ written from `docs/semantics_spec_v2.md` as amended seven times, without
 sight of `reference.py`, `formula.py` or `second/impl.py`. It has `formula`,
 `all_good`, `delay`, `window` and `integrate`, and the whole of sections 6
 and 8. A second slice, written the same way from the text as amended
-eight times, adds eight block types, and a third the models and the loop
-rule; each has a section of its own.
+eight times, adds eight block types, a third the models and the loop
+rule, and a fourth the estimator; each has a section of its own.
 
 This lists each place where the text left a choice or could be read two
 ways, with the reading taken. A choice the second reading already
@@ -317,6 +317,93 @@ does not shorten an earlier doubt that has not run out; a model on a loop
 keeps its own counters; a block of the loop that "is connected to" an
 output counts whether or not it used it; the arithmetic of `r` and of the
 bound; which eigenvalue gives `settle`.
+
+## The fourth slice: the estimator
+
+The estimator, its process noise and the check that a measurement
+carries a sample's time were written from section 7.9, rule 3.7, section
+8 and Appendix A. Every estimator vector agreed once one fault of mine was
+out (a prediction skipped where the tick was already in doubt), and so
+did two probes against the two readings. Entries marked **(guess)** are
+where the text did not say.
+
+57. **Rule 7.9.2, how `N` is worked.** As `Ad` is: on a small step, the
+    series whose `k`-th layer is `L(k) = A·L(k-1) + L(k-1)·Aᵀ` over `k!`,
+    from `L(0) = Q`; then doubled, `N ← N + E·N·Eᵀ`, all in arithmetic of
+    twice a double's digits and rounded once. A variance of `N` read off
+    the core is within 2.5 parts in 10¹⁶ of 150-digit arithmetic up to the
+    stiffness bound. For `state_space` it is `q` times the period in
+    seconds as a double.
+58. **Rule 7.9.2 and 7.9.4, the arithmetic of the covariance.** In plain
+    doubles, as written: `(Ad·P)·Adᵀ + N`; the gain as `P·cᵀ` over `s`;
+    `((1 - g·c)·P)·(1 - g·c)ᵀ`, and `g·v·gᵀ` added to that. `P` is not
+    made symmetric afterwards. The text gives the forms and not the
+    order; another order differs in the last place.
+59. **Rule 7.9.2, "as they were at the tick before".** The value then, or
+    the last usable value where it was not usable then, is in either case
+    the last usable value as of that tick, and one number is kept for each
+    input. "Never been usable by then" is by the tick before.
+60. **Rule 7.9.3, tick 0.** There is no prediction at tick 0 and there is
+    a correction: a measurement written before the first call is
+    considered at it.
+61. **Rule 7.9.3, an uncertain measurement on a port with no
+    `r_uncertain`.** It is not considered, so it does not become the
+    sample last considered: the same sample written again as `good`,
+    with the same time, is then considered. **(guess)**
+62. **Rule 7.9.5, giving in.** The measurement that would be one more
+    than `max_refused` is not counted in `refused_<port>`, ends the run,
+    and makes the tick uncertain as "one over the gate used". Its
+    innovation is unchanged by the growth; its normalised innovation
+    squared, in the output and in what the port keeps, is the one from
+    before.
+63. **Rule 7.9.6, when a port is judged.** On every tick once it holds
+    `over` of them, a tick with no measurement among them: it "keeps its
+    last word". The mean is the plain sum over `over`.
+64. **Rule 7.9.7, the sigma clause.** It makes that state's two outputs
+    uncertain and no other state's. Every other clause is of the block.
+65. **Rule 7.9.7, "this tick is the one a gap ran, unless the gap passed
+    over no tick".** A gap of no known length is not one that passed over
+    no tick: its tick is uncertain.
+66. **Rule 7.9.8, `since_<port>`.** The tick's time less the sample's, as
+    a true difference in nanoseconds, over 10⁹ as a double; zero where
+    the sample is stamped after the tick.
+67. **Rule 7.9.9, many predictions.** Up to 64 are made one by one. More
+    are gathered by doubling the step: `(M, v, S)` twice is
+    `(M·M, M·v + v, M·S·Mᵀ + S)`. With a model input never usable the
+    state stays and `N` is added that many times, past 64 as one product.
+68. **Rule 7.9.8, names.** Two outputs of one name are refused, as the
+    rule says. Two inputs of one name, a measurement port named as a
+    model input is, are refused too. **(guess)**: the rule speaks of
+    outputs only.
+69. **Appendix A, `q`, `p0` and `sigma_max`.** `q` and `p0` have to name
+    every state, and `sigma_max` any of them; a name that is no state's
+    is refused. `q` is not negative, `p0` is more than zero, `gate` is not
+    negative, `r` is more than zero. A model's `settle` or `ride_through`
+    inside `model` is refused as unknown there: "that model's own
+    settings (not the model settings above)".
+70. **Rule 7.9.3, the way the time comes.** From the port, back through
+    a delay to what the delay reads, and through a formula to the input
+    whose sample time it takes, until an input from outside. Refused
+    where the way reaches a block that gives the time of the tick, a
+    formula that does, a constant, or comes back on itself. A fallback on
+    the way is not looked at: its value has no sample time and is never
+    considered.
+71. **Rule 7.9.4, a model with a direct input.** Accepted where no
+    measurement is of an output that reads it. The estimator's model
+    inputs are deferred whatever the model's `D` is.
+72. **Section 9, an `in` key that is empty.** Until this slice the core
+    refused any input port with an empty name. The text has no such
+    rule: rule 9.2 is of names a block's settings give, and `all_good`
+    takes its inputs "under any names". The compiler no longer refuses
+    it, and an estimator's empty measurement port is refused by rule 9.2
+    naming `measure`.
+
+Read the same way as the second reading records them: at a rebase with a
+length the variance grows after the predictions and once; a port is
+inconsistent between measurements; a run of refusals is of measurements
+considered and not of ticks; a measurement taken by rule 5 makes its tick
+uncertain; a constant on a measurement port is refused; any measurement
+used ends "no measurement has been used since".
 
 ## Recorded already, and read the same way
 
