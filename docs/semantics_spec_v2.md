@@ -1,6 +1,6 @@
 # FluxGraph semantics, version 2 (proposal)
 
-**Status:** proposal, third revision, with eleven amendments. Not in force.
+**Status:** proposal, third revision, with twelve amendments. Not in force.
 [semantics_spec.md](semantics_spec.md) stays the normative contract for
 FluxGraph 1.x until this is accepted, at which point this document replaces
 it and the library becomes 2.0.
@@ -168,6 +168,16 @@ time. **Amendments so far:**
     missed: it keeps its value now, as `uncertain`. A value keeps room
     for a reason that nothing yet gives. And motion control is named as
     not a goal.
+
+12. *A controller that is not acting* (rules 7.4.14 and 7.7.15, and
+    Appendix A). The core was run inside a machine runtime, closing a
+    speed loop on a simulated motor through the runtime's own automation.
+    When the motor's reads failed the runtime stopped acting and set the
+    duty to zero, as it should. The graph was told nothing: it ran on
+    with the motor at rest, took its output to the limit of 1 and gave it
+    as `good`, for nobody. A `pid` and a `rate_limit` now have an input
+    `follow`. While it is true the block gives `track`, where the
+    actuator is, and when it is false again starts from there.
 
 **Known to be wrong as it stands**, and not yet amended:
 
@@ -894,6 +904,25 @@ other statistics must not go on as `good` either.
     `track` is a direct input, and a readback from outside the graph. A delay of the block's
     own output is not one: for as long as the output has no value the
     delay has none either.
+14. **Not acting.** It has an input `follow`, a boolean, that need not be
+    connected, and is given only where `track` is: the graph is refused
+    otherwise. It is what a host says while nothing acts on the output: a
+    machine in manual, a fault, an actuator switched to local. The block
+    **follows** at a tick where `follow` is true, and at one where
+    `follow` is not usable: a block that is not told it acts does not.
+    At a catch-up tick a rate limit that acts by the call does nothing,
+    as rule 12 says, and `follow` is not looked at. A block that follows
+    limits nothing and does not look at its input. With `track` usable,
+    `y` is the value of `track` and `limited` is false, each with the
+    state of `track`, or `uncertain` in place of `good` where `follow`
+    is not usable; and the block holds that value as one it took from an
+    input at that tick. With `track` not usable, `y` and `limited` have
+    no value and the state of `track`, and the block holds what it held:
+    it forgets nothing at such a tick, however many there are. The tick
+    counts towards `ride_through`, which is counted from the last tick
+    the block took a value at, when the block next has an input it
+    cannot use and does not follow.
+    `follow` is a direct input.
 <!-- markdownlint-enable MD029 -->
 
 ### 7.5 Hysteresis
@@ -1124,6 +1153,35 @@ lacks.
     the integral held when the input was lost. An `uncertain`
     `track` is used as a `good` one is, and one that is not usable is not
     used. A reset says zero, and `track` does not gainsay it.
+15. **Not acting.** It has an input `follow`, a boolean, that need not be
+    connected, and is given only where `track` is: the graph is refused
+    otherwise. It means what rule 7.4.14 says. The PID **follows** at a
+    tick where `follow` is true, and at one where `follow` is not
+    usable, a catch-up tick among them. A PID that follows adds nothing
+    to its integral. At a tick where it follows, a catch-up tick among
+    them, both its inputs and `track` are usable, and there is no reset,
+    its integral is set to `track` less the first sum of rule 5, as rule
+    14 sets it; at any other tick where it follows the integral stays as
+    it is, but for a reset. A reset while it follows makes the integral
+    zero at that tick and no longer: the next tick it follows sets it
+    again. It waits to track (rule 14) from every tick where it follows,
+    a tick of a reset among them. So when it follows no longer it starts
+    from where the actuator is, or with no `track` at that tick from
+    where it last was. With
+    `track` usable, `y` is the value of `track`, not held within `min`
+    and `max`, and `limited` is false, each with the state of `track`,
+    or `uncertain` in place of `good` where `follow` is not usable. With
+    `track` not usable they have no value and the state of `track`. It
+    gives these whatever its setpoint and its measurement are: it needs
+    neither to follow. Its derivative goes on as rule 7 says, and starts
+    again at a tick where either is not usable. The counts are as at
+    any other tick. `integral` always has its value, and its state is
+    what rule 9 gives it at a tick where the PID does not follow: by the
+    setpoint, the measurement and a reset, and not by `track`, `follow`
+    or the state of `y`. Rule 12 has nothing to judge at a tick where it
+    follows. Where a PID that acts by the call follows at a catch-up
+    tick, its `y` is the one held (rule 6.13) and its other outputs are
+    that tick's own. `follow` is a direct input.
 <!-- markdownlint-enable MD029 -->
 
 A PID with a limit and an error that stays one way sits at the limit with
@@ -1253,8 +1311,8 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    - no model blocks in it are joined in a ring directly or through
      formulas alone: no two each take the other's output so, and no three
      or more each take the next's and the last the first's. One that
-     takes its own output is no ring. One block takes another's output
-     through
+     takes its own output, directly or through formulas, is no ring. One
+     block takes another's output through
      formulas alone where it reads an output of a formula that reads the
      other's, or that reads a formula's that does, and so on; an input
      counts whether it is direct or deferred. Such a ring is one physical
@@ -1562,6 +1620,18 @@ to write the stricter thing.
   not.** `a or b` with `a` true and `good` is `good` whatever `b` is, and
   `when(ok, x, 20)` is a `good` 20: the problem is not in what the formula
   used, and a graph that has to see it reads `all_good`.
+- **A controller stops when the word that it acts is lost.** A `follow`
+  that is not usable is taken as true, so a `pid` or a `rate_limit` whose
+  host stops writing it gives the actuator back what it has, as
+  `uncertain`, until it is written again.
+- **A rate limit that followed with no `track` trusts an old value or
+  none.** After any number of such ticks it limits a usable input from
+  the value it last held, however old; given an input it cannot use, it
+  has forgotten once `ride_through` is past, and takes the next whole.
+- **What a block gives while it follows is the readback as it is**: not
+  held within `min` and `max`, and `limited` is false. There is no input
+  for a value an operator sets by hand; a host that has one writes it to
+  the actuator, and `track` reads it back.
 - **A total past `max_missed` is still a number.** It is `uncertain`,
   and a reader that takes an `uncertain` value goes on using it. A graph
   that has to stop there tests `missed` and `gaps`.
@@ -2041,8 +2111,8 @@ what the vectors pin down.
 | `since_true` | `x`: boolean | `time`, `on_bad` | `y`: boolean; `elapsed`, `doubtful`, `gaps` |
 | `latch` | `set`: boolean; `reset`: boolean, optional | none | `y`: boolean; `elapsed`, `doubtful`, `gaps` |
 | `integrate` | `x`: number; `reset`: boolean, optional | `per` (`1s`), `max_missed` (none) | `y`, `missed`, `doubtful`, `elapsed`, `gaps` |
-| `rate_limit` | `x`: number; `track`: number, optional | `up`, `down` (`up`), `ride_through` (0), `initial` (none) | `y`; `limited`: boolean |
-| `pid` | `setpoint`, `measurement`: number; `reset`: boolean, optional; `applied`: number, optional, deferred; `track`: number, optional | `kp`, `ki` (0), `kd` (0), `filter`, `min` (none), `max` (none), `applied_within` (0) | `y`, `integral`; `limited`: boolean; `elapsed`, `doubtful`, `gaps` |
+| `rate_limit` | `x`: number; `track`: number, optional; `follow`: boolean, optional | `up`, `down` (`up`), `ride_through` (0), `initial` (none) | `y`; `limited`: boolean |
+| `pid` | `setpoint`, `measurement`: number; `reset`: boolean, optional; `applied`: number, optional, deferred; `track`: number, optional; `follow`: boolean, optional | `kp`, `ki` (0), `kd` (0), `filter`, `min` (none), `max` (none), `applied_within` (0) | `y`, `integral`; `limited`: boolean; `elapsed`, `doubtful`, `gaps` |
 | `linear` | one per column of `B`, named by `inputs` | `A`, `B`, `C`, `D` (zeros), `initial` (zeros), `inputs`, `states`, `outputs`, and the model settings | one per row of `C`, named by `outputs`; and the model outputs |
 | `thermal_mass` | `power`, `ambient` | `thermal_mass`, `heat_transfer`, `initial`, and the model settings | `temp`; and the model outputs |
 | `thermal_rc2` | `power`, `ambient` | `thermal_mass_a`, `thermal_mass_b`, `heat_transfer_a`, `heat_transfer_b`, `coupling`, `initial_a`, `initial_b`, and the model settings | `temp_a`, `temp_b`; and the model outputs |
