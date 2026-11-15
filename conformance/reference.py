@@ -338,7 +338,7 @@ class Window(Block):
         ts = [(times[i - first] - times[of[0][0] - first]) / NS for i, _ in of] if of else []
         mt, my = sum(ts) / len(ts), sum(ys) / len(ys)
         den = sum((ti - mt) ** 2 for ti in ts)
-        if len(of) < 2 or den == 0.0:
+        if len(set(ts)) < 2:  # 7.3 rule 6: by the times, and not by a sum that rounding leaves over nothing
             out["slope"] = Val(BAD)
         else:
             out["slope"] = Val(state, sum((ti - mt) * (y - my) for ti, y in zip(ts, ys, strict=True)) / den)

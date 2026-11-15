@@ -21,9 +21,9 @@ the text says, not what it should say.
 | `contract.py` | Tries every short sequence of writes, calls, rebases, resets, saves and restores against what sections 6, 7.2 and 8 promise a host. |
 
 ```bash
-python3 conformance/run.py                 # 485 vectors: ALL AGREE
-python3 conformance/run.py --second        # 485 vectors: ALL AGREE
-python3 conformance/mutate.py              # 726 breakages: 726 noticed; every vector failed by one
+python3 conformance/run.py                 # 490 vectors: ALL AGREE
+python3 conformance/run.py --second        # 490 vectors: ALL AGREE
+python3 conformance/mutate.py              # 730 breakages: 730 noticed; every vector failed by one
 python3 conformance/compare.py             # 2516993 comparisons, 0 differences
 python3 conformance/steps.py               # 750 checks: ALL HOLD; the worst error of the step is 1.81e-13
 python3 conformance/steps.py --second      # 750 checks: ALL HOLD; the worst error of the step is 7.75e-13
@@ -708,6 +708,13 @@ no rule, and found four clauses no vector reached: `pid-gap-of-no-ticks`
 as first reworked passed with the derivative left running, since a
 remembered time of 1 s is earlier than any time after it, and now steps
 its clock back at the rebase.
+
+Building it in C++ and breaking that 31 ways showed six breakages that
+only `compare.py` noticed, and five vectors are new for them: a first
+sample taken before its tick, good samples of one time beside an
+uncertain one at another, one sample seen three times and judged by its
+times, a sample stamped before an earlier tick's, and samples with and
+without a time of their own in one window.
 
 `second/ASSUMPTIONS-amendment-10.md` lists where the text left the second
 reading a choice. Appendix A now writes the least-squares sums out, which

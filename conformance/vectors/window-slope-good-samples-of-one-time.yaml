@@ -1,0 +1,15 @@
+# 7.3.6: where the slope is of the good samples and they have one time, it
+# is bad, whatever an uncertain sample at another time would have added. A
+# window of three needs two good samples. At tick 2 it holds an uncertain 1
+# sampled at 0 s and a good 3 sampled at 1 s, seen at ticks 1 and 2: two
+# good samples, so the window is good and its mean is of them, and they
+# are one point: no slope.
+rules: [7.3.6, 7.3.5]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 3s, min_good: 0.5}, out: {mean: mean, slope: slope}}
+calls:
+  - {now: 0, x: {v: 1, state: uncertain}, mean: not_ready, slope: not_ready}
+  - {now: 1, x: 3, mean: {u: 2}, slope: {u: 2}}
+  - {now: 2, mean: 3, slope: bad}
