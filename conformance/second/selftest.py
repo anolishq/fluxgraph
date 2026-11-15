@@ -975,8 +975,9 @@ def test_integrate():
         {"type": "integrate", "in": {"x": "x"}, "settings": {"per": "1m", "max_missed": "1s"}},
         "number",
         [("good", 60.0), ("bad", None), ("bad", None), ("uncertain", 60.0)],
-        # one second missed is not more than max_missed; two are, for good
-        y=[("good", 1.0), ("good", 1.0), ("bad", None), ("bad", None)],
+        # one second missed is not more than max_missed; two are, until a
+        # reset: it keeps its value, uncertain, and goes on adding
+        y=[("good", 1.0), ("good", 1.0), ("uncertain", 1.0), ("uncertain", 2.0)],
         missed=[0, 1, 2, 2],
     )
     refused(
@@ -1575,19 +1576,117 @@ def test_model_loops():
         }
 
     refused("two model blocks on a loop", {"period": "1s", "blocks": [mass("a", "b.temp"), mass("b", "a.temp")]})
-    # also when a formula and a delay stand between them
+
+    # amendment 11: a pair is refused where each takes the other's output
+    # directly or through formulas alone
+    def fm(bid, src):
+        return {"id": bid, "type": "formula", "in": {"t": src}, "settings": {"expr": "t"}}
+
+    def graph(*blocks):
+        return {"period": "1s", "blocks": list(blocks)}
+
+    refused("pair through one formula", graph(mass("a", "f.y"), mass("b", "a.temp"), fm("f", "b.temp")))
     refused(
-        "two model blocks on a loop, apart",
-        {
-            "period": "1s",
-            "blocks": [
-                mass("a", "f.y"),
-                mass("b", "a.temp"),
-                {"id": "d", "type": "delay", "in": {"x": "b.temp"}, "settings": {"initial": 20}},
-                {"id": "f", "type": "formula", "in": {"t": "d.y"}, "settings": {"expr": "t"}},
-            ],
-        },
+        "pair through formulas both ways",
+        graph(mass("a", "f.y"), mass("b", "g2.y"), fm("f", "b.temp"), fm("g", "a.temp"), fm("g2", "g.y")),
     )
+    # with any other block on the way in one direction it is accepted: a
+    # delay, a pid, a rate limit
+    delay = {"id": "d", "type": "delay", "in": {"x": "b.temp"}, "settings": {"initial": 20}}
+    Engine(graph(mass("a", "f.y"), mass("b", "a.temp"), delay, fm("f", "d.y")))
+    pid = {"id": "c", "type": "pid", "in": {"setpoint": 30, "measurement": "b.temp"}, "settings": {"kp": 1}}
+    Engine(graph(mass("a", "c.y"), mass("b", "a.temp"), pid))
+    rate = {"id": "r", "type": "rate_limit", "in": {"x": "b.temp"}, "settings": {"up": 1}}
+    Engine(graph(mass("a", "r.y"), mass("b", "a.temp"), rate))
+    # every model block on the loop has settle written, and the same
+    other = mass("b", "a.temp")
+    other["settings"]["settle"] = "3s"
+    refused("loop: two settles", graph(mass("a", "c.y"), other, pid))
+    del other["settings"]["settle"]
+    refused("loop: one model with no settle", graph(mass("a", "c.y"), other, pid))
+    # a ring of three, each taking the next directly, is refused; and
+    # through formulas at every place too
+    refused("ring of three", graph(mass("a", "m.temp"), mass("b", "a.temp"), dict(mass("m", "b.temp"), id="m")))
+    refused(
+        "ring of three through formulas",
+        graph(
+            mass("a", "f3.y"),
+            mass("b", "f1.y"),
+            dict(mass("m", "f2.y"), id="m"),
+            fm("f1", "a.temp"),
+            fm("f2", "b.temp"),
+            fm("f3", "m.temp"),
+        ),
+    )
+    # with another block on the way at one place it is accepted
+    Engine(
+        graph(
+            mass("a", "r.y"),
+            mass("b", "a.temp"),
+            dict(mass("m", "b.temp"), id="m"),
+            dict(rate, **{"in": {"x": "m.temp"}}),
+        )
+    )
+    # a ring of two with a third model hanging off it is refused for the two
+    refused(
+        "ring of two, and one beside",
+        graph(mass("a", "b.temp"), mass("b", "a.temp"), dict(mass("m", "b.temp"), id="m")),
+    )
+    # one that takes its own output is one block and no ring
+    Engine(graph(mass("a", "a.temp")))
+    Engine(graph(mass("a", "f1.y"), fm("f1", "a.temp")))
+    # two that each take their own, and one the other's through a pid: accepted
+    Engine(
+        graph(
+            {
+                "id": "a",
+                "type": "thermal_mass",
+                "in": {"power": "c.y", "ambient": "a.temp"},
+                "settings": mass("a", 0)["settings"],
+            },
+            mass("b", "a.temp"),
+            pid,
+        )
+    )
+    # three in a ring through a controller: no ring through formulas alone
+    Engine(
+        graph(
+            mass("a", "c.y"),
+            mass("b", "a.temp"),
+            dict(mass("m", "b.temp"), id="m"),
+            dict(pid, **{"in": {"setpoint": 30, "measurement": "m.temp"}}),
+        )
+    )
+    # a pair inside a larger loop is still refused
+    refused(
+        "pair inside a loop with a controller",
+        graph(
+            {
+                "id": "a",
+                "type": "thermal_mass",
+                "in": {"power": "c.y", "ambient": "b.temp"},
+                "settings": mass("a", 0)["settings"],
+            },
+            mass("b", "a.temp"),
+            pid,
+        ),
+    )
+    # every model block on the loop is uncertain after the loop's doubt: a
+    # cascade under a pid whose setpoint comes from outside. The setpoint
+    # is uncertain at tick 1: both plants are uncertain on ticks 2 and 3.
+    g = graph(
+        dict(mass("a", "c.y"), out={"temp": "a"}),
+        dict(mass("b", "a.temp"), out={"temp": "b"}),
+        {"id": "c", "type": "pid", "in": {"setpoint": "sp", "measurement": "b.temp"}, "settings": {"kp": 1}},
+    )
+    g["inputs"] = {"sp": {"max_age": "none"}}
+    e = Engine(g)
+    want = ["good", "good", "uncertain", "uncertain", "good"]
+    for k in range(5):
+        e.write("sp", "uncertain" if k == 1 else "good", 30.0, k * S)
+        o = e.tick(k * S)[1]
+        check("cascade %d a" % k, o["a"][0], want[k])
+        check("cascade %d b" % k, o["b"][0], want[k])
     # one after the other, with no way back, is no loop
     Engine({"period": "1s", "blocks": [mass("a", 20), mass("b", "a.temp")]})
 
@@ -2491,7 +2590,7 @@ def test_gap_blocks():
     check("gd integ 3", o["y"], ("good", 2.0))
     counts("gd integ 3", o, missed=2, elapsed=4, gaps=1)
     o = put(e, 7)
-    check("gd integ 7", o["y"], ("bad", None))
+    check("gd integ 7", o["y"], ("uncertain", 3.0))
     counts("gd integ 7", o, missed=5, elapsed=8, gaps=2)
 
     # --- a model: steps not taken, and riding through a gap
@@ -2640,9 +2739,9 @@ def test_gap_round_two():
     check("g2 integ 0", put(e, 0, "good", False)["y"], ("good", 1.0))
     e.rebase()
     o = put(e, 0, "good", False)
-    check("g2 integ unknown", o["y"], ("bad", None))
+    check("g2 integ unknown", o["y"], ("uncertain", 2.0))
     counts("g2 integ unknown", o, missed=0, elapsed=2, gaps=1)
-    check("g2 integ unknown, next", put(e, 1)["y"], ("bad", None))
+    check("g2 integ unknown, next", put(e, 1)["y"], ("uncertain", 3.0))
     o = put(e, 2, "good", True)
     check("g2 integ reset", o["y"], ("good", 1.0))
     counts("g2 integ reset", o, missed=0, elapsed=1, gaps=0)

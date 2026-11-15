@@ -21,10 +21,10 @@ the text says, not what it should say.
 | `contract.py` | Tries every short sequence of writes, calls, rebases, resets, saves and restores against what sections 6, 7.2 and 8 promise a host. |
 
 ```bash
-python3 conformance/run.py                 # 490 vectors: ALL AGREE
-python3 conformance/run.py --second        # 490 vectors: ALL AGREE
-python3 conformance/mutate.py              # 730 breakages: 730 noticed; every vector failed by one
-python3 conformance/compare.py             # 2516993 comparisons, 0 differences
+python3 conformance/run.py                 # 499 vectors: ALL AGREE
+python3 conformance/run.py --second        # 499 vectors: ALL AGREE
+python3 conformance/mutate.py              # 742 breakages: 742 noticed; every vector failed by one
+python3 conformance/compare.py             # 2572407 comparisons, 0 differences
 python3 conformance/steps.py               # 750 checks: ALL HOLD; the worst error of the step is 1.81e-13
 python3 conformance/steps.py --second      # 750 checks: ALL HOLD; the worst error of the step is 7.75e-13
 python3 conformance/contract.py            # 748648 sequences: ALL HOLD
@@ -720,6 +720,27 @@ without a time of their own in one window.
 reading a choice. Appendix A now writes the least-squares sums out, which
 it had not.
 
+## Amendment 11: smaller faults
+
+- **Model blocks on one loop.** A loop was allowed one model block. What
+  is refused now is a ring of them joined directly or through formulas
+  alone, and every model block on a loop states the same `settle`. Nine
+  vectors are new: a cascade of two plants under a `pid`, worked through
+  a doubt; a pair past a rate limit; a model block that takes its own
+  output inside a cascade; and six refusals, among them a ring of three
+  no two of which take each other's output. The first draft refused only
+  a pair, and the second reading, written from that text, accepted the
+  ring of three and said so.
+- **A total past `max_missed`** keeps its value and is `uncertain`, where
+  it was `bad`. Three vectors changed for it and no others: `integrate`,
+  `stall-integrate` and `gap-unknown-total`.
+- **A reason beside a state** (rule 3.8) is room kept and nothing more.
+  No block gives one, so no vector can see it.
+
+One breakage written for this amendment, a looped model block keeping a
+doubt of its own, changed no output: the engine gives each its loop's
+doubt before every tick. It is not in the sweep. `compare.py` has one
+graph more, two model blocks in cascade under a `pid`.
 ## The C++ core
 
 Six slices of a version 2 core in C++ are in `include/fluxgraph/v2/` and

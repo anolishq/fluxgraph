@@ -1,0 +1,15 @@
+# 7.8.8: any block that is not a formula on the way in one direction is
+# enough. The second plant reaches the first through a formula and then a
+# rate limit, which holds 0 and moves 1 a second towards r - b.
+rules: [7.8.8, 7.4.9]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: e, type: formula, in: {r: r, y: second.y}, settings: {expr: "r - y"}}
+  - {id: lim, type: rate_limit, in: {x: e.y}, settings: {up: 1, down: 1, initial: 0}, out: {y: u}}
+  - {id: first, type: state_space, in: {u: lim.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: a}}
+  - {id: second, type: state_space, in: {u: first.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: b}}
+calls:
+  - {r: 4, u: 1, a: 0, b: 0}
+  - {u: 2, a: 0.5, b: 0}
+  - {u: 3, a: 1.25, b: 0.25}

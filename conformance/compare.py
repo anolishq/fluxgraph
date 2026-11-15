@@ -382,6 +382,21 @@ def graphs(d, tau):
                 formula("ctl", "0.5 * p + 0.3 * (a - y)", {"p": "acc.y", "a": "a", "y": "plant.y"}, "i"),
             ],
         ),
+        "two models in cascade under a pid": (
+            {"a": NUM},
+            [
+                block("pid", {"setpoint": "a", "measurement": "second.y"}, {"y": "u"}, bid="c", kp=0.6, ki=0.2 / pt),
+                block("state_space", {"u": "c.y"}, {"y": "y"}, bid="first", settle=d(4), **plant),
+                block(
+                    "first_order_process",
+                    {"u": "first.y"},
+                    {"y": "z", "doubtful": "db"},
+                    bid="second",
+                    tau=tau(2),
+                    settle=d(4),
+                ),
+            ],
+        ),
         "a model in a loop that reads a choice": (
             {"a": NUM, "b": NUM, "p": BOOL, "q": BOOL},
             [

@@ -1,0 +1,14 @@
+# 7.8.8: refused: every pair of model blocks on the loop is looked at. The
+# first plant is behind a pid; the other two take each other's outputs,
+# one directly and one through a formula.
+rules: [7.8.8]
+period: 1s
+inputs: {sp: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: m.y}, settings: {kp: 1}}
+  - {id: a, type: state_space, in: {u: c.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}}
+  - {id: g, type: formula, in: {x: a.y, z: m.y}, settings: {expr: "x + z"}}
+  - {id: k, type: state_space, in: {u: g.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}}
+  - {id: m, type: state_space, in: {u: k.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}}
+expect: compile_error
+error_mentions: [k, m, one]

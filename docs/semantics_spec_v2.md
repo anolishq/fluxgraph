@@ -1,6 +1,6 @@
 # FluxGraph semantics, version 2 (proposal)
 
-**Status:** proposal, third revision, with ten amendments. Not in force.
+**Status:** proposal, third revision, with eleven amendments. Not in force.
 [semantics_spec.md](semantics_spec.md) stays the normative contract for
 FluxGraph 1.x until this is accepted, at which point this document replaces
 it and the library becomes 2.0.
@@ -73,9 +73,9 @@ time. **Amendments so far:**
    compiled. There is no step a model is unstable at, and no sub-steps.
    One general block, `linear`, takes the matrices of any linear model,
    and the six models 1.x has in continuous time are each a named case of
-   it. A loop holds one model block and no more: two that read each other
-   are a tick apart, which can make a sound network unstable, and are
-   written as one.
+   it. Two model blocks that take each other's outputs are a tick apart,
+   which can make a sound network unstable, and are written as one;
+   amendment 11 says which pairs those are.
 
 5. *The estimator* (section 7.9). Its process noise is discretised
    exactly, as its model is, and its model inputs are deferred. A
@@ -157,6 +157,18 @@ time. **Amendments so far:**
     sample time, a block's output, has its tick's, and is worked as
     before.
 
+11. *Smaller faults* (rules 3.8, 7.7.2 and 7.8.8, and section 2). A loop
+    was allowed one model block, so two plants in cascade under one
+    controller could not be written, and the refusal said of blocks in
+    series that they read each other. What is refused now is what the
+    rule was written against: model blocks joined in a ring directly or
+    through formulas alone. A total past its
+    `max_missed` had no value until a reset, and a restore or a stepped
+    clock took a batch's total away where nothing was known to be
+    missed: it keeps its value now, as `uncertain`. A value keeps room
+    for a reason that nothing yet gives. And motion control is named as
+    not a goal.
+
 **Known to be wrong as it stands**, and not yet amended:
 
 - **A derivative of a low-pass's output is over ticks** (rule 7.4.5). A
@@ -170,15 +182,8 @@ time. **Amendments so far:**
   state at the tick whatever time the sample carries. A host a few
   percent off the period, or an input that changes between ticks, is
   enough for it to refuse measurements and say `uncertain`.
-- **Two model blocks on one loop are refused where a controller stands
-  between them** (rule 7.8.8), so two plants in cascade cannot be
-  written, and the refusal says of blocks in series that they read each
-  other.
-- **A total past `max_missed` has no value until a reset** (rule 7.7.2),
-  and after a restore or a clock that stepped forward it is past it
-  where nothing was missed.
-- **A value does not say why it is `uncertain` or `bad`**, and nothing
-  in a value is kept for the day it does (section 7.11, Open).
+- **A value does not say why it is `uncertain` or `bad`.** Room is kept
+  for it (rule 3.8), and no block fills it.
 - **An input written true for one call can be missed** by a host whose
   loop is faster than the period: some of its calls run no tick, and the
   next write displaces the one nobody read (section 6).
@@ -229,7 +234,11 @@ compatibility. The maths of the existing models carries over, a tick later
 of each transform.
 
 Not goals of 2.0: blocks at different rates, a variable step, parallel
-evaluation, implicit solvers, vector values.
+evaluation, implicit solvers, vector values. Nor is motion control: a
+graph has one period and runs when its host calls it, so a loop that has
+to close faster than a host can poll, a trajectory, and axes that move
+together belong in a drive or a motion controller. A graph may give one
+its setpoint.
 
 ## 3. Values
 
@@ -271,9 +280,20 @@ evaluation, implicit solvers, vector values.
    A block that must not use one sample twice remembers the sample time it
    last used, and uses a value only when its sample time is later. There is
    no other notion of a sample being new.
+8. A signal that is not `good` has room for a **reason**: a whole number
+   from 0 to 65,535 beside its state. In this revision every block gives
+   0, which is no reason; no block reads one, a host that writes an input
+   writes none, and no other number has a meaning. What an engine hands
+   its host, and what a save holds, need not carry it while that is so.
+   It is here so that the form of a value does not change on the day a
+   block says why.
 
 **Open.**
 
+- **The reasons.** Which there are, whether a block that passes a value
+  on passes its reason, and which of several a block with several inputs
+  gives. Settled by: what the first host has to tell an operator that
+  the state and the counters do not.
 - **Other value types.** Integers, strings and enumerations exist on the
   machines this will run on. Settled by: listing the blocks that would need
   one, and whether a number and a lookup outside the graph would do.
@@ -954,14 +974,16 @@ lacks.
 1. An integrator adds its input, times the period, on every tick where the
    input is usable. The value at a tick includes that tick's addition, so a
    constant 1 from tick 0 gives `k + 1` periods at tick `k`.
-2. The total is the first of these that applies: `bad`, once `missed` is
-   more than `max_missed`, if that is given, until a reset, and `bad`
-   likewise after a gap of no known length (rule 8.6), which is more than
-   any `max_missed`, though `missed` cannot say so and only `gaps` shows
-   it; a reset at the gap's own tick ends that as any reset does; `uncertain`, on
-   a tick where its input is `uncertain`, or where `reset` is `uncertain`
-   and true; `good`. On a tick where its input is unusable the total is
-   `good`: it has a value, and `missed` says what it lacks.
+2. The total always has a value. It is `uncertain` once `missed` is more
+   than `max_missed`, if that is given, until a reset, and likewise after
+   a gap of no known length (rule 8.6), which is more than any
+   `max_missed`, though `missed` cannot say so and only `gaps` shows it; a
+   reset at the gap's own tick ends that as any reset does. It is
+   `uncertain` too on a tick where its input is `uncertain`, or where
+   `reset` is `uncertain` and true. Otherwise it is `good`. On a tick
+   where its input is unusable and it is within `max_missed` the total is
+   `good`: it has a value, and `missed` says what it lacks. Past
+   `max_missed` it goes on adding as before.
 3. It gives four counts, each a number and always `good`:
    - `missed`: the time it has not integrated, the period added up over
      every tick where the input was unusable;
@@ -1228,13 +1250,25 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    its own output is one by itself. A loop that holds a model block is
    treated as one block with fading memory, and `settle` is its author's
    statement of how long that memory is, along every path in it:
-   - it holds one model block and no more. Two model blocks that read
-     each other are a tick apart, and a network that is sound can be
-     unstable so split, however exactly each is stepped. The graph is
-     refused, and the error names them and says to write them as one
-     model: `linear` takes any number of states;
-   - the model block has `settle` written in the graph. A model's own time
-     constant is not the loop's. The graph is refused otherwise;
+   - no model blocks in it are joined in a ring directly or through
+     formulas alone: no two each take the other's output so, and no three
+     or more each take the next's and the last the first's. One that
+     takes its own output is no ring. One block takes another's output
+     through
+     formulas alone where it reads an output of a formula that reads the
+     other's, or that reads a formula's that does, and so on; an input
+     counts whether it is direct or deferred. Such a ring is one physical
+     network cut in pieces: each is a tick behind the one it reads, and a
+     network that is sound can be unstable so split, however exactly each
+     is stepped. The graph is refused, and the error names them and says
+     to write them as one model: `linear` takes any number of states. A
+     ring with any other block on the way at one place, a controller or a
+     rate limit, is accepted. A controller written as a formula is
+     not told from a coupling, and is written as a `pid`. This is a check
+     for one mistake and not for stability (section 7.11);
+   - every model block in it has `settle` written in the graph, and the
+     same `settle`. A model's own time constant is not the loop's, and a
+     loop has one. The graph is refused otherwise;
    - what else remembers in it is held against that `settle`: the graph is
      refused if the `ticks` of its delays, the lengths of its windows and
      the `settle`s of its low-passes, written or not, all in ticks, add up
@@ -1255,9 +1289,9 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    - a doubt at tick `k` is seen from tick `k + 1`. At tick `k` itself the
      loop is judged by its latest doubt before `k`, so an earlier doubt
      that has not run out is not forgotten for a tick;
-   - the model in it is `uncertain` for `settle` after the loop's doubt,
-     in place of its own in rule 6, and otherwise as rule 5 says. Its
-     counters are its own;
+   - every model block in it is `uncertain` for `settle` after the loop's
+     doubt, in place of its own in rule 6, and otherwise as rule 5 says.
+     Its counters are its own;
    - at a tick where the loop is not within `settle` of its doubt, before
      any block gives its outputs, and at a tick before any doubt too, what a
      delay, a window or a low-pass in it took in as `uncertain` at an
@@ -1285,16 +1319,25 @@ through a controller by a setpoint that is `uncertain` on every tick is
 `uncertain` on every tick after the first: what it gives at a tick is its
 state from the tick before.
 
+Two plants in cascade under one controller are two blocks: the first
+takes the controller's output, the second the first's, and the
+controller the second's. Each is stepped exactly on inputs held for the
+period, and the second takes the first's state as it stood at the tick
+and not as it moves through the period. Written as one model they would
+differ by that: by little where the period is short against the time the
+first takes to move, and by more as it is not. Where that matters they
+are one `linear` block.
+
 **Open.**
 
 - **A model that is not linear.** The catalogue has none, and 1.x had
   none. One whose equation is not linear has no exact step, and would
   bring back a rule for how it is stepped and how far that can be
   trusted. Settled by: the first model that needs it.
-- **A loop of two model blocks that is sound.** Two plants with a
-  controller between them, say. Refused now, and could be allowed where
-  the compiler can show the pair stable. Settled by: the first graph that
-  needs one.
+- **Model blocks that take each other's outputs and are sound.**
+  Refused now, and could be allowed where the compiler can show the ring
+  stable. Settled by: the first graph that needs one and cannot be one
+  block.
 - **A model and a controller together.** A loop of one model and a
   formula is a sampled controller, and can be unstable as a real one can.
   That is the graph's behaviour and not a fault of the step, and nothing
@@ -1519,11 +1562,20 @@ to write the stricter thing.
   not.** `a or b` with `a` true and `good` is `good` whatever `b` is, and
   `when(ok, x, 20)` is a `good` 20: the problem is not in what the formula
   used, and a graph that has to see it reads `all_good`.
-- **A gap makes only a model with `settle`, and an estimator on the
-  gap's own tick, `uncertain`.** Every other
+- **A total past `max_missed` is still a number.** It is `uncertain`,
+  and a reader that takes an `uncertain` value goes on using it. A graph
+  that has to stop there tests `missed` and `gaps`.
+- **Model blocks on one loop are checked for one mistake.** A pair that
+  take each other's outputs through a delay, or through a rate limit that
+  never limits or a deadband of no width, is as far apart as a pair
+  through formulas, can be as unstable, and is accepted. So is any loop of a model and a controller
+  (section 7.8, Open).
+- **A gap makes only a model with `settle`, an estimator on the gap's
+  own tick, and a total it takes past `max_missed`, `uncertain`.** Every
+  other
   block does what the ticks nobody saw would have done to it. A window
-  short of samples and a delay with nothing to give are `not_ready`, a
-  total past `max_missed` is `bad`, and the rest are `good` on the far
+  short of samples and a delay with nothing to give are `not_ready`, and
+  the rest are `good` on the far
   side. A hysteresis, a latch, a total within `max_missed` and a model
   with no `settle` are `good` across an hour's stall; `doubtful`, `missed`
   and `gaps` say an hour and one gap.
@@ -1788,7 +1840,7 @@ to write the stricter thing.
 | `since_true` | The clock is not set, with either `on_bad`. `doubtful` goes up by `n` | The input was last true longer ago than `time` (rule 7.6.2), and its counts start again at the gap's tick |
 | `latch` | Unchanged. `doubtful` goes up by `n` if it is not set | Unchanged |
 | `pid` | The integral is unchanged and the derivative starts again (rule 7.7.7). Where `n` is not zero it waits to track (rule 7.7.14). `doubtful` goes up by `n` | The integral is unchanged, the derivative starts again, and it waits to track |
-| `integrate` | The total is unchanged. `missed` and `elapsed` go up by `n` | The total is unchanged. With `max_missed` given it is `bad` until a reset: what it missed is more than that |
+| `integrate` | The total is unchanged. `missed` and `elapsed` go up by `n` | The total is unchanged. With `max_missed` given it is `uncertain` until a reset: what it missed is more than that |
 | Model block | For each of those ticks, in order, it steps on the last usable value of every input while each is within `ride_through` (rule 7.8.4), and takes no step from the first tick where one is not. `doubtful` goes up by `n`. The tick before the one that runs is a doubt (rule 7.8.6), its loop's if it is on one: with `settle` it is `uncertain` from the tick that runs | The same doubt. It takes no step, and does not ride through (rule 7.8.4) |
 | `estimator` | It predicts `n` times more on the model inputs it last had (rule 7.9.9) | Each state's variance grows by its `p0` |
 
