@@ -766,7 +766,8 @@ its doubt with it.
    usable sample the slope is `bad`, and so it is where every sample it
    would be of has one time: a sample seen again at a later tick is the
    same point again, counted once for each tick it stands at, and not a
-   point at a second time. A window whose slope is read is longer than
+   point at a second time. That is judged on the times, and not on a
+   sum of squares that rounding may leave a little over nothing. A window whose slope is read is longer than
    the time between samples, and a slope of a value written only when
    it changes wants a fallback. Where the slope is of the `good`
    samples and they have one time, it is `bad`, whatever an `uncertain`

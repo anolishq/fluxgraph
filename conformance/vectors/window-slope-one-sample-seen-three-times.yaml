@@ -1,0 +1,15 @@
+# 7.3.6: a sample seen again at a later tick is the same point again, and
+# where every sample the slope would be of has one time the slope is bad:
+# by their times, and not by a sum of squares that rounding leaves a
+# little over nothing. The sample is taken at 0.7 s and seen at ticks 1, 2
+# and 3; tick 0 held none.
+rules: [7.3.6]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 4s, min_good: 0.5}, out: {mean: mean, slope: slope}}
+calls:
+  - {now: 0, mean: not_ready, slope: not_ready}
+  - {now: 1, x: {v: 5, at: 0.7}, mean: not_ready, slope: not_ready}
+  - {now: 2, mean: 5, slope: bad}
+  - {now: 3, mean: 5, slope: bad}
