@@ -10,8 +10,9 @@ ASSUMPTIONS-amendment-4.md, for Amendment 5 (the estimator) in
 ASSUMPTIONS-amendment-5.md, and for Amendment 6 (the whole text, read cold)
 in ASSUMPTIONS-amendment-6.md, and for Amendment 7 (a rate limit and a PID)
 in ASSUMPTIONS-amendment-7.md, for Amendment 8 in
-ASSUMPTIONS-amendment-8.md, and for Amendment 9 (commands, and where the
-actuator is) in ASSUMPTIONS-amendment-9.md.
+ASSUMPTIONS-amendment-8.md, for Amendment 9 (commands, and where the
+actuator is) in ASSUMPTIONS-amendment-9.md, and for Amendment 10 (a
+derivative and a slope between samples) in ASSUMPTIONS-amendment-10.md.
 
 Every time is a whole number of nanoseconds, held as an int (rule 6.2).
 """
@@ -804,7 +805,8 @@ class Window(Block):
 
     def reset(self):
         # buf: the last (up to n) ticks, oldest first. An entry is
-        # (True, value, state) for a sample, (False, None, state) for none.
+        # (True, value, state, sample time or None) for a sample,
+        # (False, None, state) for none.
         self.s = {"buf": [], "last": None}
 
     def gap(self, g, n):
@@ -820,6 +822,8 @@ class Window(Block):
             # it cannot tell a sample from before the rebase from the same
             # one written again after it: it keeps none (rule 8.5)
             self.s["buf"] = []
+        # the samples it holds are from then on at their ticks' times
+        self.s["buf"] = [(e[0], e[1], e[2], None) if e[0] else e for e in self.s["buf"]]
 
     def output(self, k, t, ins):
         s = self.s
@@ -827,22 +831,30 @@ class Window(Block):
         if not usable(x[0]):
             entry = (False, None, x[0])
         elif not self.only_new:
-            entry = (True, x[1], x[0])
+            entry = (True, x[1], x[0], x[2])
         elif x[2] is not None and (s["last"] is None or x[2] > s["last"]):
-            entry = (True, x[1], x[0])
+            entry = (True, x[1], x[0], x[2])
             s["last"] = x[2]
         else:
             entry = (False, None, NR)
         if self.loop is not None and not self.loop.within(k):
             # the loop has settled: a sample taken in as uncertain at an
             # earlier tick is held as a good one from then on (rule 7.8.8)
-            s["buf"] = [(e[0], e[1], GOOD) if e[0] and e[2] == UNC else e for e in s["buf"]]
+            s["buf"] = [(e[0], e[1], GOOD, e[3]) if e[0] and e[2] == UNC else e for e in s["buf"]]
         buf = s["buf"]
         buf.append(entry)
         if len(buf) > self.n:
             buf.pop(0)
         offset = self.n - len(buf)  # ticks of the window from before the start
-        samples = [(offset + i, e[1], e[2]) for i, e in enumerate(buf) if e[0]]
+        # a sample: (its time in nanoseconds, value, state). Its time is
+        # its sample time, or its tick's where it carries none or a rebase
+        # has forgotten it; a tick's time is whole periods before this one
+        newest = len(buf) - 1
+        samples = [
+            (e[3] if e[3] is not None else t - (newest - i) * self.ctx.period_ns, e[1], e[2])
+            for i, e in enumerate(buf)
+            if e[0]
+        ]
         usable_samples = samples
         cnt = len(samples)
         res = {"count": out(GOOD, float(cnt))}
@@ -888,10 +900,13 @@ class Window(Block):
             for v in vals:
                 total += v
             mean = total / cnt
-        if cnt < 2:
+        if cnt < 2 or all(sm[0] == samples[0][0] for sm in samples):
+            # one sample, or every sample at one time: the same point seen
+            # again, and not a second one (rule 7.3.6)
             res["slope"] = out(BAD)
         else:
-            times = [sm[0] * self.ctx.period for sm in samples]
+            # in seconds from the time of the earliest tick's sample
+            times = [(sm[0] - samples[0][0]) / 1e9 for sm in samples]
             tm = 0.0
             for tt in times:
                 tm += tt
@@ -1418,7 +1433,7 @@ class Pid(Block):
             filt = s_length(self, self.st, "filter")
             if not filt > 0:
                 raise self.err("setting 'filter' must be more than zero")
-            self.a = math.exp(-self.ctx.period / filt)
+            self.filter = filt
         elif "filter" in self.st:
             raise self.err("setting 'filter' is refused without a 'kd' that is not zero")
         self.lo = s_num(self, self.st, "min", None)
@@ -1450,9 +1465,12 @@ class Pid(Block):
         s = self.s
         s["gaps"] += 1
         s["gap_at"] = g
+        # after a gap of either kind nothing is remembered of the
+        # measurement, a rebase that passed over no tick among them (rule
+        # 7.7.7)
+        s["prev"] = None
         if n == 0:
-            return  # none passed over: nothing but one to gaps (rule 8.6)
-        s["prev"] = None  # the derivative starts again (rule 7.7.7)
+            return
         s["waiting"] = True
         if n is not None:
             s["run"] += n
@@ -1502,13 +1520,20 @@ class Pid(Block):
         # the derivative, of the measurement, through its filter
         derivative = 0.0
         if self.kd != 0:
+            # between samples (rule 7.7.7): the measurement's time is its
+            # sample time, or the tick's where it carries none
+            at = me[2] if me[2] is not None else t
             if s["prev"] is None:
-                s["f"] = 0.0  # there is no tick before
-            else:
-                slope = (me[1] - s["prev"]) / period
-                s["f"] = self.a * s["f"] + (1 - self.a) * slope
+                s["f"] = 0.0  # none remembered
+                s["prev"] = (me[1], at)
+            elif at > s["prev"][1]:
+                dt = (at - s["prev"][1]) / 1e9
+                slope = (me[1] - s["prev"][0]) / dt
+                a = math.exp(-dt / self.filter)
+                s["f"] = a * s["f"] + (1 - a) * slope
+                s["prev"] = (me[1], at)
+            # otherwise the sample stands still: nothing is taken, f stands
             derivative = -self.kd * s["f"]
-        s["prev"] = me[1]
         # the integral: an addition that would put the output before
         # limiting past a limit is cut short (rule 7.7.6)
         # the sum is worked in one order (rule 7.7.5): kp.error and the

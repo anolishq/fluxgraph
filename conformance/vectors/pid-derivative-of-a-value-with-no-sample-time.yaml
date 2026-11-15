@@ -1,0 +1,14 @@
+# 7.7.7: a measurement that carries no sample time has its tick's. A
+# fallback's value carries none: at tick 1 the 5 it gives is 5 above the
+# 0 of tick 0, a second after it, and at tick 2 it is a new measurement
+# again, a second later and no higher, and the derivative fades.
+rules: [7.7.7, 7.10, 3.7]
+period: 1s
+inputs: {sp: {max_age: none}, x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x"}, fallback: {y: 5}}
+  - {id: c, type: pid, in: {setpoint: sp, measurement: f.y}, settings: {kp: 0, kd: 2, filter: 1s}, out: {y: y}}
+calls:
+  - {sp: 0, x: 0, y: 0}
+  - {x: bad, y: {u: -6.321205588285577}}
+  - {y: {u: -2.3254415793482965}}

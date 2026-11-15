@@ -1,0 +1,13 @@
+# 7.3.6, Appendix A: a slope needs two samples at two times. One sample
+# seen at every tick of the window is one point, and the slope is bad
+# while the mean is good.
+rules: [7.3.6, A.window]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 3s, min_good: 0.3}, out: {slope: slope, mean: mean}}
+calls:
+  - {x: 5, slope: bad, mean: 5}
+  - {slope: bad, mean: 5}
+  - {slope: bad, mean: 5}
+  - {x: 7, slope: 0.6666666666666666, mean: 5.666666666666667}
