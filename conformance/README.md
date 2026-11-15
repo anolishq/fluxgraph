@@ -21,9 +21,9 @@ the text says, not what it should say.
 | `contract.py` | Tries every short sequence of writes, calls, rebases, resets, saves and restores against what sections 6, 7.2 and 8 promise a host. |
 
 ```bash
-python3 conformance/run.py                 # 473 vectors: ALL AGREE
-python3 conformance/run.py --second        # 473 vectors: ALL AGREE
-python3 conformance/mutate.py              # 711 breakages: 711 noticed; every vector failed by one
+python3 conformance/run.py                 # 478 vectors: ALL AGREE
+python3 conformance/run.py --second        # 478 vectors: ALL AGREE
+python3 conformance/mutate.py              # 715 breakages: 715 noticed; every vector failed by one
 python3 conformance/compare.py             # 2516993 comparisons, 0 differences
 python3 conformance/steps.py               # 750 checks: ALL HOLD; the worst error of the step is 1.81e-13
 python3 conformance/steps.py --second      # 750 checks: ALL HOLD; the worst error of the step is 7.75e-13
@@ -644,7 +644,7 @@ way, and each is a vector now:
   wherever the actuator was. `rate-limit-track` and `pid-track` start
   from a readback.
 
-The 47 new vectors were worked by hand before the reference was run on
+The first 47 new vectors were worked by hand before the reference was run on
 them. Two were wrong as first written, and the reference right: a sum in
 the fourth place of a loop's value, and a latch's state on a `bad` set.
 
@@ -664,6 +664,12 @@ three rules, each with a vector:
 - **A reset at a catch-up tick was undone by `track`** at the last tick
   of the same call. A reset ends the waiting.
   `pid-track-reset-at-a-catch-up-tick`.
+
+Building it in C++ from the text and breaking that 62 ways showed four
+thin places, and five vectors are new for them: a rate limit behind a
+formula that gives the command, a catch-up tick ending a run of unusable
+ticks, the state of `limited` at a catch-up tick, and a derivative's
+filter running at one.
 
 `compare.py` has three graphs more, with commands: a PID through a
 formula and a rate limit with a `track` each, a cascade on a loop with a
@@ -696,7 +702,7 @@ against it as they do against the readings:
 cmake -S . -B build/v2 -G Ninja -DFLUXGRAPH_BUILD_V2=ON -DFLUXGRAPH_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
 cmake --build build/v2 --target fluxgraph_v2_driver
 export FLUXGRAPH_V2_DRIVER=$PWD/build/v2/tools/fluxgraph_v2_driver/fluxgraph_v2_driver
-python3 conformance/run.py --cpp        # 473 vectors: 473 agree, 0 skipped (block types not built)
+python3 conformance/run.py --cpp        # 478 vectors: 478 agree, 0 skipped (block types not built)
 python3 conformance/compare.py --cpp    # 250 graphs run, 0 skipped; 2516993 comparisons, 0 differences
 python3 conformance/contract.py --cpp   # 748648 sequences: ALL HOLD
 python3 conformance/cpp/edges.py        # 72514 checks: ALL HOLD
