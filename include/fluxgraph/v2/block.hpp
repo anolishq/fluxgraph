@@ -107,6 +107,7 @@ struct Gap {
 struct LoopRole {
     enum class Kind {
         other,      ///< It follows its own rules, and is not held against the loop's `settle`.
+        formula,    ///< The same, and model blocks joined through it alone are joined as if directly.
         remembers,  ///< A delay, a window or a low-pass: `ticks` of memory, held against the loop's `settle`.
         model,      ///< A model block: `ticks` is its `settle`, and `settle_written` whether the graph wrote it.
         estimator,  ///< It hosts a model but is not a model block.

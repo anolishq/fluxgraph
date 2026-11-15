@@ -8,8 +8,8 @@ sight of `reference.py`, `formula.py` or `second/impl.py`. It has `formula`,
 and 8. A second slice, written the same way from the text as amended
 eight times, adds eight block types, a third the models and the loop
 rule, a fourth the estimator, a fifth the ninth amendment's commands, and
-a sixth the tenth's derivative and slope between samples; each has a
-section of its own.
+a sixth the tenth's derivative and slope between samples, and a seventh
+the eleventh's smaller faults; each has a section of its own.
 
 This lists each place where the text left a choice or could be read two
 ways, with the reading taken. A choice the second reading already
@@ -524,6 +524,40 @@ differed before it agreed as first written, and so did `compare.py`.
     more `good` samples the slope is of those, and `bad` where they have
     one time, as the rule says. Where it is of the usable samples and
     they have one time it is `bad` too.
+
+## The seventh slice: a reason, a total past `max_missed`, and model blocks on one loop
+
+The eleventh amendment (rules 3.8, 7.7.2 and 7.8.8) was written from its
+text. The eight vectors that differed before it agreed as first written,
+and so did `compare.py`.
+
+94. **Rule 3.8, the room for a reason.** A `Value` has a `reason`, a
+    16-bit whole number, which is 0 wherever the core makes a value. It
+    lies where the padding was, so a value is 24 bytes as before. It is
+    not saved and not handed to a host, as the rule allows, and a write
+    cannot carry one: no saved layout and no line of the driver changed.
+95. **Rule 7.7.2, a total past `max_missed`.** One state, `uncertain`,
+    with the value, whatever the input is at the tick: a tick with an
+    unusable input past `max_missed` is `uncertain` and not `good`.
+96. **Rule 7.8.8, "joined in a ring directly or through formulas
+    alone".** Worked among the model blocks of one loop. One takes
+    another's output where a way leads from one of its inputs, direct or
+    deferred, back to an output of the other through blocks of type
+    `formula` and no other: an `all_good` on the way is another block. A
+    ring is two or more that each come to the other by such takings, in
+    one step or several. One that comes back to itself, straight or
+    through formulas, and to no other, is no ring. **(guess)** for
+    "through formulas": the rule says of one that takes its own output
+    only that it is no ring, and I take a plant with a formula for its
+    controller as that.
+97. **Rule 7.8.8, "the same `settle`".** Compared as whole ticks. The
+    refusal for a `settle` not written names the first model block
+    without one; the refusal for two that differ names the first model
+    block of the loop and the first that differs from it.
+98. **Rule 7.8.8, what else is as it was.** The memory of the loop's
+    delays, windows and low-passes is held against the one `settle`; a
+    loop that holds a model block and an estimator is refused; the
+    loop's doubt is one, and every model block on it is told of it.
 
 ## Recorded already, and read the same way
 

@@ -428,27 +428,76 @@ Status find_loops(const std::vector<Draft> &drafts, const std::vector<std::vecto
         if (models.empty()) {
             continue;  // rule 5.6: a loop that holds no model has no memory that fades, and no rule for it
         }
-        if (models.size() > 1) {
-            std::string names;
-            for (std::size_t model : models) {
-                names += std::format("{}'{}'", names.empty() ? "" : ", ", drafts[model].id);
+        // No model blocks in it are joined in a ring directly or through formulas alone. `takes[a][b]`: model
+        // block a reads an output of model block b, or of a formula that reads b's, and so on, on any input.
+        std::vector<std::vector<bool>> takes(models.size(), std::vector<bool>(models.size(), false));
+        for (std::size_t a = 0; a < models.size(); ++a) {
+            std::vector<bool> through(drafts.size(), false);
+            std::vector<std::size_t> stack = {models[a]};
+            while (!stack.empty()) {
+                const std::size_t at = stack.back();
+                stack.pop_back();
+                for (int read : drafts[at].readers_of) {
+                    if (read < 0) {
+                        continue;
+                    }
+                    const std::size_t from = static_cast<std::size_t>(read);
+                    const auto model = std::find(models.begin(), models.end(), from);
+                    if (model != models.end()) {
+                        takes[a][static_cast<std::size_t>(model - models.begin())] = true;
+                    } else if (drafts[from].block->loop_role().kind == LoopRole::Kind::formula && !through[from]) {
+                        through[from] = true;
+                        stack.push_back(from);
+                    }
+                }
             }
-            return graph_error(
-                std::format("blocks {} are model blocks on one loop, which puts them a tick apart: "
-                            "write them as one model (a linear takes any number of states)",
-                            names));
+        }
+        // A ring is two or more that each take the next's and the last the first's: two of them that each come
+        // to the other by such takings. One that takes its own output is no ring.
+        std::vector<std::vector<bool>> comes = takes;
+        for (std::size_t k = 0; k < models.size(); ++k) {
+            for (std::size_t a = 0; a < models.size(); ++a) {
+                for (std::size_t b = 0; b < models.size(); ++b) {
+                    comes[a][b] = comes[a][b] || (comes[a][k] && comes[k][b]);
+                }
+            }
+        }
+        for (std::size_t a = 0; a < models.size(); ++a) {
+            std::string names;
+            for (std::size_t b = 0; b < models.size(); ++b) {
+                if (b == a || (comes[a][b] && comes[b][a])) {
+                    names += std::format("{}'{}'", names.empty() ? "" : ", ", drafts[models[b]].id);
+                }
+            }
+            if (names.find(',') != std::string::npos) {
+                return graph_error(
+                    std::format("blocks {} are model blocks that take each other's outputs, directly "
+                                "or through formulas alone, which puts each a tick behind the one it "
+                                "reads: write them as one model (a linear takes any number of states)",
+                                names));
+            }
         }
         const Draft &model = drafts[models[0]];
         if (estimator) {
             return graph_error(
                 std::format("block '{}': a loop that holds a model block and an estimator is refused", model.id));
         }
+        // Every model block in it has `settle` written in the graph, and the same: a loop has one.
         const LoopRole role = model.block->loop_role();
-        if (!role.settle_written) {
-            return graph_error(
-                std::format("block '{}': a model block on a loop has to have its settle written in the "
-                            "graph: a model's own time constant is not the loop's",
-                            model.id));
+        for (std::size_t other : models) {
+            const LoopRole its = drafts[other].block->loop_role();
+            if (!its.settle_written) {
+                return graph_error(
+                    std::format("block '{}': a model block on a loop has to have its settle written in the "
+                                "graph: a model's own time constant is not the loop's",
+                                drafts[other].id));
+            }
+            if (its.ticks != role.ticks) {
+                return graph_error(
+                    std::format("blocks '{}' and '{}' are model blocks on one loop and state a settle "
+                                "of {} ticks and of {}: a loop has one settle",
+                                model.id, drafts[other].id, role.ticks, its.ticks));
+            }
         }
         if (remembered > role.ticks) {
             return graph_error(

@@ -28,6 +28,10 @@ struct Value {
     Type type = Type::number;
     bool boolean = false;
     bool timed = false;
+    /// Room for a reason beside a state that is not `good` (rule 3.8): 0 is no reason, and in this revision
+    /// every block gives 0 and none reads it. It is not handed to a host and not saved. It takes the place of
+    /// padding: a Value is no larger for it.
+    std::uint16_t reason = 0;
     double number = 0.0;
     Time time = 0;
 
@@ -54,5 +58,7 @@ struct Value {
 
     bool is_usable() const { return usable(state); }
 };
+
+static_assert(sizeof(Value) == 24, "the reason of rule 3.8 is to cost a value nothing");
 
 }  // namespace fluxgraph::v2

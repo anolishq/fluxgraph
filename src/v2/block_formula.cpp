@@ -114,6 +114,7 @@ public:
     }
 
     bool used(std::size_t input) const override { return formula_.used(input); }
+    LoopRole loop_role() const override { return LoopRole{LoopRole::Kind::formula, 0, false}; }
 
     void give(const Tick &tick, std::span<const Value> in, std::span<Value> out) override {
         Value y = formula_.evaluate(in);

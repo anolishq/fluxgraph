@@ -21,7 +21,7 @@ struct Memory {
     std::uint64_t doubtful = 0;
     std::uint64_t elapsed = 0;
     std::uint64_t gaps = 0;
-    bool lost = false;      // a gap of no known length, with max_missed given: bad until a reset (rule 7.7.2)
+    bool lost = false;      // a gap of no known length, with max_missed given: uncertain until a reset
     bool gap_here = false;  // a gap whose tick is the next to run: a reset at that tick still counts it
 };
 
@@ -65,13 +65,11 @@ public:
             next_.missed += 1;
         }
 
-        State state = State::good;  // rule 7.7.2, the first that applies
-        if (next_.lost || (has_max_missed_ && next_.missed > max_missed_)) {
-            state = State::bad;
-        } else if (x.state == State::uncertain || (resets && reset.state == State::uncertain)) {
-            state = State::uncertain;
-        }
-        out[kTotal] = usable(state) ? Value::of(next_.total, state) : Value::none(state);
+        // Rule 7.7.2: the total always has a value. It is uncertain past `max_missed` and after a gap of no known
+        // length, until a reset, and on a tick where its input is uncertain or an uncertain reset cleared it.
+        const bool past = next_.lost || (has_max_missed_ && next_.missed > max_missed_);
+        const bool in_doubt = x.state == State::uncertain || (resets && reset.state == State::uncertain);
+        out[kTotal] = Value::of(next_.total, past || in_doubt ? State::uncertain : State::good);
         out[kMissed] = Value::of(static_cast<double>(next_.missed) * period_seconds_);
         out[kDoubtful] = Value::of(static_cast<double>(next_.doubtful) * period_seconds_);
         out[kElapsed] = Value::of(static_cast<double>(next_.elapsed) * period_seconds_);
