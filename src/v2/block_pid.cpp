@@ -7,6 +7,7 @@
 #include <optional>
 
 #include "blocks.hpp"
+#include "exact.hpp"
 
 namespace fluxgraph::v2::detail {
 
@@ -24,8 +25,7 @@ public:
         }
         settings.number("ki", ki_);
         settings.number("kd", kd_);
-        double ratio = 0.0;
-        const bool filtered = settings.period_over("filter", ratio);
+        const bool filtered = settings.seconds("filter", filter_);
         if (!settings.failed() && filtered != (kd_ != 0.0)) {
             // `filter` is given when `kd` is not zero and only then.
             settings.fail(filtered ? "'filter' is given, and is only for a 'kd' that is not zero"
@@ -37,7 +37,6 @@ public:
             settings.fail(std::format("'min' is {} and 'max' is {}: 'min' has to be less than 'max'", min_, max_));
         }
         settings.not_negative("applied_within", applied_within_);
-        keep_ = std::exp(-ratio);  // a = exp(-period / filter)
         period_seconds_ = static_cast<double>(setup.period) / 1e9;
         return settings.finish();
     }
@@ -86,15 +85,23 @@ public:
         }
 
         const double error = setpoint.number - measurement.number;
-        // Rule 7: of the measurement, through a filter; with no tick before, zero.
-        if (kd_ != 0.0 && next_.has_last) {
-            const double moved = (measurement.number - next_.last) / period_seconds_;
-            next_.slope = keep_ * next_.slope + (1.0 - keep_) * moved;
-        } else {
-            next_.slope = 0.0;
-        }
-        next_.has_last = true;
-        next_.last = measurement.number;
+        // Rule 7: of the measurement, between samples. A measurement's time is its sample time, or the tick's
+        // where it carries none.
+        const Time taken_at = measurement.timed ? measurement.time : tick.time;
+        if (kd_ == 0.0 || !next_.has_last) {
+            next_.slope = 0.0;  // none remembered: f is zero, and the measurement is taken
+            next_.has_last = true;
+            next_.last = measurement.number;
+            next_.last_time = taken_at;
+        } else if (taken_at > next_.last_time) {
+            // The time between the two, in seconds: the difference in nanoseconds, divided by 10^9.
+            const double dt = static_cast<double>(span_between(next_.last_time, taken_at)) / 1e9;
+            const double moved = (measurement.number - next_.last) / dt;
+            const double keep = std::exp(-dt / filter_);  // a, with the filter over the time between them
+            next_.slope = keep * next_.slope + (1.0 - keep) * moved;
+            next_.last = measurement.number;
+            next_.last_time = taken_at;
+        }  // otherwise the sample last taken stands still, or this one is no later: nothing is taken, f stands
         const double derivative = kd_ != 0.0 ? -kd_ * next_.slope : 0.0;
         const double proportional = kp_ * error;
 
@@ -156,9 +163,11 @@ public:
     void gap(const Gap &gap) override {
         now_.counters.gaps += 1;
         now_.gap_here = true;
+        // The derivative starts again at a gap of either kind, one that passed over no tick among them: a rebase
+        // forgets every sample time (rules 7.7.7 and 8.5). The integral is unchanged.
+        now_.has_last = false;
+        now_.slope = 0.0;
         if (!gap.known || gap.ticks > 0) {
-            now_.has_last = false;  // the derivative starts again; the integral is unchanged
-            now_.slope = 0.0;
             now_.waiting = true;  // and it waits to track (rule 7.7.14)
         }
         if (gap.known) {
@@ -190,6 +199,7 @@ private:
         double integral = 0.0;
         bool has_last = false;  // there is a tick before, with both inputs usable, for the derivative
         double last = 0.0;      // its measurement
+        Time last_time = 0;     // and its time; not saved, since a restore is a rebase, which forgets it
         double slope = 0.0;     // the filtered rate of the measurement, `f`
         Counters counters;
         bool gap_here = false;
@@ -214,7 +224,7 @@ private:
     double kp_ = 0.0;
     double ki_ = 0.0;
     double kd_ = 0.0;
-    double keep_ = 0.0;
+    double filter_ = 1.0;  // in seconds
     bool has_min_ = false;
     bool has_max_ = false;
     double min_ = 0.0;

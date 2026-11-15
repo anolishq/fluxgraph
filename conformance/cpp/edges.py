@@ -19,6 +19,7 @@ What is checked:
 2. The number of samples a window needs (rules 6.3 and 7.3.2), against exact fractions.
 3. Lengths of time (rule 9.3) that are, and are just not, whole nanoseconds that fit, in every unit.
 4. What the driver refuses because it cannot be handed to the core: a time that is not whole or does not fit.
+7. A window's slope and a PID's derivative between samples further apart than a signed 64-bit difference holds.
 6. An estimator's `since_<port>`, further off than a signed 64-bit difference holds, and never below zero.
 5. Lengths that only scale a value (`per`, `tau`): the ratio and the rounding up are exact, at any period.
 
@@ -517,10 +518,42 @@ def since():
     return 3
 
 
+def between_samples():
+    """7: a window's slope and a PID's derivative are over the times samples carry (rules 7.3.6 and 7.7.7), and
+    the time between two samples is their true difference: here 2^64 - 1 ns and 2^63 ns, which a signed
+    difference cannot hold."""
+    period = 2**61
+    x = {"max_age": "none"}
+    window = {"id": "w", "type": "window", "in": {"x": "x"}, "settings": {"window": f"{2 * period}ns"}}
+    window["out"] = {"slope": "slope"}
+    engine = adapter.Engine({"period": f"{period}ns", "inputs": {"x": x}, "blocks": [window]})
+    engine.write("x", GOOD, 0.0, LOW)  # sampled at the earliest time there is, and read at tick 0
+    engine.tick(HIGH - period)
+    engine.write("x", GOOD, 1.0, HIGH)
+    ran, out = engine.tick(HIGH)
+    want = 1.0 / (float(HIGH - LOW) / 1e9)
+    if ran != 1 or out["slope"].v is None or not close(out["slope"].v / want, 1.0):
+        fail("a slope between samples 2^64 - 1 ns apart", ("gave", (ran, out)), ("the text", want))
+
+    period = 2**62
+    settings = {"kp": 0, "kd": 1, "filter": "1s"}
+    pid = {"id": "c", "type": "pid", "in": {"setpoint": 0.0, "measurement": "x"}, "settings": settings}
+    pid["out"] = {"y": "y"}
+    engine = adapter.Engine({"period": f"{period}ns", "inputs": {"x": x}, "blocks": [pid]})
+    engine.write("x", GOOD, 0.0, LOW)
+    engine.tick(LOW)
+    engine.write("x", GOOD, 1.0, LOW + 2 * period)
+    ran, out = engine.tick(LOW + 2 * period)  # the filter of 1 s has long run out: f is the rise over the time
+    want = -1.0 / (float(2 * period) / 1e9)
+    if ran != 2 or out["y"].v is None or not close(out["y"].v / want, 1.0):
+        fail("a derivative between samples 2^63 ns apart", ("gave", (ran, out)), ("the text", want))
+    return 2
+
+
 def main():
     adapter.start()
     rng = random.Random(20261113)
-    total = last_number() + needed(rng) + lengths() + limits() + ratios() + since()
+    total = last_number() + needed(rng) + lengths() + limits() + ratios() + since() + between_samples()
     for period in (1, 2, 3, 7, 10**9, 2**61, 2**62, 2**62 + 1, 2**63 - 2, 2**63 - 1):
         tried = sequences(rng, period, runs=60, steps=120)
         total += tried

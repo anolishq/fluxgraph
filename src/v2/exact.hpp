@@ -39,6 +39,12 @@ constexpr bool add_span(Time base, std::uint64_t offset, Time &sum) {
     return true;
 }
 
+/// How far the time `to - to_back * period` is after the time `from - from_back * period`, in nanoseconds: below
+/// zero where it is before. Each is a time some whole periods before another, so that neither has to fit in 64
+/// bits itself. The difference is worked exactly, in 128 bits by hand, and is the nearest double to it where it
+/// is under 2^64 in size; past that it is within a part in 10^16 of it. `period` is more than zero.
+double nanoseconds_between(Time from, std::uint64_t from_back, Time to, std::uint64_t to_back, Time period);
+
 /// A whole number of any size, not negative.
 class BigUint {
 public:

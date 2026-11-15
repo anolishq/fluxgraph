@@ -8,6 +8,37 @@
 
 namespace fluxgraph::v2::detail {
 
+double nanoseconds_between(Time from, std::uint64_t from_back, Time to, std::uint64_t to_back, Time period) {
+    // (to - from) + (from_back - to_back) * period, each term as a sign and a size.
+    const bool first_negative = to < from;
+    const std::uint64_t first = first_negative ? span_between(to, from) : span_between(from, to);
+    const bool second_negative = from_back < to_back;
+    const std::uint64_t ticks = second_negative ? to_back - from_back : from_back - to_back;
+    // ticks * period in 128 bits, from the four products of their halves: none of these sums can wrap.
+    const std::uint64_t p = static_cast<std::uint64_t>(period);
+    const std::uint64_t low_low = (ticks & 0xFFFFFFFFu) * (p & 0xFFFFFFFFu);
+    const std::uint64_t low_high = (ticks & 0xFFFFFFFFu) * (p >> 32);
+    const std::uint64_t high_low = (ticks >> 32) * (p & 0xFFFFFFFFu);
+    const std::uint64_t high_high = (ticks >> 32) * (p >> 32);
+    const std::uint64_t middle = (low_low >> 32) + (low_high & 0xFFFFFFFFu) + (high_low & 0xFFFFFFFFu);
+    std::uint64_t low = (low_low & 0xFFFFFFFFu) | (middle << 32);
+    std::uint64_t high = high_high + (low_high >> 32) + (high_low >> 32) + (middle >> 32);
+    bool negative = second_negative;
+    if (first_negative == second_negative) {
+        low += first;  // the same way: the sizes add
+        high += low < first ? 1 : 0;
+    } else if (high != 0 || low >= first) {
+        high -= low < first ? 1 : 0;  // the second is the larger: its sign, and the difference of the sizes
+        low -= first;
+    } else {
+        low = first - low;
+        negative = first_negative;
+    }
+    const double size =
+        high == 0 ? static_cast<double>(low) : std::ldexp(static_cast<double>(high), 64) + static_cast<double>(low);
+    return negative ? -size : size;
+}
+
 BigUint::BigUint(std::uint64_t value) {
     while (value != 0) {
         limbs_.push_back(static_cast<std::uint32_t>(value & 0xFFFFFFFFu));

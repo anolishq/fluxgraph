@@ -7,8 +7,9 @@ sight of `reference.py`, `formula.py` or `second/impl.py`. It has `formula`,
 `all_good`, `delay`, `window` and `integrate`, and the whole of sections 6
 and 8. A second slice, written the same way from the text as amended
 eight times, adds eight block types, a third the models and the loop
-rule, a fourth the estimator, and a fifth the ninth amendment's commands;
-each has a section of its own.
+rule, a fourth the estimator, a fifth the ninth amendment's commands, and
+a sixth the tenth's derivative and slope between samples; each has a
+section of its own.
 
 This lists each place where the text left a choice or could be read two
 ways, with the reading taken. A choice the second reading already
@@ -472,6 +473,57 @@ text did not say.
 85. **Rule 8.2, what is held.** Not saved. After a reset or a restore the
     first tick is the last of its call, so nothing held is read before it
     is given again.
+
+## The sixth slice: a derivative and a slope between samples
+
+The tenth amendment (rules 7.7.7 and 7.3.6, sections 8.5 and 8.6, and
+Appendix A's `window`) was written from its text. The six vectors that
+differed before it agreed as first written, and so did `compare.py`.
+
+86. **Rule 8.2, what is saved.** Neither saved layout changed. A PID now
+    remembers the time of the measurement it last took, and a window a
+    time for each sample, and neither is saved: a state is restored into
+    a rebase, which forgets every sample time (rule 8.5), so the PID has
+    nothing remembered and every sample of the window is at its tick's
+    time before either is next read. A PID's saved "there is a
+    measurement remembered", its value and `f` are for the same reason
+    never read back to any effect; they stay in the layout.
+87. **Rule 7.7.7, the arithmetic.** `dt` is the difference of the two
+    times as a whole number of nanoseconds, made a double once and
+    divided by 10⁹. `s` is the rise over `dt`. `a` is `exp(-dt / filter)`
+    with `filter` the nearest double, in seconds, to the length the graph
+    writes. `f` is `a·f + (1 - a)·s` with `1 - a` worked from `a`.
+    `exp(-dt · (1 / filter))`, `f + (1 - a)·(s - f)`, or `-expm1` for
+    `1 - a` are the same to within rounding and would pass every vector.
+88. **Rule 7.7.7, a tick with an input not usable.** Nothing is
+    remembered after it, and `f` is put to zero there. The text puts `f`
+    to zero at the next tick with both usable; nothing can show the
+    difference.
+89. **Rules 7.7.7 and 8.6, a stall.** The derivative starts again at a
+    stall as at a rebase: the table's row and the paragraph after it say
+    so, though a stall is on one clock and forgets no other sample time.
+90. **Appendix A, a window's times.** A sample keeps its sample time
+    where it carried one when it was taken. One that carried none, and
+    every sample after a rebase, is at its tick's time: the time of the
+    tick that runs, less a period for each tick it is back from it,
+    worked at every tick. A time is never kept as one number where it is
+    a tick's: the tick's time less so many periods need not fit in 64
+    bits, and only differences of times are ever taken, in 128 bits by
+    hand.
+91. **Rule 7.3.6, "has one time".** Judged on the times themselves: every
+    sample the slope would be of is no time at all from the first. Not
+    on the sum of squares coming out at nothing, which rounding can
+    leave a little over.
+92. **Appendix A, the least-squares sums.** As written: times from the
+    earliest tick's sample among those the slope is of; the two means as
+    sums in tick order over their number; then the two sums in tick
+    order, and one over the other. Taking times from any other origin is
+    the same slope to within rounding and would pass every vector, and so
+    would the sums in another order.
+93. **Rule 7.3.6, which samples.** Where the window is `good` on two or
+    more `good` samples the slope is of those, and `bad` where they have
+    one time, as the rule says. Where it is of the usable samples and
+    they have one time it is `bad` too.
 
 ## Recorded already, and read the same way
 

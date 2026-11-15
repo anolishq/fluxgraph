@@ -17,6 +17,10 @@ namespace {
 struct Slot {
     State state = State::not_ready;
     double value = 0.0;
+    // The sample's time (rule 3.7), where it carries one and no rebase has forgotten it. Where not, its time is
+    // its tick's, which is worked at each tick as whole periods before that tick's (Appendix A).
+    bool timed = false;
+    Time time = 0;
 };
 
 enum Port : std::size_t { kMean, kMedian, kMin, kMax, kSpread, kSlope, kCount, kPorts };
@@ -51,7 +55,7 @@ public:
         }
         // Rule 7.3.2, worked exactly (rule 6.3), and at least 1.
         needed_ = std::max<std::uint64_t>(1, ceil_of_fraction(min_good, ticks));
-        period_seconds_ = static_cast<double>(setup.period) / 1e9;
+        period_ = setup.period;
         slots_.assign(static_cast<std::size_t>(ticks), Slot{});
         sorted_.assign(static_cast<std::size_t>(ticks), 0.0);
         reset();
@@ -72,9 +76,9 @@ public:
         }
     }
 
-    void give(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out) override {
+    void give(const Tick &tick, std::span<const Value> in, std::span<Value> out) override {
         const Value &x = in[0];
-        pending_ = Slot{x.state, x.number};
+        pending_ = Slot{x.state, x.number, x.is_usable() && x.timed, x.time};
         pending_new_ = false;
         if (only_new_ && x.is_usable()) {  // rule 7.3.8
             if (x.timed && (!has_taken_ || x.time > taken_)) {
@@ -84,7 +88,7 @@ public:
                 pending_ = Slot{};  // not another sample: the tick holds none, and counts as not_ready
             }
         }
-        statistics(out);
+        statistics(tick, out);
     }
 
     void update(const Tick & /*tick*/, std::span<const Value> /*in*/) override {
@@ -109,6 +113,9 @@ public:
         }
         if (gap.rebase) {
             has_taken_ = false;  // rule 8.5: every sample time it remembers is forgotten
+            for (Slot &slot : slots_) {
+                slot.timed = false;  // the samples it holds are from then on at their ticks' times
+            }
         }
     }
 
@@ -143,6 +150,9 @@ public:
                 return false;
             }
             slot.state = static_cast<State>(state);
+            // A sample's time is not saved, and need not be: a state is restored into a rebase, which forgets
+            // every sample time (rules 8.2 and 8.5).
+            slot.timed = false;
         }
         return true;
     }
@@ -153,7 +163,7 @@ private:
         return i + 1 == slots_.size() ? pending_ : slots_[(oldest_ + 1 + i) % slots_.size()];
     }
 
-    void statistics(std::span<Value> out) {
+    void statistics(const Tick &tick, std::span<Value> out) {
         const std::size_t n = slots_.size();
         std::uint64_t usable_count = 0;
         std::uint64_t good_count = 0;
@@ -195,43 +205,65 @@ private:
         out[kMin] = Value::of(low, state);
         out[kMax] = Value::of(high, state);
         out[kSpread] = Value::of(high - low, state);
-        // Rule 7.3.6: a slope needs two samples.
+        // Rule 7.3.6: a slope needs two samples, and two times.
+        double rate = 0.0;
         if (enough_good && good_count >= 2) {
-            out[kSlope] = Value::of(slope(false), State::good);
+            out[kSlope] = slope(tick, false, rate) ? Value::of(rate, State::good) : Value::none(State::bad);
         } else if (usable_count >= 2) {
-            out[kSlope] = Value::of(slope(true), State::uncertain);
+            out[kSlope] = slope(tick, true, rate) ? Value::of(rate, State::uncertain) : Value::none(State::bad);
         } else {
             out[kSlope] = Value::none(State::bad);
         }
     }
 
-    // The least-squares slope of value against time, per second, of the good samples, or of the usable ones.
-    double slope(bool of_usable) const {
+    // The least-squares slope of value against time, per second, of the good samples, or of the usable ones
+    // (Appendix A). False where every sample it would be of has one time: there is no slope then.
+    bool slope(const Tick &tick, bool of_usable, double &rate) const {
         const std::size_t n = slots_.size();
+        const auto counts = [of_usable](const Slot &slot) {
+            return slot.state == State::good || (of_usable && slot.state == State::uncertain);
+        };
+        // The time of the window's i-th sample, in seconds from that of its `from`-th: a difference in
+        // nanoseconds, divided by 10^9. A sample with no time of its own has its tick's, which is whole periods
+        // before this tick's.
+        const auto seconds = [&](std::size_t from, std::size_t i) {
+            const Slot &a = at(from);
+            const Slot &b = at(i);
+            return nanoseconds_between(a.timed ? a.time : tick.time, a.timed ? 0 : n - 1 - from,
+                                       b.timed ? b.time : tick.time, b.timed ? 0 : n - 1 - i, period_) /
+                   1e9;
+        };
+        std::size_t first = n;  // the earliest tick's sample among those the slope is of
         double count = 0.0;
         double sum_t = 0.0;
         double sum_v = 0.0;
+        bool two_times = false;
         for (std::size_t i = 0; i < n; ++i) {
-            const Slot &slot = at(i);
-            if (slot.state == State::good || (of_usable && slot.state == State::uncertain)) {
+            if (counts(at(i))) {
+                first = first == n ? i : first;
+                const double t = seconds(first, i);
+                two_times = two_times || t != 0.0;
                 count += 1.0;
-                sum_t += static_cast<double>(i) * period_seconds_;
-                sum_v += slot.value;
+                sum_t += t;
+                sum_v += at(i).value;
             }
+        }
+        if (!two_times) {
+            return false;
         }
         const double mean_t = sum_t / count;
         const double mean_v = sum_v / count;
         double above = 0.0;
         double below = 0.0;
         for (std::size_t i = 0; i < n; ++i) {
-            const Slot &slot = at(i);
-            if (slot.state == State::good || (of_usable && slot.state == State::uncertain)) {
-                const double t = static_cast<double>(i) * period_seconds_ - mean_t;
-                above += t * (slot.value - mean_v);
+            if (counts(at(i))) {
+                const double t = seconds(first, i) - mean_t;
+                above += t * (at(i).value - mean_v);
                 below += t * t;
             }
         }
-        return above / below;
+        rate = above / below;
+        return true;
     }
 
     std::array<InputPort, 1> inputs_ = {{{"x", Type::number, true, false}}};
@@ -246,7 +278,7 @@ private:
     }};
     bool only_new_ = false;
     std::uint64_t needed_ = 1;
-    double period_seconds_ = 1.0;
+    Time period_ = 1;
 
     std::vector<Slot> slots_;  // the last n ticks; the oldest is at oldest_
     std::size_t oldest_ = 0;
