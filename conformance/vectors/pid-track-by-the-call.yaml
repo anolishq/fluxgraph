@@ -1,0 +1,18 @@
+# 7.7.14, 7.7.13: a PID that acts by the call does not stop waiting at a
+# catch-up tick. The measurement is bad at 1 s, 4 at 2 s and 5 at 3 s, and
+# one call runs ticks 1 to 3. Tick 2 starts the derivative again and
+# tracks nothing. At tick 3 the derivative's f is (1 - exp(-1)) of a
+# change of 1; the integral is set to track, 8, less the sum of kp times
+# the error, 5, and the derivative, and three periods' worth, 15, is
+# added. The output is 8 and 15.
+rules: [7.7.14, 7.7.13]
+period: 1s
+commands: [y]
+inputs: {sp: {max_age: none}, pv: {max_age: none}, tr: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, track: tr}, settings: {kp: 1, ki: 1, kd: 1, filter: 1s}, out: {y: y, integral: i}}
+calls:
+  - {now: 0, sp: 10, pv: 4, tr: 20, y: 26, i: 20}
+  - {$write: [pv, bad, null, 1]}
+  - {$write: [pv, good, 4, 2]}
+  - {now: 3, ran: 3, pv: 5, tr: 8, y: 23, i: 18.632120558828557}

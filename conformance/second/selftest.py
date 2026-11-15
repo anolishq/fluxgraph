@@ -5535,6 +5535,358 @@ def test_amendment_nine():
     check("a9 applied at a reset, next", pid_step(e2, 1, r=False)["integral"], ("good", 1.0))
 
 
+def test_commands():
+    """Amendment 9: commands, acting by the call, and `track`."""
+
+    def pid_graph(commands, settings=None, track=None, **top):
+        ins = {"setpoint": "sp", "measurement": "me"}
+        if track is not None:
+            ins["track"] = track
+        g = {
+            "period": "1s",
+            "inputs": {"sp": {"max_age": "none"}, "me": {"max_age": "none"}, "tr": {"max_age": "none"}},
+            "blocks": [
+                {
+                    "id": "c",
+                    "type": "pid",
+                    "in": ins,
+                    "settings": settings or {"kp": 0, "ki": 1},
+                    "out": {"y": "u", "integral": "integral"},
+                },
+                {
+                    "id": "f",
+                    "type": "formula",
+                    "in": {"a": "c.y"},
+                    "settings": {"expr": "a * 2"},
+                    "out": {"y": "twice"},
+                },
+            ],
+        }
+        if commands is not None:
+            g["commands"] = commands
+        g.update(top)
+        return g
+
+    def run(g, calls, sp=1.0, me=0.0):
+        e = Engine(g)
+        e.write("sp", "good", sp, 0)
+        e.write("me", "good", me, 0)
+        return e, [e.tick(now * S)[1]["integral"][1] for now in calls]
+
+    # a PID that feeds a command acts once a call: for the ticks the call
+    # ran, and for no more than act_for (3 unless given). ki 1, error 1.
+    # Calls at 0, 3 and 8 s run 1, 3 and 5 ticks: 1, +3, +3.
+    check("cmd pid by the call", run(pid_graph(["u"]), [0, 3, 8])[1], [1.0, 4.0, 7.0])
+    # with no command it runs every tick as it did: 1, +3, +5
+    check("cmd pid, no command", run(pid_graph(None), [0, 3, 8])[1], [1.0, 4.0, 9.0])
+    check("cmd pid, empty commands", run(pid_graph([]), [0, 3, 8])[1], [1.0, 4.0, 9.0])
+    check("cmd pid act_for 1", run(pid_graph(["u"], act_for=1), [0, 3, 8])[1], [1.0, 2.0, 3.0])
+    check("cmd pid act_for 5", run(pid_graph(["u"], act_for=5), [0, 3, 8])[1], [1.0, 4.0, 9.0])
+    check("cmd act_for without a command", run(pid_graph(None, act_for=1), [0, 3, 8])[1], [1.0, 4.0, 9.0])
+    # it feeds a command through a formula as well
+    check("cmd pid feeds through a formula", run(pid_graph(["twice"]), [0, 3, 8])[1], [1.0, 4.0, 7.0])
+    # at a gap it acts for one period, however long the gap
+    check("cmd pid at a gap", run(pid_graph(["u"], max_catch_up=3), [0, 500])[1], [1.0, 2.0])
+    # the addition is ki.error.period, and that times m; rule 6 is of that
+    # addition, whole: max 2.5, three ticks: 1 + 3 would be above: cut
+    e, got = run(pid_graph(["u"], {"kp": 0, "ki": 1, "max": 2.5}), [0, 3])
+    check("cmd pid cut short", got, [1.0, 2.5])
+
+    # a command is held at a catch-up tick, for every block that reads it:
+    # an integrate of a command. x is 1 at tick 0 and 5 from 1 s.
+    def held_graph(commands):
+        g = {
+            "period": "1s",
+            "inputs": {"x": {"max_age": "none"}},
+            "blocks": [
+                {"id": "f", "type": "formula", "in": {"a": "x"}, "settings": {"expr": "a * 1"}, "out": {"y": "cmd"}},
+                {"id": "i", "type": "integrate", "in": {"x": "cmd"}, "out": {"y": "total"}},
+            ],
+            "commands": commands,
+        }
+        e = Engine(g)
+        e.write("x", "good", 1.0, 0)
+        e.tick(0)
+        e.write("x", "good", 5.0, 1 * S)
+        return e.tick(3 * S)[1]
+
+    # ticks 1 and 2 read the 1 the host was last given; tick 3 reads the 5
+    o = held_graph(["cmd"])
+    check("cmd held total", o["total"], ("good", 1 + 1 + 1 + 5.0))
+    check("cmd held, at the last tick", o["cmd"], ("good", 5.0))
+    check("cmd not held", held_graph([])["total"], ("good", 1 + 5 + 5 + 5.0))
+    # a value a fallback gave is held too, with its state
+    g = {
+        "period": "1s",
+        "inputs": {"x": {"max_age": "none"}},
+        "blocks": [
+            {
+                "id": "f",
+                "type": "formula",
+                "in": {"a": "x"},
+                "settings": {"expr": "a * 1"},
+                "fallback": {"y": 7},
+                "out": {"y": "cmd"},
+            },
+            {"id": "i", "type": "integrate", "in": {"x": "cmd"}, "out": {"y": "total", "doubtful": "doubtful"}},
+        ],
+        "commands": ["cmd"],
+    }
+    e = Engine(g)
+    e.tick(0)  # nothing written: the fallback's 7, uncertain
+    e.write("x", "good", 1.0, 1 * S)
+    o = e.tick(3 * S)[1]
+    check("cmd held fallback total", o["total"], ("good", 7 + 7 + 7 + 1.0))
+    check("cmd held fallback doubtful", o["doubtful"], ("good", 3.0))
+
+    # a rate limit that feeds a command does not move at a catch-up tick,
+    # and at the last tick has the reach of m periods
+    def rate_graph(commands, settings=None, track=None, **top):
+        ins = {"x": "x"}
+        if track is not None:
+            ins["track"] = track
+        g = {
+            "period": "1s",
+            "inputs": {"x": {"max_age": "none"}, "tr": {"max_age": "none"}},
+            "blocks": [
+                {
+                    "id": "r",
+                    "type": "rate_limit",
+                    "in": ins,
+                    "settings": settings or {"up": 1, "initial": 0},
+                    "out": {"y": "v", "limited": "limited"},
+                }
+            ],
+            "commands": commands,
+        }
+        g.update(top)
+        return g
+
+    def rate_run(g, calls, x=20.0):
+        e = Engine(g)
+        e.write("x", "good", x, 0)
+        return [e.tick(now * S)[1]["v"] for now in calls]
+
+    check("cmd rate by the call", rate_run(rate_graph(["v"]), [0, 3, 8]), [("good", 1.0), ("good", 4.0), ("good", 7.0)])
+    check("cmd rate, no command", rate_run(rate_graph([]), [0, 3, 8]), [("good", 1.0), ("good", 4.0), ("good", 9.0)])
+    check("cmd rate act_for 2", rate_run(rate_graph(["v"], act_for=2), [0, 3]), [("good", 1.0), ("good", 3.0)])
+    # within the reach of m periods it is taken as it is
+    check("cmd rate within the reach", rate_run(rate_graph(["v"]), [0, 3], x=3.5)[1], ("good", 3.5))
+    # its y is held: an integrate of it sees the 1 at ticks 1 and 2
+    g = rate_graph(["v"])
+    g["blocks"].append({"id": "i", "type": "integrate", "in": {"x": "r.y"}, "out": {"y": "total"}})
+    e = Engine(g)
+    e.write("x", "good", 20.0, 0)
+    e.tick(0)
+    check("cmd rate y held", e.tick(3 * S)[1]["total"], ("good", 1 + 1 + 1 + 4.0))
+
+    # `track` (rule 7.4.13): where it holds no value it took from an input,
+    # it holds the value of `track` in place of `initial` or of nothing
+    check("track rate, with initial", rate_run(rate_graph([], track=5), [0, 1]), [("good", 6.0), ("good", 7.0)])
+    check("track rate, no initial", rate_run(rate_graph([], {"up": 1}, track=5), [0]), [("good", 6.0)])
+    # a track that is not usable is not used; an uncertain one is, and the
+    # output's state is the input's
+    e = Engine(rate_graph([], track="tr"))
+    e.write("x", "good", 20.0, 0)
+    check("track rate, not usable", e.tick(0)[1]["v"], ("good", 1.0))
+    e = Engine(rate_graph([], track="tr"))
+    e.write("x", "good", 20.0, 0)
+    e.write("tr", "uncertain", 5.0, 0)
+    check("track rate, uncertain", e.tick(0)[1]["v"], ("good", 6.0))
+    # after it has forgotten it takes `track` again, as it then is
+    e.write("x", "bad", None, 1 * S)
+    check("track rate, forgotten", e.tick(1 * S)[1]["v"], ("bad", None))
+    e.write("x", "good", 20.0, 2 * S)
+    e.write("tr", "good", 50.0, 2 * S)
+    check("track rate, again", e.tick(2 * S)[1]["v"], ("good", 49.0))  # from 50 towards 20
+    # while it holds a value it gave, `track` is not used
+    e.write("tr", "good", 0.0, 3 * S)
+    check("track rate, holding", e.tick(3 * S)[1]["v"], ("good", 48.0))
+    # one that acts by the call tracks at the last tick of a call
+    got = rate_run(rate_graph(["v"], track=5), [0, 3])
+    check("track rate by the call", got, [("good", 6.0), ("good", 9.0)])
+
+    # a PID's `track` (rule 7.7.14): at the tick it stops waiting, the
+    # integral is track less kp.error (and the derivative), before that
+    # tick's addition. kp 2, ki 1, error 1, track 5: 5 - 2 = 3, then + 1.
+    e = Engine(pid_graph([], {"kp": 2, "ki": 1}, track="tr"))
+    e.write("sp", "good", 1.0, 0)
+    e.write("me", "good", 0.0, 0)
+    e.write("tr", "good", 5.0, 0)
+    o = e.tick(0)[1]
+    check("track pid integral", o["integral"], ("good", 4.0))
+    check("track pid y", o["u"], ("good", 6.0))
+    # it is not waiting now: track is not used
+    e.write("tr", "good", 100.0, 1 * S)
+    check("track pid, not waiting", e.tick(1 * S)[1]["integral"], ("good", 5.0))
+    # it waits from a tick where either input is not usable
+    e.write("me", "bad", None, 2 * S)
+    check("track pid, input lost", e.tick(2 * S)[1]["integral"], ("good", 5.0))
+    e.write("me", "good", 0.5, 3 * S)
+    o = e.tick(3 * S)[1]  # error 0.5: 100 - 1, + 0.5
+    check("track pid, input back", o["integral"], ("good", 99.5))
+    check("track pid, input back y", o["u"], ("good", 100.5))
+    # and from a gap; a track that is not usable is not used
+    e.rebase()
+    e.write("sp", "good", 1.0, 0)
+    e.write("me", "good", 0.5, 0)
+    check("track pid, gap and no track", e.tick(0)[1]["integral"], ("good", 100.0))
+    e.write("tr", "good", 7.0, 1 * S)
+    check("track pid, stopped waiting", e.tick(1 * S)[1]["integral"], ("good", 100.5))
+    # a reset says zero, and track does not gainsay it
+    g = pid_graph([], {"kp": 2, "ki": 1}, track=5)
+    g["blocks"][0]["in"]["reset"] = True
+    check("track pid at a reset", run(g, [0])[1], [1.0])
+    g["blocks"][0]["in"]["reset"] = False
+    check("track pid, reset false", run(g, [0])[1], [4.0])
+    # one that acts by the call stops waiting at the last tick of a call:
+    # calls at 0 (tick 0: tracks, 3 + 1) and at 3 s (+ 3)
+    check("track pid by the call", run(pid_graph(["u"], {"kp": 2, "ki": 1}, track=5), [0, 3])[1], [4.0, 7.0])
+
+    # what is refused (rule 9.8)
+    refused("cmd: not a published name", pid_graph(["nope"]))
+    refused("cmd: the name of an input", pid_graph(["sp"]))
+    refused("cmd: a block.port", pid_graph(["c.y"]))
+    refused("cmd: listed twice", pid_graph(["u", "u"]))
+    refused("cmd: not a list", pid_graph("u"))
+    refused("cmd: not text", pid_graph([1]))
+    refused("act_for: zero", pid_graph(["u"], act_for=0))
+    refused("act_for: not whole", pid_graph(["u"], act_for=1.5))
+    refused("act_for: true", pid_graph(["u"], act_for=True))
+    refused("act_for: too large", pid_graph(["u"], act_for=2**31))
+    Engine(pid_graph(["u", "twice"], act_for=2**31 - 1))
+    refused("track: a boolean", rate_graph([], track=True))
+
+
+def test_commands_revised():
+    """Amendment 9 as revised: which rate limits act by the call, a catch-up
+    tick for one that does, and a reset while a PID waits to track."""
+
+    def ramp_graph(act_for=1):
+        # a rate limit on a controller's setpoint: it feeds the command only
+        # through the pid, keeps time, and runs at every tick
+        return {
+            "period": "1s",
+            "act_for": act_for,
+            "commands": ["u"],
+            "inputs": {"x": {"max_age": "none"}},
+            "blocks": [
+                {
+                    "id": "ramp",
+                    "type": "rate_limit",
+                    "in": {"x": "x"},
+                    "settings": {"up": 1, "initial": 0},
+                    "out": {"y": "sp"},
+                },
+                {
+                    "id": "c",
+                    "type": "pid",
+                    "in": {"setpoint": "ramp.y", "measurement": 0},
+                    "settings": {"kp": 1, "ki": 1},
+                    "out": {"y": "u", "integral": "integral"},
+                },
+            ],
+        }
+
+    e = Engine(ramp_graph())
+    e.write("x", "good", 20.0, 0)
+    e.tick(0)
+    o = e.tick(3 * S)[1]
+    # the ramp moved at each of ticks 1, 2 and 3: 4, where one that acted
+    # by the call with act_for 1 would be at 2. The pid acts by the call:
+    # 1 at tick 0, and 4 * 1 * 1 at tick 3.
+    check("rev ramp keeps time", o["sp"], ("good", 4.0))
+    check("rev ramp, the pid by the call", o["integral"], ("good", 5.0))
+    check("rev ramp by_call flags", (e._blocks["ramp"].by_call, e._blocks["c"].by_call), (False, True))
+    # a rate limit after the controller, between it and the command, does
+    g = ramp_graph()
+    g["blocks"].append(
+        {"id": "slew", "type": "rate_limit", "in": {"x": "c.y"}, "settings": {"up": 1}, "out": {"y": "v"}}
+    )
+    g["commands"] = ["v"]
+    e = Engine(g)
+    check("rev slew by_call flags", [e._blocks[b].by_call for b in ("ramp", "c", "slew")], [False, True, True])
+    # one that reaches a command both through a pid and round it does
+    g["blocks"].append(
+        {"id": "f", "type": "formula", "in": {"a": "ramp.y"}, "settings": {"expr": "a"}, "out": {"y": "w"}}
+    )
+    g["commands"] = ["v", "w"]
+    check("rev both ways", Engine(g)._blocks["ramp"].by_call, True)
+
+    def rate_graph(**settings):
+        st = {"up": 1, "initial": 0}
+        st.update(settings)
+        blk = {"id": "r", "type": "rate_limit", "in": {"x": "x"}, "settings": st, "out": {"y": "v", "limited": "lim"}}
+        return {"period": "1s", "commands": ["v"], "inputs": {"x": {"max_age": "none"}}, "blocks": [blk]}
+
+    # a by-call rate limit forgets nothing at a catch-up tick: the input is
+    # bad at ticks 1 and 2 and back at tick 3. It still holds the 1 of
+    # tick 0, and moves three periods' worth: 4. (Having forgotten it
+    # would go from `initial`: 3.)
+    e = Engine(rate_graph())
+    e.write("x", "good", 20.0, 0)
+    check("rev no forgetting 0", e.tick(0)[1]["v"], ("good", 1.0))
+    e.write("x", "bad", None, 1 * S)
+    e.write("x", "good", 20.0, 3 * S)
+    check("rev no forgetting 3", e.tick(3 * S)[1]["v"], ("good", 4.0))
+    # a catch-up tick is one with a usable input for rules 3 and 4,
+    # whatever it read: bad from 1 s on, a call at 3 s: at tick 3 it is the
+    # first unusable tick in a row, within a ride_through of 1 s
+    e = Engine(rate_graph(ride_through="1s"))
+    e.write("x", "good", 20.0, 0)
+    e.tick(0)
+    e.write("x", "bad", None, 1 * S)
+    o = e.tick(3 * S)[1]
+    check("rev catch-up is no outage", o["v"], ("uncertain", 1.0))
+    check("rev catch-up is no outage, limited", o["lim"], ("bad", None))
+    check("rev the second unusable tick", e.tick(4 * S)[1]["v"], ("bad", None))
+
+    # a reset while a by-call PID waits to track ends the waiting, at a
+    # catch-up tick too: kp 0, ki 1, error 1, track 5
+    g = {
+        "period": "1s",
+        "commands": ["u"],
+        "inputs": {"me": {"max_age": "none"}, "r": {"type": "boolean", "max_age": "none"}},
+        "blocks": [
+            {
+                "id": "c",
+                "type": "pid",
+                "in": {"setpoint": 1, "measurement": "me", "reset": "r", "track": 5},
+                "settings": {"kp": 0, "ki": 1},
+                "out": {"y": "u", "integral": "integral"},
+            }
+        ],
+    }
+    e = Engine(g)
+    e.write("me", "good", 0.0, 0)
+    e.write("r", "good", False, 0)
+    check("rev reset 0", e.tick(0)[1]["integral"], ("good", 6.0))  # tracks: 5, and 1
+    e.write("me", "bad", None, 1 * S)  # tick 1: it waits
+    e.write("me", "good", 0.0, 2 * S)  # tick 2, a catch-up tick: a reset
+    e.write("r", "good", True, 2 * S)
+    e.write("r", "good", False, 3 * S)
+    # tick 3: it is not waiting, and `track` does not gainsay the reset:
+    # zero and three periods' worth
+    check("rev reset at a catch-up tick", e.tick(3 * S)[1]["integral"], ("good", 3.0))
+    # and whatever that tick reads: a reset on a tick with an unusable
+    # input ends the waiting too (no command here)
+    del g["commands"]
+    e = Engine(g)
+    e.write("me", "bad", None, 0)
+    e.write("r", "good", True, 0)
+    e.tick(0)
+    e.write("me", "good", 0.0, 1 * S)
+    e.write("r", "good", False, 1 * S)
+    check("rev reset on an unusable tick", e.tick(1 * S)[1]["integral"], ("good", 1.0))
+    # with no reset it tracks when the input comes
+    e = Engine(g)
+    e.write("me", "bad", None, 0)
+    e.write("r", "good", False, 0)
+    e.tick(0)
+    e.write("me", "good", 0.0, 1 * S)
+    check("rev no reset: it tracks", e.tick(1 * S)[1]["integral"], ("good", 6.0))
+
+
 def test_estimator():
     g = {
         "period": "1s",

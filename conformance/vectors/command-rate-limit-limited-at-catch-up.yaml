@@ -1,0 +1,13 @@
+# 7.4.12: at a catch-up tick `limited` is true when the block holds a
+# value and the input is not that value. The input is 11 at 1 s and 10
+# again from 2 s: a latch set by `limited` saw it true at tick 1.
+rules: [7.4.12]
+period: 1s
+commands: [y]
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x}, settings: {up: 2}, out: {y: y, limited: lim}}
+  - {id: l, type: latch, in: {set: r.limited}, out: {y: was_limited}}
+calls:
+  - {now: 0, x: 10, y: 10, lim: false, was_limited: false}
+  - {now: 2, ran: 2, first: {x: {v: 11, at: 1}}, x: {v: 10, at: 2}, y: 10, lim: false, was_limited: true}

@@ -1,0 +1,14 @@
+# 6.13: the `y` of a PID that feeds a command is held as the command is,
+# though it is not itself listed. The setpoint is 5 from 1 s and 2 from
+# 3 s: a total of `c.y` over ticks 1 to 3 adds 0, 0 and 2.
+rules: [6.13]
+period: 1s
+commands: [valve]
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 1}}
+  - {id: scale, type: formula, in: {u: c.y}, settings: {expr: "u * 10"}, out: {y: valve}}
+  - {id: t, type: integrate, in: {x: c.y}, out: {y: total}}
+calls:
+  - {now: 0, sp: 0, pv: 0, valve: 0, total: 0}
+  - {now: 3, ran: 3, first: {sp: {v: 5, at: 1}}, sp: {v: 2, at: 3}, valve: 20, total: 2}

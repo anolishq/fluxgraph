@@ -1,0 +1,13 @@
+# 7.4.13: with no initial, a usable track is where a first input is
+# limited from, an uncertain one as a good one, and the output's state is
+# the input's. With a track that is not usable the input is taken as it
+# is.
+rules: [7.4.13, 7.4.9]
+period: 1s
+inputs: {x: {max_age: none}, tr: {max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x, track: tr}, settings: {up: 2}, out: {y: y, limited: lim}}
+calls:
+  - {x: 10, tr: {v: 0, state: uncertain}, y: 2, lim: true}
+  - {x: bad, y: bad, lim: bad}
+  - {x: 10, tr: bad, y: 10, lim: false}

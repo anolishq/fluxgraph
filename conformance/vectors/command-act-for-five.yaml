@@ -1,0 +1,13 @@
+# 6.13: with act_for of 5 a call that ran four ticks acts for four
+# periods, and one that ran eight for five.
+rules: [6.13, 9.8]
+period: 1s
+commands: [y]
+act_for: 5
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 0, ki: 1}, out: {y: y, integral: i}}
+calls:
+  - {sp: 1, pv: 0, i: 1}
+  - {now: 4, ran: 4, i: 5}
+  - {now: 12, ran: 8, i: 10}

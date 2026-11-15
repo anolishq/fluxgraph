@@ -1,0 +1,16 @@
+# 6.13: a block feeds a command through a deferred input as through a
+# direct one, and a block that reads a command does not feed it. `c` is
+# read by the delay that gives the command and acts by the call. `d`
+# integrates the command: at ticks 1 to 4 it reads the 0 the host was
+# given at tick 0, and at tick 5 the 1 the delay then gives, once.
+rules: [6.13]
+period: 1s
+commands: [cmd]
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 0, ki: 1}, out: {integral: i_c}}
+  - {id: z, type: delay, in: {x: c.y}, settings: {initial: 0}, out: {y: cmd}}
+  - {id: d, type: pid, in: {setpoint: z.y, measurement: pv}, settings: {kp: 0, ki: 1}, out: {integral: i_d}}
+calls:
+  - {sp: 1, pv: 0, i_c: 1, i_d: 0, cmd: 0}
+  - {now: 5, ran: 5, i_c: 4, i_d: 1, cmd: 1}

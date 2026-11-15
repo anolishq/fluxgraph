@@ -1,0 +1,17 @@
+# 6.13: at a catch-up tick a command is, for a block that reads it, what
+# it was at the last tick of the call before. Two formulas give the same
+# value, and one is a command. The input is 5 from 1 s and 2 from 3 s, and
+# one call runs ticks 1 to 3: the total of the command adds 0, 0 and 2,
+# and the total of the other 5, 5 and 2.
+rules: [6.13]
+period: 1s
+commands: [cmd]
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x"}, out: {y: cmd}}
+  - {id: g, type: formula, in: {x: x}, settings: {expr: "x"}, out: {y: free}}
+  - {id: tc, type: integrate, in: {x: f.y}, out: {y: of_cmd}}
+  - {id: tg, type: integrate, in: {x: g.y}, out: {y: of_free}}
+calls:
+  - {now: 0, x: 0, cmd: 0, free: 0, of_cmd: 0, of_free: 0}
+  - {now: 3, ran: 3, first: {x: {v: 5, at: 1}}, x: {v: 2, at: 3}, cmd: 2, free: 2, of_cmd: 2, of_free: 12}

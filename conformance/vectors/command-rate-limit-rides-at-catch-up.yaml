@@ -1,0 +1,14 @@
+# 7.4.12: with an unusable input a rate limit that acts by the call rides
+# through and forgets at a catch-up tick as at any other. The input is bad
+# from 1 s and 20 from 3 s. Within a ride_through of 2 s it still holds
+# 10 at tick 3, and moves three periods' reach.
+rules: [7.4.12, 7.4.11]
+period: 1s
+commands: [y]
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x}, settings: {up: 2, ride_through: 2s}, out: {y: y, limited: lim}}
+calls:
+  - {now: 0, x: 10, y: 10, lim: false}
+  - {$write: [x, bad, null, 1]}
+  - {now: 3, ran: 3, x: {v: 20, at: 3}, y: 16, lim: true}

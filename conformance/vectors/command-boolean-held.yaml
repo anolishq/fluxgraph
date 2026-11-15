@@ -1,0 +1,16 @@
+# 6.13: a boolean command is held too. The input is above zero from 1 s
+# and back at zero from 3 s, and one call runs ticks 1 to 3: a latch set by
+# the command never saw it true, and one set by the same formula, not a
+# command, did.
+rules: [6.13]
+period: 1s
+commands: [run]
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x > 0"}, out: {y: run}}
+  - {id: g, type: formula, in: {x: x}, settings: {expr: "x > 0"}}
+  - {id: la, type: latch, in: {set: f.y}, out: {y: a}}
+  - {id: lb, type: latch, in: {set: g.y}, out: {y: b}}
+calls:
+  - {now: 0, x: 0, run: false, a: false, b: false}
+  - {now: 3, ran: 3, first: {x: {v: 1, at: 1}}, x: {v: 0, at: 3}, run: false, a: false, b: true}

@@ -1,0 +1,9 @@
+# 9.8: a command is a published name, and not a block and a port.
+rules: [9.8]
+period: 1s
+commands: [c.y]
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 1}, out: {y: y}}
+expect: compile_error
+error_mentions: ["c.y"]

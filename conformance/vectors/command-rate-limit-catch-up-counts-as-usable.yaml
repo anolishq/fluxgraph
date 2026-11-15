@@ -1,0 +1,17 @@
+# 7.4.12: a catch-up tick with a usable input is one with a usable input
+# for riding through, though the block takes nothing at it. The input is
+# bad at 1 s, 12 at 2 s and bad from 3 s. Tick 4 is two ticks after a
+# usable input, within a ride_through of 2 s, and the block holds the 10
+# it took at tick 0.
+rules: [7.4.12, 7.4.3]
+period: 1s
+commands: [y]
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x}, settings: {up: 2, ride_through: 2s}, out: {y: y, limited: lim}}
+calls:
+  - {now: 0, x: 10, y: 10, lim: false}
+  - {$write: [x, bad, null, 1]}
+  - {$write: [x, good, 12, 2]}
+  - {$write: [x, bad, null, 3]}
+  - {now: 4, ran: 4, y: {u: 10}, lim: bad}

@@ -1,0 +1,14 @@
+# 6.13: a held output keeps its sample time. The command is a formula of
+# one input and carries that input's sample time. A window that takes
+# only new samples reads it: at catch-up ticks 1 and 2 it is the sample
+# of tick 0 again, and no new one.
+rules: [6.13, 3.7, 7.3.8]
+period: 1s
+commands: [cmd]
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x"}, out: {y: cmd}}
+  - {id: w, type: window, in: {x: f.y}, settings: {window: 3s, only_new: true, min_good: 0.3}, out: {count: n}}
+calls:
+  - {now: 0, x: 1, cmd: 1, n: 1}
+  - {now: 3, ran: 3, x: {v: 2, at: 3}, cmd: 2, n: 1}

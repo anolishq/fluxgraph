@@ -21,10 +21,10 @@ the text says, not what it should say.
 | `contract.py` | Tries every short sequence of writes, calls, rebases, resets, saves and restores against what sections 6, 7.2 and 8 promise a host. |
 
 ```bash
-python3 conformance/run.py                 # 426 vectors: ALL AGREE
-python3 conformance/run.py --second        # 426 vectors: ALL AGREE
-python3 conformance/mutate.py              # 664 breakages: 664 noticed; every vector failed by one
-python3 conformance/compare.py             # 2165816 comparisons, 0 differences
+python3 conformance/run.py                 # 473 vectors: ALL AGREE
+python3 conformance/run.py --second        # 473 vectors: ALL AGREE
+python3 conformance/mutate.py              # 711 breakages: 711 noticed; every vector failed by one
+python3 conformance/compare.py             # 2516993 comparisons, 0 differences
 python3 conformance/steps.py               # 750 checks: ALL HOLD; the worst error of the step is 1.81e-13
 python3 conformance/steps.py --second      # 750 checks: ALL HOLD; the worst error of the step is 7.75e-13
 python3 conformance/contract.py            # 748648 sequences: ALL HOLD
@@ -627,7 +627,62 @@ state, many predictions across a stall with and without a model input,
 sample times kept for each port and forgotten at a reset, and a state
 left out of `q`.
 
+## Amendment 9: commands, and where the actuator is
+
+Five whole graphs were run through stalls, dropouts, restarts and stepped
+clocks, and a PID loop did not come through them. Two things were in the
+way, and each is a vector now:
+
+- **A controller ran every catch-up tick as if its output had reached
+  the actuator.** `pid-catch-up-without-a-command` is the rule as it
+  was: a call ten ticks late adds ten periods' worth to an integral.
+  With the output listed as a command, `command-pid-by-the-call` adds
+  three. `command-held-at-a-catch-up-tick` shows the other half: a total
+  of a command adds what the host was given, 0, 0 and 2, where the same
+  formula not listed adds 5, 5 and 2.
+- **A rate limit with `initial` went back to it after an outage**,
+  wherever the actuator was. `rate-limit-track` and `pid-track` start
+  from a readback.
+
+The 47 new vectors were worked by hand before the reference was run on
+them. Two were wrong as first written, and the reference right: a sum in
+the fourth place of a loop's value, and a latch's state on a `bad` set.
+
+A review of the draft ran the reference on cases of its own and changed
+three rules, each with a vector:
+
+- **A rate limit ramping a setpoint was slowed by its host.** Upstream
+  of a PID that gave a command, it acted by the call, and at ten ticks a
+  call a ramp of 1 a second reached 19 after a minute. A rate limit now
+  acts by the call only between a controller and a command.
+  `command-setpoint-ramp-keeps-time`.
+- **A rate limit forgot at a catch-up tick.** One call three ticks late,
+  with an input too old at the tick in between, took a valve from 50 to
+  15. Nothing is forgotten at a tick nothing was handed on at.
+  `command-rate-limit-does-not-forget-at-catch-up`,
+  `command-rate-limit-catch-up-is-not-an-outage`.
+- **A reset at a catch-up tick was undone by `track`** at the last tick
+  of the same call. A reset ends the waiting.
+  `pid-track-reset-at-a-catch-up-tick`.
+
+`compare.py` has three graphs more, with commands: a PID through a
+formula and a rate limit with a `track` each, a cascade on a loop with a
+process, and a formula with a fallback beside blocks that feed nothing.
+`second/ASSUMPTIONS-amendment-9.md` lists where the text left the second
+reading a choice.
+
+No vector shows what the amendment is for, a loop that does not bump
+after an outage: that is a run of many ticks against a plant, and not a
+rule.
+
 ## What this does not cover
+
+- **What a loop does on a real plant.** The cases behind amendment 9
+  were runs against plants written beside the engine, and are not kept
+  here.
+- **A held output that was usable and whose block gives none at a
+  catch-up tick** (rule 6.13), as a loop's doubt. Whatever makes a PID
+  give no value at that tick is itself a doubt of the loop.
 
 - **A fault both readings share.** `compare.py` only compares them. The
   estimator's inputs, above, were one, and the first form of amendment 1's

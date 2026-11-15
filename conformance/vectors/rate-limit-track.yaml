@@ -1,0 +1,19 @@
+# 7.4.13: where it holds no value taken from an input, at the start and
+# after it has forgotten, a rate limit holds the value of track in place
+# of initial, and its input is limited from that. While it holds a value
+# it took from an input, track is not used. A track that is not usable is
+# not used, and it holds initial.
+rules: [7.4.13, 7.4.11]
+period: 1s
+inputs: {x: {max_age: none}, tr: {max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x, track: tr}, settings: {up: 2, initial: 0, ride_through: 1s}, out: {y: y, limited: lim}}
+calls:
+  - {x: 10, tr: 50, y: 48, lim: true}
+  - {tr: 0, y: 46, lim: true}
+  - {x: bad, y: {u: 46}, lim: bad}
+  - {y: bad, lim: bad}
+  - {x: 10, tr: 11, y: 10, lim: false}
+  - {x: bad, y: {u: 10}, lim: bad}
+  - {y: bad, lim: bad}
+  - {x: 10, tr: bad, y: 2, lim: true}

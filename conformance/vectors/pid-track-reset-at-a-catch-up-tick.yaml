@@ -1,0 +1,15 @@
+# 7.7.14: a reset ends the waiting at its own tick, a catch-up tick among
+# them. The measurement is bad at 1 s, and the PID waits. At tick 2 it is
+# back and `reset` is true: the integral is zero and the waiting is over.
+# Tick 3, the last, adds three periods' worth and does not read track.
+rules: [7.7.14, 7.7.13, 7.7.10]
+period: 1s
+commands: [y]
+inputs: {sp: {max_age: none}, pv: {max_age: none}, tr: {max_age: none}, r: {type: boolean, max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, track: tr, reset: r}, settings: {kp: 0, ki: 1}, out: {y: y, integral: i}}
+calls:
+  - {now: 0, sp: 1, pv: 0, tr: bad, r: false, y: 1, i: 1}
+  - {$write: [pv, bad, null, 1]}
+  - {$write: [pv, good, 0, 2]}
+  - {now: 3, ran: 3, first: {r: {v: true, at: 2}}, r: {v: false, at: 3}, tr: 30, y: 3, i: 3}

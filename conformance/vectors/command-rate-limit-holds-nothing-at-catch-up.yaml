@@ -1,0 +1,13 @@
+# 7.4.12: at a catch-up tick a rate limit that holds nothing takes
+# nothing, and `limited` is false. The input is 5 from 1 s; tick 2, the
+# last of its call, takes it as a first input.
+rules: [7.4.12]
+period: 1s
+commands: [y]
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x}, settings: {up: 2}, out: {y: y, limited: lim}}
+  - {id: l, type: latch, in: {set: r.limited}, out: {y: was_limited}}
+calls:
+  - {now: 0, x: bad, y: bad, lim: bad, was_limited: bad}
+  - {now: 2, ran: 2, first: {x: {v: 5, at: 1}}, y: 5, lim: false, was_limited: false}

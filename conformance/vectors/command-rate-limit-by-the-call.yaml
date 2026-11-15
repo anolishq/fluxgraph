@@ -1,0 +1,16 @@
+# 6.13, 7.4.12: a rate limit that gives a command does not move at a
+# catch-up tick, and at the last tick of a call reaches as far as the
+# ticks the call ran, or act_for of them, allow.
+rules: [6.13, 7.4.12]
+period: 1s
+commands: [y]
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x}, settings: {up: 2, down: 1, initial: 0}, out: {y: y, limited: lim}}
+calls:
+  - {x: 100, y: 2, lim: true}
+  - {y: 4, lim: true}
+  - {now: 4, ran: 3, y: 10, lim: true}            # three ticks: three periods' reach
+  - {now: 9, ran: 5, y: 16, lim: true}            # five ticks: three periods' reach
+  - {now: 12, ran: 3, x: 13, y: 13, lim: false}   # down 3 in three periods: within reach, exactly
+  - {now: 14, ran: 2, x: 0, y: 11, lim: true}     # down 2 in two
