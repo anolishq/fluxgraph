@@ -13,7 +13,8 @@ in ASSUMPTIONS-amendment-7.md, for Amendment 8 in
 ASSUMPTIONS-amendment-8.md, for Amendment 9 (commands, and where the
 actuator is) in ASSUMPTIONS-amendment-9.md, for Amendment 10 (a
 derivative and a slope between samples) in ASSUMPTIONS-amendment-10.md, and
-for Amendment 11 (smaller faults) in ASSUMPTIONS-amendment-11.md.
+for Amendment 11 (smaller faults) in ASSUMPTIONS-amendment-11.md, and for
+Amendment 12 (a controller that is not acting) in ASSUMPTIONS-amendment-12.md.
 
 Every time is a whole number of nanoseconds, held as an int (rule 6.2).
 """
@@ -596,6 +597,26 @@ def out(state, value=None):
     return (state, value, TICK)
 
 
+def _follows(block, in_map):
+    """Rules 7.4.14 and 7.7.15: `follow` is given only where `track` is."""
+    if "follow" in in_map and "track" not in in_map:
+        raise block.err("input 'follow' is given only where 'track' is")
+
+
+def _following(ins):
+    """Whether a block follows at this tick, and the state and value of what
+    it gives: it follows where `follow` is true, and where it is not usable."""
+    fo = ins.get("follow")
+    if fo is None or (usable(fo[0]) and not fo[1]):
+        return None
+    tr = ins["track"]
+    if not usable(tr[0]):
+        return (tr[0], None)
+    # the state of `track`, or uncertain in place of good where `follow`
+    # is not usable
+    return (UNC if not usable(fo[0]) else tr[0], tr[1])
+
+
 class _Loop:
     """A loop that holds a model, treated as one block (rule 7.8.8)."""
 
@@ -1027,6 +1048,8 @@ class RateLimit(Block):
     def configure(self, in_map):
         self.in_ports["x"] = (NUMBER, True, True)
         self.in_ports["track"] = (NUMBER, False, True)
+        self.in_ports["follow"] = (BOOLEAN, False, True)
+        _follows(self, in_map)
         self.out_ports["y"] = NUMBER
         self.out_ports["limited"] = BOOLEAN
         self.up = s_num(self, self.st, "up")
@@ -1071,6 +1094,22 @@ class RateLimit(Block):
             if not usable(x[0]):
                 return {"y": out(x[0]), "limited": out(x[0])}
             return {"y": out(x[0] if h is not None else NR, h), "limited": out(x[0], h is not None and h != x[1])}
+        fol = _following(ins)
+        if fol is not None:
+            # not acting (rule 7.4.14): it limits nothing and does not look
+            # at its input
+            if fol[1] is None:
+                # it holds what it held; the tick passes as any other does
+                # for ride_through, counted from the last tick it took a
+                # value at
+                if s["given"]:
+                    s["m"] += 1
+                return {"y": out(fol[0]), "limited": out(fol[0])}
+            # it holds that value as one it took from an input at this tick
+            s["held"] = fol[1]
+            s["given"] = True
+            s["m"] = 0
+            return {"y": out(fol[0], fol[1]), "limited": out(fol[0], False)}
         if usable(x[0]):
             s["m"] = 0
             tr = ins.get("track")
@@ -1422,6 +1461,8 @@ class Pid(Block):
         self.in_ports["reset"] = (BOOLEAN, False, True)
         self.in_ports["applied"] = (NUMBER, False, False)  # deferred
         self.in_ports["track"] = (NUMBER, False, True)
+        self.in_ports["follow"] = (BOOLEAN, False, True)
+        _follows(self, in_map)
         self.out_ports["y"] = NUMBER
         self.out_ports["integral"] = NUMBER
         self.out_ports["limited"] = BOOLEAN
@@ -1477,6 +1518,26 @@ class Pid(Block):
             s["run"] += n
             s["doubtful"] += n
 
+    def _derive(self, me, t):
+        """The derivative at a tick where both inputs are usable, between
+        samples (rule 7.7.7): the measurement's time is its sample time, or
+        the tick's where it carries none."""
+        s = self.s
+        if self.kd == 0:
+            return 0.0
+        at = me[2] if me[2] is not None else t
+        if s["prev"] is None:
+            s["f"] = 0.0  # none remembered
+            s["prev"] = (me[1], at)
+        elif at > s["prev"][1]:
+            dt = (at - s["prev"][1]) / 1e9
+            slope = (me[1] - s["prev"][0]) / dt
+            a = math.exp(-dt / self.filter)
+            s["f"] = a * s["f"] + (1 - a) * slope
+            s["prev"] = (me[1], at)
+        # otherwise the sample stands still: nothing is taken, f stands
+        return -self.kd * s["f"]
+
     def output(self, k, t, ins):
         s = self.s
         sp = ins["setpoint"]
@@ -1507,6 +1568,28 @@ class Pid(Block):
             "gaps": out(GOOD, float(s["gaps"])),
         }
         st = worst([sp[0], me[0]])
+        fol = _following(ins)
+        if fol is not None:
+            # not acting (rule 7.7.15): it adds nothing to its integral and
+            # waits to track from this tick, a tick of a reset among them.
+            # It gives `track`, not held within min and max, whatever its
+            # setpoint and its measurement are.
+            s["waiting"] = True
+            if usable(st):
+                derivative = self._derive(me, t)  # its derivative goes on as rule 7 says
+                tr = ins["track"]
+                if usable(tr[0]) and not was_reset:
+                    # the integral is set as rule 14 sets it, so that it
+                    # starts from where the actuator last was
+                    s["integral"] = tr[1] - (self.kp * (sp[1] - me[1]) + derivative)
+            else:
+                s["prev"] = None
+            res["y"] = out(fol[0], fol[1])
+            res["limited"] = out(fol[0], False if fol[1] is not None else None)
+            # its state is what rule 9 gives at a tick where it does not
+            # follow: by the setpoint, the measurement and a reset
+            res["integral"] = out(UNC if (st == UNC or reset_unc) else GOOD, s["integral"])
+            return res
         if not usable(st):
             # a controller does not drive on a value it did not see. The
             # integral is kept, and the derivative starts again
@@ -1519,22 +1602,7 @@ class Pid(Block):
             return res
         error = sp[1] - me[1]
         # the derivative, of the measurement, through its filter
-        derivative = 0.0
-        if self.kd != 0:
-            # between samples (rule 7.7.7): the measurement's time is its
-            # sample time, or the tick's where it carries none
-            at = me[2] if me[2] is not None else t
-            if s["prev"] is None:
-                s["f"] = 0.0  # none remembered
-                s["prev"] = (me[1], at)
-            elif at > s["prev"][1]:
-                dt = (at - s["prev"][1]) / 1e9
-                slope = (me[1] - s["prev"][0]) / dt
-                a = math.exp(-dt / self.filter)
-                s["f"] = a * s["f"] + (1 - a) * slope
-                s["prev"] = (me[1], at)
-            # otherwise the sample stands still: nothing is taken, f stands
-            derivative = -self.kd * s["f"]
+        derivative = self._derive(me, t)
         # the integral: an addition that would put the output before
         # limiting past a limit is cut short (rule 7.7.6)
         # the sum is worked in one order (rule 7.7.5): kp.error and the

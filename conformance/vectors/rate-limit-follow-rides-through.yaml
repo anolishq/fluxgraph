@@ -1,0 +1,15 @@
+# 7.4.14: ticks where a rate limit follows with no `track` pass as any
+# others do. It last held a value at tick 0, and `ride_through` is one tick:
+# at tick 3, with an input it cannot use, it does not ride through, and at
+# tick 4 it holds nothing and takes its input.
+rules: [7.4.14, 7.4.10, 7.4.11]
+period: 1s
+inputs: {x: {max_age: none}, tr: {max_age: none}, f: {type: boolean, max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x, track: tr, follow: f}, settings: {up: 1, ride_through: 1s}, out: {y: y, limited: lim}}
+calls:
+  - {x: 10, tr: 2, f: false, y: 3, lim: true}
+  - {tr: bad, f: true, y: bad, lim: bad}
+  - {y: bad, lim: bad}
+  - {x: bad, f: false, y: bad, lim: bad}
+  - {x: 10, y: 10, lim: false}

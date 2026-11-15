@@ -1,0 +1,14 @@
+# 7.7.15: a PID that follows needs neither its setpoint nor its measurement
+# to give `track`, and what it gives is not held within `max`. Without
+# them its integral stays; with them it is track less kp times the error, 2
+# less 6. When it stops following, the 6 it would add are cut short at the
+# limit.
+rules: [7.7.15]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}, tr: {max_age: none}, f: {type: boolean, max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, track: tr, follow: f}, settings: {kp: 1, ki: 1, max: 1}, out: {y: y, integral: i, limited: lim}}
+calls:
+  - {sp: 10, pv: bad, tr: 2, f: true, y: 2, i: 0, lim: false}
+  - {pv: 4, y: 2, i: -4, lim: false}
+  - {f: false, y: 1, i: -4, lim: true}

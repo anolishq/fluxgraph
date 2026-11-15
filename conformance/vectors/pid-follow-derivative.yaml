@@ -1,0 +1,14 @@
+# 7.7.15: the derivative goes on while a PID follows. The measurement goes
+# from 0 to 2 over the second it follows, and the filter, of 1 s, takes
+# 2 (1 - 1/e) of that; a second later, with the measurement still, 1/e of it
+# is left: 0.4651. The integral is track, 5, less minus the derivative at
+# each tick: 5 and 1.2642, then 5 and 0.4651.
+rules: [7.7.15, 7.7.7, 7.7.14]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}, tr: {max_age: none}, f: {type: boolean, max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, track: tr, follow: f}, settings: {kp: 1, kd: 1, filter: 1s}, out: {y: y, integral: i}}
+calls:
+  - {sp: 2, pv: 0, tr: 0, f: false, y: 0, i: -2}
+  - {pv: 2, tr: 5, f: true, y: 5, i: 6.264241117657115}
+  - {pv: 2, f: false, y: 5, i: 5.465088315869659}

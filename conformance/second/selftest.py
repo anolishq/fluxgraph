@@ -6101,6 +6101,207 @@ def test_between_samples():
     check("bs slope of a constant", e.tick(1 * S)[1]["slope"], ("good", 0.0))
 
 
+def test_follow():
+    """Amendment 12: a `follow` input on rate_limit and pid."""
+
+    def graph(block, **top):
+        g = {
+            "period": "1s",
+            "inputs": {
+                "x": {"max_age": "none"},
+                "me": {"max_age": "none"},
+                "tr": {"max_age": "none"},
+                "fo": {"type": "boolean", "max_age": "none"},
+                "r": {"type": "boolean", "max_age": "none"},
+            },
+            "blocks": [block],
+        }
+        g.update(top)
+        return g
+
+    def run(g, rows, ports):
+        """rows: per tick, a dict of writes name -> (state, value)."""
+        e = Engine(g)
+        res = []
+        for k, row in enumerate(rows):
+            for name, (state, value) in row.items():
+                e.write(name, state, value, k * S)
+            o = e.tick(k * S)[1]
+            res.append(tuple(o[p] for p in ports))
+        return res
+
+    T, F = ("good", True), ("good", False)
+    # --- rate_limit (rule 7.4.14): up 1, an input of 20
+    rl = {
+        "id": "b",
+        "type": "rate_limit",
+        "in": {"x": "x", "track": "tr", "follow": "fo"},
+        "settings": {"up": 1, "ride_through": "1s"},
+        "out": {"y": "y", "limited": "lim"},
+    }
+    got = run(
+        graph(rl),
+        [
+            {"x": ("good", 20.0), "tr": ("good", 5.0), "fo": T},  # follows: track, not limited
+            {"fo": F},  # acts again, from the 5 it holds as one it took
+            {"fo": ("bad", None), "tr": ("good", 9.0)},  # not told it acts: follows, uncertain
+            {"fo": T, "tr": ("uncertain", 3.0)},  # the state of track
+            {"tr": ("bad", None)},  # no value; it holds what it held
+            {"fo": F},  # from the 3
+            {"fo": ("uncertain", True)},  # an uncertain true is a true; track is bad
+            {"fo": ("uncertain", False), "tr": ("good", 0.0)},  # an uncertain false: it acts
+        ],
+        ("y", "lim"),
+    )
+    want = [
+        (("good", 5.0), ("good", False)),
+        (("good", 6.0), ("good", True)),
+        (("uncertain", 9.0), ("uncertain", False)),
+        (("uncertain", 3.0), ("uncertain", False)),
+        (("bad", None), ("bad", None)),
+        (("good", 4.0), ("good", True)),
+        (("bad", None), ("bad", None)),
+        (("good", 5.0), ("good", True)),
+    ]
+    for k, (g_, w) in enumerate(zip(got, want)):
+        check("follow rate %d y" % k, g_[0], w[0])
+        check("follow rate %d limited" % k, g_[1], w[1])
+    # the value it followed to is one it took from an input: when it acts
+    # again with an unusable input it rides through on it
+    got = run(
+        graph(rl),
+        [
+            {"x": ("good", 20.0), "tr": ("good", 5.0), "fo": T},
+            {"fo": F, "x": ("bad", None)},
+            {},
+        ],
+        ("y",),
+    )
+    check("follow rate, rides through", [g_[0] for g_ in got], [("good", 5.0), ("uncertain", 5.0), ("bad", None)])
+    # a following tick with no track holds what it held, however many
+    # there are: with a usable input it then moves from the 5
+    lost = {"tr": ("bad", None)}
+    got = run(graph(rl), [{"x": ("good", 20.0), "tr": ("good", 5.0), "fo": T}, lost, {}, {}, {"fo": F}], ("y",))
+    check("follow rate, ticks with no track", got[4][0], ("good", 6.0))
+    # but such a tick passes for ride_through (1 s here), counted from the
+    # last tick it took a value at: acting again on an unusable input it
+    # is two ticks from the 5, past ride_through, and has forgotten
+    first = {"x": ("good", 20.0), "tr": ("good", 5.0), "fo": T}
+    got = run(graph(rl), [first, lost, {"fo": F, "x": ("bad", None)}, {"x": ("good", 20.0)}], ("y",))
+    check("follow rate, ride_through used up", [g_[0] for g_ in got[2:]], [("bad", None), ("good", 20.0)])
+    # it does not look at its input while it follows
+    got = run(graph(rl), [{"x": ("bad", None), "tr": ("good", 5.0), "fo": T}], ("y",))
+    check("follow rate, input not looked at", got[0][0], ("good", 5.0))
+    # `follow` is given only where `track` is
+    refused("follow rate with no track", graph(dict(rl, **{"in": {"x": "x", "follow": "fo"}})))
+    refused("follow rate, a number", graph(dict(rl, **{"in": {"x": "x", "track": "tr", "follow": 1}})))
+    Engine(graph(dict(rl, **{"in": {"x": "x", "track": 0, "follow": True}})))
+    # one that acts by the call does nothing at a catch-up tick, and
+    # `follow` is not looked at there
+    g = graph(rl, commands=["y"])
+    e = Engine(g)
+    e.write("x", "good", 20.0, 0)
+    e.write("tr", "good", 5.0, 0)
+    e.write("fo", "good", False, 0)
+    check("follow rate by the call 0", e.tick(0)[1]["y"], ("good", 6.0))
+    e.write("fo", "good", True, 1 * S)
+    e.write("fo", "good", False, 3 * S)
+    e.write("tr", "good", 50.0, 1 * S)
+    # ticks 1 and 2 are catch-up ticks: nothing; tick 3 acts for three
+    check("follow rate by the call 3", e.tick(3 * S)[1]["y"], ("good", 9.0))
+
+    # --- pid (rule 7.7.15): kp 1, ki 1, setpoint 1, measurement 0
+    pid = {
+        "id": "b",
+        "type": "pid",
+        "in": {"setpoint": 1, "measurement": "me", "track": "tr", "follow": "fo", "reset": "r"},
+        "settings": {"kp": 1, "ki": 1, "max": 8},
+        "out": {"y": "y", "limited": "lim", "integral": "i", "doubtful": "db"},
+    }
+    ports = ("y", "lim", "i")
+    got = run(
+        graph(pid),
+        [
+            # follows: track, not held within max; the integral stays
+            {"me": ("good", 0.0), "tr": ("good", 50.0), "fo": T, "r": F},
+            # acts: it was waiting to track: 5 - 1, and 1 added
+            {"fo": F, "tr": ("good", 5.0)},
+            {},  # 6: 1 + 6 = 7
+            # not told it acts: follows, uncertain; nothing added
+            {"fo": ("not_ready", None), "tr": ("good", 2.0)},
+            # track not usable: no value; integral good
+            {"fo": T, "tr": ("bad", None)},
+            # an uncertain track: uncertain
+            {"tr": ("uncertain", 4.0)},
+            # a reset while it follows: the integral is zero, and it waits
+            {"r": T, "tr": ("good", 4.0)},
+            # acts: it tracks all the same: 4 - 1, and 1
+            {"r": F, "fo": F},
+            # it follows whatever its measurement is
+            {"fo": T, "me": ("bad", None)},
+        ],
+        ports,
+    )
+    want = [
+        # revised: while it follows with both inputs and track usable the
+        # integral is set to track less kp.error (50 - 1, 2 - 1, 4 - 1), and
+        # its state is by the setpoint and measurement, never by track,
+        # follow or y
+        (("good", 50.0), ("good", False), ("good", 49.0)),
+        (("good", 6.0), ("good", False), ("good", 5.0)),
+        (("good", 7.0), ("good", False), ("good", 6.0)),
+        (("uncertain", 2.0), ("uncertain", False), ("good", 1.0)),
+        (("bad", None), ("bad", None), ("good", 1.0)),
+        (("uncertain", 4.0), ("uncertain", False), ("good", 3.0)),
+        (("good", 4.0), ("good", False), ("good", 0.0)),
+        (("good", 5.0), ("good", False), ("good", 4.0)),
+        (("good", 4.0), ("good", False), ("good", 4.0)),
+    ]
+    for k, (g_, w) in enumerate(zip(got, want)):
+        for name, a, b in zip(ports, g_, w):
+            check("follow pid %d %s" % (k, name), a, b)
+    # a release with no track starts from where the actuator last was:
+    # it follows a track of 9 (integral 8), then track is lost, then it acts
+    got = run(
+        graph(pid),
+        [
+            {"me": ("good", 0.0), "tr": ("good", 9.0), "fo": T, "r": F},
+            {"tr": ("bad", None)},
+            {"fo": F},
+        ],
+        ports,
+    )
+    # (the addition would put the output above max 8: cut to nothing)
+    check("follow pid release with no track", got[2], (("good", 8.0), ("good", True), ("good", 8.0)))
+    # the integral's state while it follows is by the measurement: uncertain
+    got = run(graph(pid), [{"me": ("uncertain", 0.0), "tr": ("good", 5.0), "fo": T, "r": F}], ports)
+    check("follow pid, uncertain measurement", got[0], (("good", 5.0), ("good", False), ("uncertain", 4.0)))
+    # and by an uncertain true reset, which also keeps track out
+    got = run(graph(pid), [{"me": ("good", 0.0), "tr": ("good", 5.0), "fo": T, "r": ("uncertain", True)}], ports)
+    check("follow pid, uncertain reset", got[0], (("good", 5.0), ("good", False), ("uncertain", 0.0)))
+    # the counts are as at any other tick: doubtful counts a bad measurement
+    got = run(graph(pid), [{"me": ("bad", None), "tr": ("good", 1.0), "fo": T, "r": F}, {"me": ("good", 0.0)}], ("db",))
+    check("follow pid doubtful", [g_[0] for g_ in got], [("good", 1.0), ("good", 1.0)])
+    refused(
+        "follow pid with no track", graph(dict(pid, **{"in": {"setpoint": 1, "measurement": "me", "follow": "fo"}}))
+    )
+    # by the call: it follows at a catch-up tick too, and waits from it
+    g = graph(pid, commands=["y"])
+    e = Engine(g)
+    for name, w in (("me", ("good", 0.0)), ("tr", ("good", 5.0)), ("fo", F), ("r", F)):
+        e.write(name, w[0], w[1], 0)
+    check("follow pid by the call 0", e.tick(0)[1]["i"], ("good", 5.0))  # tracks: 4, and 1
+    e.write("fo", "good", True, 1 * S)
+    e.write("fo", "good", False, 2 * S)
+    e.write("tr", "good", 20.0, 1 * S)
+    # tick 1 follows (a catch-up tick), so it waits; tick 2, a catch-up
+    # tick, does not stop the wait; tick 3: 20 - 1 = 19; the addition of
+    # 3 would put the output above max, and is cut to nothing
+    o = e.tick(3 * S)[1]
+    check("follow pid by the call 3", o["i"], ("good", 19.0))
+    check("follow pid by the call 3 y", o["y"], ("good", 8.0))
+
+
 def test_estimator():
     g = {
         "period": "1s",
