@@ -396,7 +396,7 @@ class RateLimit(Deadband):
         "initial": ("number", False, None),
     }
     outputs = {"y": NUMBER, "limited": BOOLEAN}
-    ports = {"x": (NUMBER, True, True), "track": (NUMBER, False, True)}
+    ports = {"x": (NUMBER, True, True), "track": (NUMBER, False, True), "follow": (BOOLEAN, False, True)}
 
     def __init__(self, *a):
         Block.__init__(self, *a)
@@ -416,6 +416,14 @@ class RateLimit(Deadband):
             if not usable(x):
                 return {"y": Val(x.state), "limited": Val(x.state)}
             return {"y": Val(x.state, self.held if holds else x.v), "limited": Val(x.state, holds and x.v != self.held)}
+        follow = ins.get("follow")
+        if follow is not None and not (usable(follow) and not follow.v):  # rule 14: it follows, and limits nothing
+            track = ins["track"]
+            state = track.state if usable(follow) or not usable(track) else UNCERTAIN
+            if not usable(track):
+                return {"y": Val(state), "limited": Val(state)}
+            self.held, self.seen = track.v, k
+            return {"y": Val(state, track.v), "limited": Val(state, False)}
         if usable(x):
             track = ins.get("track")
             if self.seen is None and track is not None and usable(track):  # rule 13: where the actuator is
@@ -715,6 +723,7 @@ class Pid(Counted):
         "reset": (BOOLEAN, False, True),
         "applied": (NUMBER, False, False),  # deferred: rule 12
         "track": (NUMBER, False, True),  # rule 14
+        "follow": (BOOLEAN, False, True),  # rule 15
     }
     outputs = {"y": NUMBER, "integral": NUMBER, "limited": BOOLEAN} | COUNTERS
 
@@ -743,6 +752,23 @@ class Pid(Counted):
         counts = self.counters(k, sp.state != GOOD or pv.state != GOOD)
         state = worst((sp.state, pv.state))
         self.added = None
+        follow = ins.get("follow")
+        if follow is not None and not (usable(follow) and not follow.v):  # rule 15: it follows, and waits to track
+            track = ins["track"]
+            self.waiting = True
+            if not (usable(sp) and usable(pv)):
+                self.before, self.f = None, 0.0
+            else:
+                self.derive(pv, t)
+                if usable(track) and not resetting:  # where the actuator is, at every such tick
+                    self.integral = track.v - (self.s["kp"] * (sp.v - pv.v) - self.s["kd"] * self.f)
+            gives = track.state if usable(follow) or not usable(track) else UNCERTAIN
+            kept = UNCERTAIN if resetting and r.state == UNCERTAIN else GOOD  # the integral's state, as rule 9
+            if usable(sp) and usable(pv):
+                kept = worst((state, kept))
+            y = Val(gives, track.v) if usable(track) else Val(gives)
+            limited = Val(gives, False) if usable(track) else Val(gives)
+            return {"y": y, "limited": limited, "integral": Val(kept, self.integral)} | counts
         if not (usable(sp) and usable(pv)):  # rule 8: no value, and the integral is kept
             self.before, self.f, self.waiting = None, 0.0, not resetting  # rule 14: a reset ends the waiting
             doubted = UNCERTAIN if resetting and r.state == UNCERTAIN else GOOD  # rule 9
@@ -750,15 +776,7 @@ class Pid(Counted):
         if resetting and r.state == UNCERTAIN:
             state = UNCERTAIN
         error = sp.v - pv.v
-        at = pv.at if pv.at is not None else t  # rule 7: a measurement's time is its sample's, or the tick's
-        if self.before is None:  # there is no measurement before
-            self.f, self.before, self.before_at = 0.0, pv.v, at
-        elif at > self.before_at:  # a later one: the slope and the filter are over the time between the two
-            if self.s["filter"] is not None:
-                dt = (at - self.before_at) / NS
-                keep = math.exp(-dt / float(self.s["filter"]))
-                self.f = keep * self.f + (1.0 - keep) * (pv.v - self.before) / dt
-            self.before, self.before_at = pv.v, at
+        self.derive(pv, t)
         rest = self.s["kp"] * error - self.s["kd"] * self.f
         if self.ends_call or not self.by_call or resetting:  # rule 14: it stops waiting, and not at a catch-up tick
             track = ins.get("track")
@@ -782,6 +800,17 @@ class Pid(Counted):
             y, limited = float(low), True
         self.added = (was, add, y)
         return {"y": Val(state, y), "limited": Val(state, limited), "integral": Val(state, self.integral)} | counts
+
+    def derive(self, pv, t):
+        at = pv.at if pv.at is not None else t  # rule 7: a measurement's time is its sample's, or the tick's
+        if self.before is None:  # there is no measurement before
+            self.f, self.before, self.before_at = 0.0, pv.v, at
+        elif at > self.before_at:  # a later one: the slope and the filter are over the time between the two
+            if self.s["filter"] is not None:
+                dt = (at - self.before_at) / NS
+                keep = math.exp(-dt / float(self.s["filter"]))
+                self.f = keep * self.f + (1.0 - keep) * (pv.v - self.before) / dt
+            self.before, self.before_at = pv.v, at
 
     def update(self, k, ins):
         got = ins.get("applied")
@@ -1668,6 +1697,8 @@ class Engine:
                 if set(given) - set(block.ports):
                     raise CompileError(f"{where}: unknown input(s) {sorted(set(given) - set(block.ports))}")
                 missing = [p for p, (_, required, _) in block.ports.items() if required and p not in given]
+                if "follow" in given and "track" not in given:
+                    raise CompileError(f"{where}: follow is given only where track is (7.4 rule 14, 7.7 rule 15)")
                 if missing:
                     raise CompileError(f"{where}: missing input(s) {missing}")
             wires, direct[bid], every[bid] = {}, set(), set()

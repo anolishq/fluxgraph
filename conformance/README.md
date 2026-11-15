@@ -21,10 +21,10 @@ the text says, not what it should say.
 | `contract.py` | Tries every short sequence of writes, calls, rebases, resets, saves and restores against what sections 6, 7.2 and 8 promise a host. |
 
 ```bash
-python3 conformance/run.py                 # 499 vectors: ALL AGREE
-python3 conformance/run.py --second        # 499 vectors: ALL AGREE
-python3 conformance/mutate.py              # 742 breakages: 742 noticed; every vector failed by one
-python3 conformance/compare.py             # 2572407 comparisons, 0 differences
+python3 conformance/run.py                 # 506 vectors: ALL AGREE
+python3 conformance/run.py --second        # 506 vectors: ALL AGREE
+python3 conformance/mutate.py              # 761 breakages: 761 noticed; every vector failed by one
+python3 conformance/compare.py             # 2637511 comparisons, 0 differences
 python3 conformance/steps.py               # 750 checks: ALL HOLD; the worst error of the step is 1.81e-13
 python3 conformance/steps.py --second      # 750 checks: ALL HOLD; the worst error of the step is 7.75e-13
 python3 conformance/contract.py            # 748648 sequences: ALL HOLD
@@ -742,8 +742,41 @@ doubt of its own, changed no output: the engine gives each its loop's
 doubt before every tick. It is not in the sweep. `compare.py` has one
 graph more, two model blocks in cascade under a `pid`.
 
+## Amendment 12: a controller that is not acting
+
+The C++ core was run inside a machine runtime, closing a speed loop on a
+simulated motor. When the runtime stopped acting on the motor the graph
+was told nothing, and took its output to its limit as `good`. A `pid`
+and a `rate_limit` now have `follow`.
+
+- **Seven vectors are new**: a PID through following, a `track` it
+  cannot use, a `follow` it cannot use and a release; one that follows
+  with no setpoint or measurement and is not held within `max`; its
+  derivative going on while it follows; a release with no `track`, an
+  uncertain setpoint and a reset while it follows; a rate limit through
+  the same; a rate limit whose `ride_through` runs out while it follows;
+  and the refusal of `follow` with no `track`.
+- **The second reading changed the rule.** As first drafted a PID's
+  integral stayed while it followed and was set once, at the release. A
+  release with no `track` then started from an integral as old as the
+  fault. It is now set at every tick the PID follows, so that release
+  starts from where the actuator last was.
+- **The second reading and the reference disagreed once**, on the state
+  of a following PID's `integral`, where the draft said "as at any other
+  tick" and that could be read two ways. The rule now says which. The
+  second reading also took a tick where a rate limit follows with no
+  `track` as one at which it forgets, and the text as one at which it
+  holds; the sentence was rewritten.
+
+`compare.py` has one graph more, a `pid` and a `rate_limit` with `follow`
+on a boolean input.
+
 ## What this does not cover
 
+- **A PID that acts by the call and follows at a catch-up tick** sets its
+  integral there by the text (rule 7.7.15). A reading that set it only at
+  the last tick of a call passes every vector: the two differ only where
+  `track` is usable at a catch-up tick and not at the last.
 - **The order of a slope's sums, and of a derivative's `dt`, to the last
   place.** The text gives both; a vector compares to one part in 10⁹,
   and another order passes.

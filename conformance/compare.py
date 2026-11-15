@@ -379,6 +379,31 @@ def graphs(d, tau):
                 formula("ctl", "0.5 * p + 0.3 * (a - y)", {"p": "acc.y", "a": "a", "y": "plant.y"}, "i"),
             ],
         ),
+        "follow: a pid and a rate limit told they are not acting": (
+            {"a": NUM, "b": NUM, "c": NUM, "p": BOOL},
+            [
+                block(
+                    "pid",
+                    {"setpoint": "a", "measurement": "b", "track": "c", "follow": "p"},
+                    {"y": "y", "integral": "i", "limited": "l"},
+                    bid="c",
+                    kp=0.7,
+                    ki=0.4 / pt,
+                    kd=0.2 * pt,
+                    filter=tau(2),
+                    min=-30.0,
+                    max=30.0,
+                ),
+                block(
+                    "rate_limit",
+                    {"x": "a", "track": "c", "follow": "p"},
+                    {"y": "z", "limited": "m"},
+                    bid="slew",
+                    up=15.0 / pt,
+                    ride_through=d(1),
+                ),
+            ],
+        ),
         "two models in cascade under a pid": (
             {"a": NUM},
             [
