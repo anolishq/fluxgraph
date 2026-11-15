@@ -1,0 +1,16 @@
+# 6.13: a rate limit acts by the call where it feeds a command along a
+# chain of reads that passes through no pid. Here a formula gives the
+# command and reads the rate limit: the rate limit does not move at the
+# catch-up ticks, and at the last tick of a call that ran 3 its reach is
+# that of 3 periods (7.4.12).
+rules: [6.13, 7.4.12]
+period: 1s
+commands: [cmd]
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: slew, type: rate_limit, in: {x: x}, settings: {up: 1}}
+  - {id: f, type: formula, in: {s: slew.y}, settings: {expr: "s + 0"}, out: {y: cmd}}
+calls:
+  - {now: 0, x: 0, cmd: 0}
+  - {now: 3, ran: 3, x: 10, cmd: 3}
+  - {now: 4, cmd: 4}

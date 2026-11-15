@@ -490,8 +490,9 @@ call for reads what the host has in hand.
       block that feeds the command reads one of its outputs, on any port,
       direct or deferred. A `pid` that feeds a command acts by the call.
       A `rate_limit` does where it feeds one along a chain of such reads
-      that passes through no `pid`, the one that gives the command
-      among them: one that only shapes what a
+      on which no block is a `pid`. A `pid` that gives the command is on
+      the chain, so a rate limit it reads does not act by the call: one
+      that only shapes what a
       controller reads, a ramp on its setpoint say, keeps time and not an
       actuator, and runs at every tick. The `y` of a block that acts by
       the call is held as a command is. At a catch-up tick such a block
@@ -831,7 +832,8 @@ it. `only_new` is for the window that must not.
     that tick, and an input too old at a tick the host was late for is
     not an outage. Where it holds a value it took from an input, a
     catch-up tick is one with a usable input for rules 3 and 4, whatever
-    it read. `limited` has the input's state, and with a usable input is
+    it read: it ends a run of unusable ticks, and the next unusable tick
+    is the first of a new one. `limited` has the input's state, and with a usable input is
     true when the block holds a value, `initial` alone among them, and
     the input is not that value.
     Its `y` at such a tick is held (rule 6.13). At the last tick of a call its reach is that of `m`
@@ -1635,7 +1637,9 @@ to write the stricter thing.
    doubt, and a model block's, are held and can never show: a restore is
    a gap, and the gap sets a doubt later than any that was saved. What a
    held output (rule 6.13) was last given as is not part of it: the tick
-   after a restore is the last of its call.
+   after a restore is the last of its call. Nor is whether a PID waits
+   to track (rule 7.7.14): a restore is a gap, and after it the PID
+   waits.
 3. A **gap** is ticks nobody saw: they were due, and were not run. One
    tick runs at a gap, and the ticks before it are **passed over**. There
    are two kinds.

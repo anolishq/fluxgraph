@@ -1,0 +1,15 @@
+# 7.7.13: at a catch-up tick a PID that acts by the call adds nothing to its
+# integral, and all else is as at any tick: the derivative's filter runs.
+# kd is 1 and a = exp(-period / filter) is a half. The measurement steps
+# from 0 to 2 at tick 1, a catch-up tick: s is 2 and f is 1. At tick 2, the
+# last of the call, s is 0 and f is a half: y is -0.5, where a filter that
+# had not run at tick 1 would give 0.
+rules: [7.7.13, 7.7.7]
+period: 1s
+commands: [cmd]
+inputs: {m: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: 0, measurement: m}, settings: {kp: 0, kd: 1, filter: 1.4426950408889634s}, out: {y: cmd}}
+calls:
+  - {now: 0, m: 0, cmd: 0}
+  - {now: 2, ran: 2, first: {m: {v: 2, at: 1}}, m: 2, cmd: -0.5}
