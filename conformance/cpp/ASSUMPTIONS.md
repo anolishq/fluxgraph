@@ -8,8 +8,9 @@ sight of `reference.py`, `formula.py` or `second/impl.py`. It has `formula`,
 and 8. A second slice, written the same way from the text as amended
 eight times, adds eight block types, a third the models and the loop
 rule, a fourth the estimator, a fifth the ninth amendment's commands, and
-a sixth the tenth's derivative and slope between samples, and a seventh
-the eleventh's smaller faults; each has a section of its own.
+a sixth the tenth's derivative and slope between samples, a seventh
+the eleventh's smaller faults, and an eighth the twelfth's `follow`; each
+has a section of its own.
 
 This lists each place where the text left a choice or could be read two
 ways, with the reading taken. A choice the second reading already
@@ -558,6 +559,60 @@ and so did `compare.py`.
     delays, windows and low-passes is held against the one `settle`; a
     loop that holds a model block and an estimator is refused; the
     loop's doubt is one, and every model block on it is told of it.
+
+## The eighth slice: `follow` on a rate limit and a PID
+
+99. **Rules 7.4.14 and 7.7.15, "need not be connected".** A block whose
+    `follow` is left unconnected never follows: it is not a `follow` the
+    block cannot use. One given a constant (rule 4.7) is connected. The
+    refusal is judged by what the block's `in` names, so a `track` given
+    a constant is a `track` that is given.
+100. **Rule 7.4.14, "counts towards `ride_through`".** The block keeps
+     one count, of ticks since it last took a value: unusable ticks in a
+     row, as before, and ticks it followed with no `track`. Such a tick
+     adds one whatever the input is, and the block does not forget at it
+     however large the count. At the next tick with an unusable input
+     where it does not follow, it rides through if the count is less
+     than `ride_through` in ticks and forgets otherwise. A block that
+     holds `initial` alone, or nothing, counts nothing.
+101. **Rules 7.4.12 and 7.4.14 together.** Rule 14 counts from "the last
+     tick the block took a value at"; rule 12 makes a catch-up tick one
+     with a usable input, which "ends a run of unusable ticks". The count
+     is one, so a catch-up tick of a rate limit that acts by the call
+     ends the ticks followed with no `track` as well. Both readings do
+     the same; no vector in the suite says so.
+102. **Rule 7.4.14 and a gap.** "It forgets nothing at such a tick" is of
+     a tick. A gap of known length adds the ticks passed over to the
+     same count and forgets where that is past `ride_through`, as it did
+     (rule 8.6), whether or not the block was following before it.
+103. **Rule 7.4.14, the states.** With `track` usable and `follow` not,
+     `y` and `limited` are `uncertain`, an `uncertain` `track` among
+     them. With `track` not usable they have the state of `track`
+     whatever `follow` is. The input's state plays no part.
+104. **Rule 7.7.15, the state of `y`.** The state of `track`, or
+     `uncertain` where `follow` is not usable, and nothing else: not the
+     setpoint's or the measurement's, and not `uncertain` for a reset
+     that is `uncertain` and true. `limited` is the same.
+105. **Rule 7.7.15, the state of `integral`.** With both inputs usable,
+     the worse of their two states, and `uncertain` where `reset` is
+     `uncertain` and true; with either not usable, `good` but for such a
+     reset. That is rule 9 with what rule 8 would have given `y`.
+106. **Rule 7.7.15, a reset while it follows.** All of rule 10 at that
+     tick: the integral and the counts to zero and the derivative to its
+     start, so the measurement of that tick is the first it remembers.
+     The integral is not set from `track` at that tick, and the PID
+     waits to track after it.
+107. **Rule 7.7.15, by the call.** At a catch-up tick a PID that follows
+     does all that it does at any tick it follows: the integral is set
+     there, the counts count and the derivative runs. The periods it
+     would act for at the last tick of a call are not used: it adds
+     nothing.
+108. **What is held, and what is saved.** Nothing new in either block.
+     The PID's flag that it waits to track is set at every tick it
+     follows and is not saved, as before: a restore sets it. The rate
+     limit's count of unusable ticks is the count of entry 100, saved
+     where it was. A saved state of either block is as long as it was
+     and means what it did, but for that count.
 
 ## Recorded already, and read the same way
 

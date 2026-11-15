@@ -208,7 +208,7 @@ private:
     Memory next_;
 };
 
-// ---- rate_limit (rules 7.4.9 to 7.4.11)
+// ---- rate_limit (rules 7.4.9 to 7.4.14)
 
 class RateLimitBlock : public HoldBlock {
 public:
@@ -226,6 +226,14 @@ public:
         reach_up_ = up * period_seconds;  // per second, over one period
         reach_down_ = down * period_seconds;
         reset();
+        bool tracks = false;
+        for (const Connection &connection : setup.connections) {
+            tracks = tracks || connection.port == "track";
+            follows_ = follows_ || connection.port == "follow";
+        }
+        if (follows_ && !tracks && !settings.failed()) {
+            settings.fail("has an input 'follow' and no 'track': 'follow' is given only where 'track' is");
+        }
         return settings.finish();
     }
 
@@ -247,6 +255,30 @@ public:
             out[0] = Value::none(State::not_ready);  // held by the engine (rule 6.13): this is not looked at
             out[1] = x.is_usable() ? Value::of(now_.holding && x.number != now_.value, x.state)
                                    : Value::none(x.state, Type::boolean);
+            return;
+        }
+        // Rule 7.4.14: it follows where `follow` is true, and where it is not usable: a block that is not told
+        // it acts does not. It limits nothing and does not look at its input.
+        const Value &follow = in[2];
+        if (follows_ && (!follow.is_usable() || follow.boolean)) {
+            if (track.is_usable()) {
+                // It gives `track` and holds it as a value it took from an input at this tick.
+                const State state = follow.is_usable() ? track.state : State::uncertain;
+                next_.holding = true;
+                next_.only_initial = false;
+                next_.value = track.number;
+                next_.run = 0;
+                out[0] = Value::of(track.number, state);
+                out[1] = Value::of(false, state);
+            } else {
+                // It holds what it held and forgets nothing, however many such ticks there are; the tick counts
+                // towards `ride_through` when it next has an input it cannot use and does not follow.
+                if (now_.holding && !now_.only_initial) {
+                    next_.run = now_.run + 1;
+                }
+                out[0] = Value::none(track.state);
+                out[1] = Value::none(track.state, Type::boolean);
+            }
             return;
         }
         // At the last tick of a call its reach is that of the periods it acts for.
@@ -319,19 +351,23 @@ private:
         bool holding = false;
         bool only_initial = false;  // what it holds is `initial`, and no output it has given
         double value = 0.0;
-        std::uint64_t run = 0;
+        std::uint64_t run = 0;  // ticks since it took a value: unusable ones in a row, and ones it followed blind
     };
 
     // As it is made, and as it is having forgotten: holding `initial` if it was given one.
     Memory start() const { return Memory{has_initial_, has_initial_, initial_, 0}; }
 
     // `track` is where the actuator is, read back from it, and need not be connected (rule 7.4.13).
-    std::array<InputPort, 2> ports_ = {{{"x", Type::number, true, false}, {"track", Type::number, false, false}}};
+    // `follow` is what a host says while nothing acts on the output (rule 7.4.14).
+    std::array<InputPort, 3> ports_ = {{{"x", Type::number, true, false},
+                                        {"track", Type::number, false, false},
+                                        {"follow", Type::boolean, false, false}}};
     std::array<OutputPort, 2> outputs_ = {{{"y", Type::number, false}, {"limited", Type::boolean, false}}};
     double reach_up_ = 0.0;
     double reach_down_ = 0.0;
     bool has_initial_ = false;
     double initial_ = 0.0;
+    bool follows_ = false;  // `follow` is connected: left unconnected, the block acts
     Memory now_;
     Memory next_;
 };

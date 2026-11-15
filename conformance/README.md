@@ -773,7 +773,7 @@ on a boolean input.
 
 ## The C++ core
 
-Seven slices of a version 2 core in C++ are in `include/fluxgraph/v2/` and
+Eight slices of a version 2 core in C++ are in `include/fluxgraph/v2/` and
 `src/v2/`, behind the CMake option `FLUXGRAPH_BUILD_V2`, which is off
 unless given. It was written from the proposal's text, without sight of
 either reading here. It has the engine, the compiler, the formula language,
@@ -792,8 +792,8 @@ against it as they do against the readings:
 cmake -S . -B build/v2 -G Ninja -DFLUXGRAPH_BUILD_V2=ON -DFLUXGRAPH_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
 cmake --build build/v2 --target fluxgraph_v2_driver
 export FLUXGRAPH_V2_DRIVER=$PWD/build/v2/tools/fluxgraph_v2_driver/fluxgraph_v2_driver
-python3 conformance/run.py --cpp        # 499 vectors: 499 agree, 0 skipped (block types not built)
-python3 conformance/compare.py --cpp    # 255 graphs run, 0 skipped; 2572407 comparisons, 0 differences
+python3 conformance/run.py --cpp        # 506 vectors: 506 agree, 0 skipped (block types not built)
+python3 conformance/compare.py --cpp    # 260 graphs run, 0 skipped; 2637511 comparisons, 0 differences
 python3 conformance/contract.py --cpp   # 748648 sequences: ALL HOLD
 python3 conformance/cpp/edges.py        # 72516 checks: ALL HOLD
 python3 conformance/steps.py --cpp      # 750 checks: ALL HOLD; the worst error of the step is 1.81e-13
