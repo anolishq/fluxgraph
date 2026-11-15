@@ -11,8 +11,9 @@ ASSUMPTIONS-amendment-5.md, and for Amendment 6 (the whole text, read cold)
 in ASSUMPTIONS-amendment-6.md, and for Amendment 7 (a rate limit and a PID)
 in ASSUMPTIONS-amendment-7.md, for Amendment 8 in
 ASSUMPTIONS-amendment-8.md, for Amendment 9 (commands, and where the
-actuator is) in ASSUMPTIONS-amendment-9.md, and for Amendment 10 (a
-derivative and a slope between samples) in ASSUMPTIONS-amendment-10.md.
+actuator is) in ASSUMPTIONS-amendment-9.md, for Amendment 10 (a
+derivative and a slope between samples) in ASSUMPTIONS-amendment-10.md, and
+for Amendment 11 (smaller faults) in ASSUMPTIONS-amendment-11.md.
 
 Every time is a whole number of nanoseconds, held as an int (rule 6.2).
 """
@@ -1396,7 +1397,7 @@ class Integrate(Block):
         else:
             s["missed"] += 1
         if s["over"] or (self.max_missed is not None and s["missed"] > self.max_missed):
-            st = BAD
+            st = UNC  # past max_missed it keeps its value (rule 7.7.2)
         elif x[0] == UNC or reset_unc:
             st = UNC
         else:
@@ -2849,6 +2850,24 @@ class Engine:
                 if bid in self._reach(deps, bid):
                     raise b.err("setting 'initial' is missing, and the delay can reach its own input")
 
+    def _takes(self, block, other):
+        """Whether `block` takes an output of the block `other` directly or
+        through formulas alone, on an input direct or deferred."""
+        seen = set()
+        stack = [block]
+        while stack:
+            b = stack.pop()
+            for conn in b.conns.values():
+                if conn[0] != "blk":
+                    continue
+                if conn[1] == other:
+                    return True
+                src = self._blocks[conn[1]]
+                if isinstance(src, Formula) and conn[1] not in seen:
+                    seen.add(conn[1])
+                    stack.append(src)
+        return False
+
     def _find_loops(self):
         """Rule 7.8.8: the loops that hold a model, each as one block."""
         deps = {bid: set() for bid in self._blocks}
@@ -2868,13 +2887,26 @@ class Engine:
             models = [b for b in members if isinstance(b, ModelBlock)]
             if not models:
                 continue
-            if len(models) > 1:
-                raise models[0].err(
-                    "the model blocks %s are on one loop, a tick apart: write them as one model "
-                    "(`linear` takes any number of states)" % ", ".join(repr(b.id) for b in models)
-                )
-            if "settle" not in models[0].st:
-                raise models[0].err("setting 'settle' is missing, and the block is on a loop")
+            # no model blocks in it are joined in a ring directly or
+            # through formulas alone: two that each take the other's
+            # output so, or three or more that each take the next's and
+            # the last the first's (rule 7.8.8). One that takes its own is
+            # one block and no ring.
+            takes = {a.id: set(b.id for b in models if b is not a and self._takes(a, b.id)) for a in models}
+            around = {bid: self._reach(takes, bid) for bid in takes}
+            for a in models:
+                if a.id in around[a.id]:
+                    ring = sorted(x for x in around[a.id] if a.id in around[x])
+                    raise a.err(
+                        "the model blocks %s are joined in a ring, each a tick behind the one it reads: write "
+                        "them as one model (`linear` takes any number of states)" % ", ".join(repr(x) for x in ring)
+                    )
+            # every model block in it has `settle` written, and the same
+            for b in models:
+                if "settle" not in b.st:
+                    raise b.err("setting 'settle' is missing, and the block is on a loop")
+                if b.settle != models[0].settle:
+                    raise b.err("setting 'settle' is not that of block %r, on the same loop" % models[0].id)
             settle = models[0].settle
             for b in members:
                 if isinstance(b, Estimator):

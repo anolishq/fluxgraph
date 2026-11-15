@@ -677,7 +677,7 @@ class Integrate(Block):
             self.missed += 1
         limit = self.s["max_missed"]
         if limit is not None and (self.missed > limit or self.lost):  # rule 2
-            y = Val(BAD)
+            y = Val(UNCERTAIN, self.total)
         elif x.state == UNCERTAIN or (resetting and r.state == UNCERTAIN):
             y = Val(UNCERTAIN, self.total)
         else:
@@ -1825,13 +1825,28 @@ class Engine:
             if not models:
                 continue  # 5 rule 6: no memory that fades, and no rule
             where = f"the loop of blocks {sorted(members)}"
-            if len(models) > 1:
+            formulas = {
+                b: every[b] if isinstance(self.blocks[b], FormulaBlock) else set() for b in self.blocks
+            }  # what is reached through formulas alone
+            takes = {
+                m: {
+                    n
+                    for n in models
+                    if n != m and (n in every[m] or any(self._reaches(formulas, f, n) for f in every[m]))
+                }
+                for m in models
+            }  # whose output each takes, directly or through formulas alone
+            ring = [m for m in models if self._reaches(takes, m, m)]
+            if ring:
                 raise CompileError(
-                    f"{where}: model blocks {models} read each other, a tick apart: write them as one linear model"
+                    f"{where}: model blocks {ring} take each other's outputs directly or through formulas alone, "
+                    "a tick apart: write them as one linear model"
                 )
-            if not self.blocks[models[0]].settle_given:
+            if not all(self.blocks[b].settle_given for b in models):
                 raise CompileError(f"{where}: a model on a loop is given settle")
             settle = self.blocks[models[0]].s["settle"]
+            if any(self.blocks[b].s["settle"] != settle for b in models):
+                raise CompileError(f"{where}: its model blocks {models} are given one settle, and have several")
             if any(isinstance(self.blocks[b], Estimator) for b in members):
                 raise CompileError(f"{where}: an estimator is not put on a loop that holds a model block")
             memory = {Delay: lambda d: d.s["ticks"], Window: lambda w: w.n, Lowpass: lambda f: f.s["settle"]}

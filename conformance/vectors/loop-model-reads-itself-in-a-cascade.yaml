@@ -1,0 +1,16 @@
+# 7.8.8: a model block that takes its own output is no ring. The first
+# plant steps on the controller's output less half its own state, so
+# a' = 0.25 a + 0.5 u, and the second on the first's: b' = 0.5 b + 0.5 a.
+rules: [7.8.8]
+period: 1s
+inputs: {sp: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: second.y}, settings: {kp: 1}, out: {y: u}}
+  - {id: g, type: formula, in: {u: c.y, a: first.y}, settings: {expr: "u - 0.5 * a"}}
+  - {id: first, type: state_space, in: {u: g.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: a}}
+  - {id: second, type: state_space, in: {u: first.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: b}}
+calls:
+  - {sp: 4, u: 4, a: 0, b: 0}
+  - {u: 4, a: 2, b: 0}
+  - {u: 3, a: 2.5, b: 1}
+  - {u: 2.25, a: 2.125, b: 1.75}

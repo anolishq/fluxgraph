@@ -1,0 +1,21 @@
+# 7.8.8: two plants in cascade under one controller are one loop of two
+# model blocks. The controller is a pid, so the second plant reaches the
+# first through a block that is not a formula, and the pair is accepted.
+# Each is x' = 0.5 x + 0.5 u and gives its state at the tick: the first
+# steps on the controller's output, 4 - b, the second on the first's state
+# as it stood at the tick. A setpoint that is uncertain at tick 2 is the
+# loop's doubt, and both are uncertain for settle, 2 ticks, after it.
+rules: [7.8.8, 7.8.6, 7.7.5]
+period: 1s
+inputs: {sp: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: second.y}, settings: {kp: 1}, out: {y: u}}
+  - {id: first, type: state_space, in: {u: c.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: a}}
+  - {id: second, type: state_space, in: {u: first.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: b}}
+calls:
+  - {sp: 4, u: 4, a: 0, b: 0}
+  - {u: 4, a: 2, b: 0}
+  - {sp: {v: 4, state: uncertain}, u: {u: 3}, a: 3, b: 1}   # tick 2: the loop's doubt
+  - {sp: 4, u: {u: 2}, a: {u: 3}, b: {u: 2}}
+  - {u: {u: 1.5}, a: {u: 2.5}, b: {u: 2.5}}
+  - {u: 1.5, a: 2, b: 2.5}
