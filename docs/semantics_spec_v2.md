@@ -1,6 +1,6 @@
 # FluxGraph semantics, version 2 (proposal)
 
-**Status:** proposal, third revision, with eight amendments. Not in force.
+**Status:** proposal, third revision, with nine amendments. Not in force.
 [semantics_spec.md](semantics_spec.md) stays the normative contract for
 FluxGraph 1.x until this is accepted, at which point this document replaces
 it and the library becomes 2.0.
@@ -129,7 +129,50 @@ time. **Amendments so far:**
    fourth, the estimator, found the other reading taking a measurement
    from a delay of a constant, which rule 7.9.3 refuses.
 
-Nothing is left on the list of what is known to be wrong as it stands.
+9. *Commands, and where the actuator is* (rules 6.13, 7.4.12, 7.4.13,
+   7.7.13 and 7.7.14, and sections 8 and 9). Five whole graphs were run
+   through stalls, dropouts, restarts and stepped clocks, and a PID loop
+   did not come through them. A controller ran every catch-up tick as if
+   what it gave had reached the actuator: a call 99 ticks late took an
+   integral from 0.3 to 10.2, where one 101 ticks late, a gap, left it at
+   0.4. A graph now lists the outputs its host hands to an actuator. At a
+   catch-up tick such a **command** is what the host was last given, for
+   every block that reads it, and a `pid` or a `rate_limit` that feeds one
+   acts once a call: for the ticks the call ran, and for no more than
+   `act_for` of them. A graph that lists none, a simulation, runs as it
+   did. And a rate limit given `initial` went back to it after an outage,
+   wherever the actuator was: a `pid` and a `rate_limit` may be given
+   `track`, where the actuator is, and start again from that.
+
+**Known to be wrong as it stands**, and not yet amended:
+
+- **A derivative and a slope are over ticks and not over sample times**
+  (rule 7.7.7 and section 7.3). Where a host's loop is a little slower or
+  faster than the period, a sample is not a period after the one before,
+  and the PID's derivative and a window's `slope` of an exact ramp are
+  off by as much as the calls are.
+- **An estimator whose model is exactly right flags itself under
+  ordinary timing** (section 7.9). It steps over whole periods on inputs
+  held from one tick to the next, and compares a measurement with its
+  state at the tick whatever time the sample carries. A host a few
+  percent off the period, or an input that changes between ticks, is
+  enough for it to refuse measurements and say `uncertain`.
+- **Two model blocks on one loop are refused where a controller stands
+  between them** (rule 7.8.8), so two plants in cascade cannot be
+  written, and the refusal says of blocks in series that they read each
+  other.
+- **A total past `max_missed` has no value until a reset** (rule 7.7.2),
+  and after a restore or a clock that stepped forward it is past it
+  where nothing was missed.
+- **A value does not say why it is `uncertain` or `bad`**, and nothing
+  in a value is kept for the day it does (section 7.11, Open).
+- **An input written true for one call can be missed** by a host whose
+  loop is faster than the period: some of its calls run no tick, and the
+  next write displaces the one nobody read (section 6).
+- **An output has no stated lifetime.** A host that stalls, or whose
+  calls are refused, leaves the last command with the actuator, and
+  nothing here says for how long a given output may be acted on.
+
 What each amendment gives up is at the end of section 7, and for time
 and the host at the end of section 6; what is still open is under each
 section.
@@ -430,11 +473,45 @@ call for reads what the host has in hand.
       less than zero, or does not fit in 64 bits, signed.
 12. Calls and writes are made one at a time. A host with several threads
     sees to that itself.
+13. **Commands.** A graph may list published outputs as **commands**
+    (rule 9.8): what its host hands on to something that acts. A host is
+    given the outputs of the last tick of a call and of no other (rule
+    10), so nothing has acted on what a catch-up tick gave.
+    - **A command is held.** At a catch-up tick a command is, for every
+      block that reads it and in both phases, what it was at the latest
+      tick that was the last of its call: its value, its state and its
+      sample time, a value a fallback gave among them. For rule 7.8.8 it
+      is not usable at a catch-up tick where it was not usable then,
+      before any fallback, and usable where it was, whatever its block
+      works out at the catch-up tick. There is always such a tick: tick 0 is the
+      last of its call, and so is the tick a gap runs.
+    - **A `pid` or a `rate_limit` that feeds a command acts by the
+      call.** A block **feeds** a command when it gives it, or when a
+      block that feeds the command reads one of its outputs, on any port,
+      direct or deferred. A `pid` that feeds a command acts by the call.
+      A `rate_limit` does where it feeds one along a chain of such reads
+      that passes through no `pid`, the one that gives the command
+      among them: one that only shapes what a
+      controller reads, a ramp on its setpoint say, keeps time and not an
+      actuator, and runs at every tick. The `y` of a block that acts by
+      the call is held as a command is. At a catch-up tick such a block
+      does not act: a `pid` adds nothing to its integral (rule 7.7.13),
+      and a `rate_limit` does not move (rule 7.4.12). At the last tick of
+      a call it acts for `m` periods: `m` is the number of ticks the call
+      ran, or `act_for` if that is less.
+    - `act_for` is a setting of the graph, 3 unless given and at least
+      1. A host that is late by a tick or two acts for the time it was
+      away, and one away for longer does not act for all of it.
+
+    Every other block runs at every tick as it did, whatever reads it,
+    and so does every output that is not held. A graph that lists no
+    command is as it was without this rule.
 
 So a host whose loop is a little slow or a little fast runs, now and then,
 two ticks in a call or none. The extra tick reads what had been sampled by
 its own time. Short of a stall, counted times and totals stay true to the
-host's clock.
+host's clock; a block that acts by the call (rule 13) does so only for
+calls of no more than `act_for` ticks.
 
 **What the host has to do** for that to hold:
 
@@ -458,6 +535,10 @@ host's clock.
   the order they were taken. One with a time earlier than what stands is
   thrown away; one that is only out of order with a write still waiting
   may stand for a tick before the later one does.
+- **List what is acted on.** An output the host hands to an actuator is
+  listed as a command (rule 13). Left out, a controller behind it runs
+  every catch-up tick on outputs nobody was given, and a block that reads
+  the output reads what no actuator had.
 - **After a gap** (section 8), look to whatever it counts on: a gap and
   its length are reported to the host, and each block that counts gives
   `gaps` and adds the ticks passed over to what it missed or doubted. A
@@ -498,6 +579,19 @@ What this still leaves out:
 - **What a catch-up tick gave.** A call gives the outputs of its last tick
   and of no other. What a tick before it did is seen only in what it left
   in a block's memory.
+- **What a graph with a command gives depends on its calls.** The same
+  writes, taken up by calls that fall differently, give another integral
+  and another command: a controller acts when its host can hand on what
+  it gives. A run is played again exactly from its writes and the times
+  of its calls, and from the writes alone only where no command is
+  listed.
+- **A host whose calls each run more than `act_for` ticks acts for less
+  than the time that passes.** At five ticks a call and an `act_for` of
+  3, an integral gets three fifths of what its `ki` says. The period, or
+  `act_for`, is chosen for the host.
+- **Between two calls a controller sees one error.** A block that acts by
+  the call acts on what it reads at the last tick, for `m` periods, and
+  not on what each tick between read.
 - **Which input a write was thrown away on.** The counts are for the whole
   graph, and a write gives nothing back. A device whose clock is a few
   seconds behind has every sample read as too old, and looks like one that
@@ -730,6 +824,32 @@ it. `only_new` is for the window that must not.
     one, and otherwise takes its next usable input as it is, however far
     that is from where it was. Holding `initial` and nothing else it does
     not ride through: its output takes the input's state.
+12. **By the call.** A rate limit that acts by the call (rule 6.13)
+    does nothing at a catch-up tick, whatever its input: it takes
+    nothing, moves nothing and forgets nothing, and what it holds is as
+    it was, `initial` or nothing among them. Nothing was handed on at
+    that tick, and an input too old at a tick the host was late for is
+    not an outage. Where it holds a value it took from an input, a
+    catch-up tick is one with a usable input for rules 3 and 4, whatever
+    it read. `limited` has the input's state, and with a usable input is
+    true when the block holds a value, `initial` alone among them, and
+    the input is not that value.
+    Its `y` at such a tick is held (rule 6.13). At the last tick of a call its reach is that of `m`
+    periods: `up` times the period, and that times `m`, and `down`
+    likewise.
+13. **Where the actuator is.** It has an input `track`, a number, that
+    need not be connected: the value the actuator has, read back from it.
+    On a tick with a usable input, where the block holds no value it took
+    from an input, at the start and after it has forgotten, and `track`
+    is usable, it holds the value of `track` in place of `initial` or of
+    nothing, and its input is limited from that like any other. A rate
+    limit that acts by the call does so at the last tick of a call and
+    not at a catch-up tick. An `uncertain` `track` is used as a `good`
+    one is, and the output's state is the input's all the same. A `track`
+    that is not usable is not used, and rules 9 and 11 are as written.
+    `track` is a direct input, and a readback from outside the graph. A delay of the block's
+    own output is not one: for as long as the output has no value the
+    delay has none either.
 <!-- markdownlint-enable MD029 -->
 
 ### 7.5 Hysteresis
@@ -915,9 +1035,36 @@ lacks.
     rising addition back, and the integral never grows; one a little high
     takes back every falling one. A rate limit read back this way still
     takes the PID's first output whole unless it has an `initial` (rule
-    7.4.9).
+    7.4.9) or a `track` (rule 7.4.13).
     `limited` says nothing of an addition taken back: a graph that has to
     know compares `y` with what was applied.
+13. **By the call.** A PID that feeds a command (rule 6.13) adds nothing
+    to its integral at a catch-up tick: the addition of rule 6 is zero
+    there, so nothing is cut short and nothing is taken back. All else is
+    as at any tick: the derivative's filter runs, the counts count, a
+    `reset` is taken, rule 8 holds, and `integral` and `limited` are
+    given. Its `y` at such a tick is held (rule 6.13). At the last tick
+    of a call the addition is `ki·error·period`, and that times `m`.
+    Rules 6 and 12 are of that addition, whole.
+14. **Where the actuator is.** It has an input `track`, a number, that
+    need not be connected: the value the actuator has, read back from it.
+    The PID **waits to track** from the start, from a tick where either
+    input is not usable, and from a gap that starts the derivative again
+    (rule 8.6). It stops waiting at a tick where both inputs are usable;
+    one that acts by the call, at such a tick that is the last of its
+    call, and not at a catch-up tick. It stops waiting at the tick of a
+    reset too, a catch-up tick among them, and whatever that tick reads:
+    on a tick with a reset and an input that is not usable, the reset
+    wins, and the PID is not waiting after it.
+    At the tick it stops waiting, if
+    that is not the tick of a reset, and `track` is usable, the integral
+    is set, before that tick's addition, to `track` less the first sum of
+    rule 5: `kp·error` and the derivative, which is zero there but for a
+    PID that acts by the call. So its output before limiting is where the
+    actuator is, with that tick's addition made to it, and not whatever
+    the integral held when the input was lost. An `uncertain`
+    `track` is used as a `good` one is, and one that is not usable is not
+    used. A reset says zero, and `track` does not gainsay it.
 <!-- markdownlint-enable MD029 -->
 
 A PID with a limit and an error that stays one way sits at the limit with
@@ -1409,9 +1556,44 @@ to write the stricter thing.
 - **A PID is `good` on the tick after an `uncertain` error went into its
   integral.** `doubtful` counts the tick. Its derivative's filter fades,
   and is treated as the integral is and not as a low-pass.
-- **A rate limit with no `initial` does not limit its first move**, or
-  its first after it has forgotten: past `ride_through`, or after a gap
-  that long, its next usable input is taken as it is.
+- **A rate limit with no `initial` and no usable `track` does not limit
+  its first move**, or its first after it has forgotten: past
+  `ride_through`, or after a gap that long, its next usable input is
+  taken as it is.
+- **A rate limit with `initial` and no usable `track` goes back to
+  `initial` when it has forgotten.** `initial` is its author's word for
+  what the actuator has while the output has no value. Where the host
+  held a valve at 50% through the outage and `initial` is 0, the first
+  output after it is one reach from 0. `track` is for that.
+- **`track` is taken on trust.** A readback that is wrong, or
+  `uncertain`, sets where a rate limit or an integral starts from, and
+  no output of the block is `uncertain` for it. On a loop that holds a
+  model it is an input like any other for rule 7.8.8, at every tick.
+- **A PID reset while its input is lost does not track when it comes
+  back.** It starts from the zero the reset left, wherever the actuator
+  is: a `reset` wired to a fault and a `track` do not go together.
+- **Only `y` is held.** At a catch-up tick the `integral` and `limited`
+  of a block that acts by the call are of that tick, beside a `y` from
+  the call before. A graph that gates on `limited` reads it so.
+- **A command is what the host was given, and not what the actuator
+  did.** A total of a command across a call that caught up counts, for
+  each catch-up tick, the value last given. That is the truth where the
+  host handed it on and the actuator held it, and nothing here knows
+  whether it did.
+- **Only a `pid` and a `rate_limit` act by the call.** A total kept by an
+  `integrate`, or by a formula and a delay, that feeds a command adds at
+  every catch-up tick as it did. A hysteresis or a latch that feeds one
+  switches at the tick its input says, and the command shows it at the
+  last tick of the call.
+- **Every `pid` that feeds a command acts by the call**, the outer one
+  of a cascade and one that is part of a simulation in the same graph
+  among them, and so does every `rate_limit` between a controller and a
+  command. Nothing says otherwise for one block. A rate limit that
+  ramps a setpoint runs at every tick, and at the last tick of a late
+  call the controller reads a setpoint that has moved on by all of
+  them.
+- **At a gap a block that acts by the call acts for one period**, however
+  long the gap.
 - **A limit after a PID that `applied` is not connected to is not seen by
   it.** Its integral winds up against it, and `limited` is false.
 - **A PID whose `applied` reads low by more than `applied_within` never
@@ -1451,7 +1633,9 @@ to write the stricter thing.
    waiting, the clock, a `rebase` not yet followed by its call, or the
    count of writes thrown away, which stays the engine's own. A loop's
    doubt, and a model block's, are held and can never show: a restore is
-   a gap, and the gap sets a doubt later than any that was saved.
+   a gap, and the gap sets a doubt later than any that was saved. What a
+   held output (rule 6.13) was last given as is not part of it: the tick
+   after a restore is the last of its call.
 3. A **gap** is ticks nobody saw: they were due, and were not run. One
    tick runs at a gap, and the ticks before it are **passed over**. There
    are two kinds.
@@ -1536,7 +1720,7 @@ to write the stricter thing.
 | `held_for` | With `reset` the timer stops. With `hold` the unusable stretch grows by `n`: within `hold_limit` the timer runs on and `doubtful` goes up by `n`, and past it the timer stops | The timer stops |
 | `since_true` | The clock is not set, with either `on_bad`. `doubtful` goes up by `n` | The input was last true longer ago than `time` (rule 7.6.2), and its counts start again at the gap's tick |
 | `latch` | Unchanged. `doubtful` goes up by `n` if it is not set | Unchanged |
-| `pid` | The integral is unchanged, and the derivative starts again (rule 7.7.7). `doubtful` goes up by `n` | The integral is unchanged, and the derivative starts again |
+| `pid` | The integral is unchanged, the derivative starts again (rule 7.7.7), and it waits to track (rule 7.7.14), but where `n` is zero. `doubtful` goes up by `n` | The integral is unchanged, the derivative starts again, and it waits to track |
 | `integrate` | The total is unchanged. `missed` and `elapsed` go up by `n` | The total is unchanged. With `max_missed` given it is `bad` until a reset: what it missed is more than that |
 | Model block | For each of those ticks, in order, it steps on the last usable value of every input while each is within `ride_through` (rule 7.8.4), and takes no step from the first tick where one is not. `doubtful` goes up by `n`. The tick before the one that runs is a doubt (rule 7.8.6), its loop's if it is on one: with `settle` it is `uncertain` from the tick that runs | The same doubt. It takes no step, and does not ride through (rule 7.8.4) |
 | `estimator` | It predicts `n` times more on the model inputs it last had (rule 7.9.9) | Each state's variance grows by its `p0` |
@@ -1582,6 +1766,8 @@ the sample times of what it still holds.
 period: 2.5s
 max_catch_up: 100
 max_waiting: 1024
+commands: [heater/duty]
+act_for: 3
 
 inputs:
   heater/pad_c: { type: number, unit: degC, max_age: 10s }
@@ -1594,6 +1780,11 @@ blocks:
     in: { x: heater/pad_c }
     settings: { window: 7.5s }
     out: { median: heater/pad_filtered_c }
+  - id: hold
+    type: pid
+    in: { setpoint: 40, measurement: pad.median }
+    settings: { kp: 0.2, ki: 0.01, min: 0, max: 1 }
+    out: { y: heater/duty }
 ```
 
 1. `inputs` lists every signal written from outside, with its type, its
@@ -1629,6 +1820,12 @@ blocks:
 7. What a name or a value is, is judged after the file is read. A reader
    that takes `on` for `true` will see a boolean where a name was meant,
    and the graph is then refused by rule 2.
+8. `commands` is a list of published names (rule 6.13), each the name a
+   block's `out` gives to one of its outputs. A name that is not one, the
+   name of an input and a `<block id>.<port>` among them, is refused, and
+   so is a name listed twice. Left out, or empty, the graph has no
+   command. `act_for` is a whole number, at least 1, and may be given
+   where there is no command, which does nothing.
 
 ## 10. Units
 
@@ -1724,8 +1921,8 @@ what the vectors pin down.
 | `since_true` | `x`: boolean | `time`, `on_bad` | `y`: boolean; `elapsed`, `doubtful`, `gaps` |
 | `latch` | `set`: boolean; `reset`: boolean, optional | none | `y`: boolean; `elapsed`, `doubtful`, `gaps` |
 | `integrate` | `x`: number; `reset`: boolean, optional | `per` (`1s`), `max_missed` (none) | `y`, `missed`, `doubtful`, `elapsed`, `gaps` |
-| `rate_limit` | `x`: number | `up`, `down` (`up`), `ride_through` (0), `initial` (none) | `y`; `limited`: boolean |
-| `pid` | `setpoint`, `measurement`: number; `reset`: boolean, optional; `applied`: number, optional, deferred | `kp`, `ki` (0), `kd` (0), `filter`, `min` (none), `max` (none), `applied_within` (0) | `y`, `integral`; `limited`: boolean; `elapsed`, `doubtful`, `gaps` |
+| `rate_limit` | `x`: number; `track`: number, optional | `up`, `down` (`up`), `ride_through` (0), `initial` (none) | `y`; `limited`: boolean |
+| `pid` | `setpoint`, `measurement`: number; `reset`: boolean, optional; `applied`: number, optional, deferred; `track`: number, optional | `kp`, `ki` (0), `kd` (0), `filter`, `min` (none), `max` (none), `applied_within` (0) | `y`, `integral`; `limited`: boolean; `elapsed`, `doubtful`, `gaps` |
 | `linear` | one per column of `B`, named by `inputs` | `A`, `B`, `C`, `D` (zeros), `initial` (zeros), `inputs`, `states`, `outputs`, and the model settings | one per row of `C`, named by `outputs`; and the model outputs |
 | `thermal_mass` | `power`, `ambient` | `thermal_mass`, `heat_transfer`, `initial`, and the model settings | `temp`; and the model outputs |
 | `thermal_rc2` | `power`, `ambient` | `thermal_mass_a`, `thermal_mass_b`, `heat_transfer_a`, `heat_transfer_b`, `coupling`, `initial_a`, `initial_b`, and the model settings | `temp_a`, `temp_b`; and the model outputs |
@@ -1754,7 +1951,8 @@ Ranges, outside which a graph is refused: `ticks` a whole number, at least
 1; `window` at least one period; `min_good` more than 0 and at most 1;
 `step`, `ride_through`, `settle`, `time`, `hold_limit`, `max_missed`, `q`,
 `gate` and a state's `sigma_max` not negative; `ticks`, `over`,
-`max_refused`, `max_catch_up` and `max_waiting` at most 2,147,483,647,
+`max_refused`, `max_catch_up`, `max_waiting` and `act_for` at most
+2,147,483,647,
 which is a width and not a size: an engine may refuse a graph it has not
 the memory for, a long window among them, and a count it works out, a
 low-pass's `settle` say, that does not fit in 64 bits;
@@ -1843,8 +2041,8 @@ and refused without it. `min_good` is required with `only_new: true`.
   ratio of the period to `per`. The ratio is worked once, exactly, and
   then taken as a double, so that at a period of 100 ms and a `per` of
   300 ms an input of 3 adds exactly 1. `missed` is in seconds.
-- **`rate_limit`.** Section 7.4 rules 9 to 11.
-- **`pid`.** Section 7.7 rules 5 to 12. `kp`, `ki` and `kd` are any finite
+- **`rate_limit`.** Section 7.4 rules 9 to 13.
+- **`pid`.** Section 7.7 rules 5 to 14. `kp`, `ki` and `kd` are any finite
   numbers: `ki` per second, `kd` in seconds.
 - **`linear`.** Any linear model in continuous time (rule 7.8.7):
   `dx/dt = A·x + B·u`, `y = C·x + D·u`. `A` is a list of `n` rows of `n`
