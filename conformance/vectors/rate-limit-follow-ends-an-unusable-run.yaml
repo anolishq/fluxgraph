@@ -1,0 +1,15 @@
+# 7.4.14: a rate limit that follows holds `track` as a value it took from an
+# input at that tick, so `ride_through` is counted from there. Tick 1 rides
+# through, one tick past its input. At tick 2 it follows and takes 7. At
+# tick 3, with no input again, it is one tick past that and rides through.
+rules: [7.4.14, 7.4.11]
+period: 1s
+inputs: {x: {max_age: none}, tr: {max_age: none}, f: {type: boolean, max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x, track: tr, follow: f}, settings: {up: 1, ride_through: 1s}, out: {y: y, limited: lim}}
+calls:
+  - {x: 10, tr: bad, f: false, y: 10, lim: false}
+  - {x: bad, y: {u: 10}, lim: bad}
+  - {tr: 7, f: true, y: 7, lim: false}
+  - {f: false, y: {u: 7}, lim: bad}
+  - {y: bad, lim: bad}

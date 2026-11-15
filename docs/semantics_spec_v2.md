@@ -921,7 +921,11 @@ other statistics must not go on as `good` either.
     it forgets nothing at such a tick, however many there are. The tick
     counts towards `ride_through`, which is counted from the last tick
     the block took a value at, when the block next has an input it
-    cannot use and does not follow.
+    cannot use and does not follow. A catch-up tick of rule 12 ends that
+    count as it ends a run of unusable ticks, and a gap adds its ticks to
+    it as section 8 says. A host writes `follow` as often as its maximum
+    age asks: one written once and left goes too old, and the block
+    follows.
     `follow` is a direct input.
 <!-- markdownlint-enable MD029 -->
 
@@ -1628,6 +1632,14 @@ to write the stricter thing.
   none.** After any number of such ticks it limits a usable input from
   the value it last held, however old; given an input it cannot use, it
   has forgotten once `ride_through` is past, and takes the next whole.
+  A gap of two ticks past `ride_through` forgets what an hour of
+  following with no `track` kept.
+- **With `kd` not zero the `integral` of a PID that follows moves with
+  its measurement**, since it is `track` less a sum that holds the
+  derivative. Only its value at the release is used.
+- **A host that loses `follow` and `track` together has no command.**
+  The block follows, and has nothing to give: `y` is `bad`. A fallback
+  (section 7.10) or the host's own safe value stands in.
 - **What a block gives while it follows is the readback as it is**: not
   held within `min` and `max`, and `limited` is false. There is no input
   for a value an operator sets by hand; a host that has one writes it to

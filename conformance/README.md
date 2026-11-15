@@ -21,9 +21,9 @@ the text says, not what it should say.
 | `contract.py` | Tries every short sequence of writes, calls, rebases, resets, saves and restores against what sections 6, 7.2 and 8 promise a host. |
 
 ```bash
-python3 conformance/run.py                 # 506 vectors: ALL AGREE
-python3 conformance/run.py --second        # 506 vectors: ALL AGREE
-python3 conformance/mutate.py              # 761 breakages: 761 noticed; every vector failed by one
+python3 conformance/run.py                 # 516 vectors: ALL AGREE
+python3 conformance/run.py --second        # 516 vectors: ALL AGREE
+python3 conformance/mutate.py              # 763 breakages: 763 noticed; every vector failed by one
 python3 conformance/compare.py             # 2637511 comparisons, 0 differences
 python3 conformance/steps.py               # 750 checks: ALL HOLD; the worst error of the step is 1.81e-13
 python3 conformance/steps.py --second      # 750 checks: ALL HOLD; the worst error of the step is 7.75e-13
@@ -771,6 +771,16 @@ and a `rate_limit` now have `follow`.
 `compare.py` has one graph more, a `pid` and a `rate_limit` with `follow`
 on a boolean input.
 
+Building it in C++ and breaking that 35 ways showed five breakages that
+only `compare.py` noticed and five that nothing did, and ten vectors are
+new for them. Among them: a PID that acts by the call sets its integral
+at a catch-up tick where it follows; a reset while it follows with an
+input it cannot use leaves it waiting; what a block gives with no
+`track` has the state of `track`; and a rate limit's `follow` is not
+looked at at a catch-up tick. The text gained a sentence for one of
+them: a catch-up tick ends the count of ticks a rate limit followed
+with no `track`.
+
 ## The C++ core
 
 Eight slices of a version 2 core in C++ are in `include/fluxgraph/v2/` and
@@ -792,7 +802,7 @@ against it as they do against the readings:
 cmake -S . -B build/v2 -G Ninja -DFLUXGRAPH_BUILD_V2=ON -DFLUXGRAPH_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
 cmake --build build/v2 --target fluxgraph_v2_driver
 export FLUXGRAPH_V2_DRIVER=$PWD/build/v2/tools/fluxgraph_v2_driver/fluxgraph_v2_driver
-python3 conformance/run.py --cpp        # 506 vectors: 506 agree, 0 skipped (block types not built)
+python3 conformance/run.py --cpp        # 516 vectors: 516 agree, 0 skipped (block types not built)
 python3 conformance/compare.py --cpp    # 260 graphs run, 0 skipped; 2637511 comparisons, 0 differences
 python3 conformance/contract.py --cpp   # 748648 sequences: ALL HOLD
 python3 conformance/cpp/edges.py        # 72516 checks: ALL HOLD
@@ -829,10 +839,6 @@ C++ a choice.
 
 ## What this does not cover
 
-- **A PID that acts by the call and follows at a catch-up tick** sets its
-  integral there by the text (rule 7.7.15). A reading that set it only at
-  the last tick of a call passes every vector: the two differ only where
-  `track` is usable at a catch-up tick and not at the last.
 - **The order of a slope's sums, and of a derivative's `dt`, to the last
   place.** The text gives both; a vector compares to one part in 10⁹,
   and another order passes.

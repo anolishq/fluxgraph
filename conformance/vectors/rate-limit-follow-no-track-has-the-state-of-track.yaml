@@ -1,0 +1,11 @@
+# 7.4.14: with `track` not usable, what a rate limit that follows gives has
+# the state of `track`, whatever its input is: not_ready, with an input
+# that is bad.
+rules: [7.4.14]
+period: 1s
+inputs: {x: {max_age: none}, tr: {max_age: none}, f: {type: boolean, max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x, track: tr, follow: f}, settings: {up: 1}, out: {y: y, limited: lim}}
+calls:
+  - {x: bad, tr: not_ready, f: true, y: not_ready, lim: not_ready}
+  - {x: 10, tr: bad, y: bad, lim: bad}

@@ -1436,6 +1436,12 @@ MUTATIONS = [
      "            if not usable(track):\n                return {\"y\": Val(state), \"limited\": Val(state)}\n            self.held, self.seen = track.v, k",
      "            if not usable(track):\n                self.seen = k if self.seen is not None else None\n"
      "                return {\"y\": Val(state), \"limited\": Val(state)}\n            self.held, self.seen = track.v, k"),
+    ("7.7.15 a PID that acts by the call and follows sets its integral only at the last tick of a call",
+     "                if usable(track) and not resetting:  # where the actuator is, at every such tick",
+     "                if usable(track) and not resetting and (self.ends_call or not self.by_call):"),
+    ("7.7.15 a reset while a PID follows ends its waiting",
+     "            track = ins[\"track\"]\n            self.waiting = True\n",
+     "            track = ins[\"track\"]\n            self.waiting = not resetting\n"),
     ("7.7.15 follow is accepted without track",
      "                if \"follow\" in given and \"track\" not in given:",
      "                if False:"),
