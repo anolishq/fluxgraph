@@ -160,6 +160,8 @@ class Block:
     own_at = False  # it gives its outputs their sample time itself (3 rule 7)
     loop_settle = None  # on a loop that holds a model: the loop's settle, in ticks (7.8 rule 8)
     loop_doubt = None  # and the loop's doubt, a tick, given by the engine before each tick
+    by_call = False  # 6 rule 13: a pid or a rate limit that feeds a command acts by the call
+    ends_call, acts = True, 1  # given by the engine before each tick: it is the last of its call; and `m`
 
     def __init__(self, s, period):
         self.s, self.period = s, float(period)
@@ -377,7 +379,7 @@ class Deadband(Block):
 
 
 class RateLimit(Deadband):
-    """Section 7.4 rules 9 to 11. What it holds, and when it forgets, are a deadband's."""
+    """Section 7.4 rules 9 to 13. What it holds, and when it forgets, are a deadband's."""
 
     settings = {
         "up": ("number", True, None),
@@ -386,6 +388,7 @@ class RateLimit(Deadband):
         "initial": ("number", False, None),
     }
     outputs = {"y": NUMBER, "limited": BOOLEAN}
+    ports = {"x": (NUMBER, True, True), "track": (NUMBER, False, True)}
 
     def __init__(self, *a):
         Block.__init__(self, *a)
@@ -398,10 +401,20 @@ class RateLimit(Deadband):
 
     def output(self, k, t, ins):
         x = ins["x"]
+        if self.by_call and not self.ends_call:  # rule 12: a catch-up tick. It does nothing, whatever it reads
+            if self.seen is not None:
+                self.seen = k
+            holds = self.held is not None
+            if not usable(x):
+                return {"y": Val(x.state), "limited": Val(x.state)}
+            return {"y": Val(x.state, self.held if holds else x.v), "limited": Val(x.state, holds and x.v != self.held)}
         if usable(x):
+            track = ins.get("track")
+            if self.seen is None and track is not None and usable(track):  # rule 13: where the actuator is
+                self.held = track.v
             if self.held is not None:
-                reach = (self.s["up"] if x.v > self.held else self.s["down"]) * self.period
-                if abs(x.v - self.held) > reach:  # rule 9: one period's worth, whatever went before
+                reach = (self.s["up"] if x.v > self.held else self.s["down"]) * self.period * self.acts
+                if abs(x.v - self.held) > reach:  # rule 9: one period's worth, whatever went before; rule 12: `m`
                     x = Val(x.state, self.held + math.copysign(reach, x.v - self.held))
             limited = Val(x.state, x.v != ins["x"].v)
             self.held, self.seen = x.v, k
@@ -677,7 +690,7 @@ class Integrate(Block):
 
 
 class Pid(Counted):
-    """Section 7.7 rules 5 to 11."""
+    """Section 7.7 rules 5 to 14."""
 
     settings = {
         "kp": ("number", True, None),
@@ -693,6 +706,7 @@ class Pid(Counted):
         "measurement": (NUMBER, True, True),
         "reset": (BOOLEAN, False, True),
         "applied": (NUMBER, False, False),  # deferred: rule 12
+        "track": (NUMBER, False, True),  # rule 14
     }
     outputs = {"y": NUMBER, "integral": NUMBER, "limited": BOOLEAN} | COUNTERS
 
@@ -709,6 +723,7 @@ class Pid(Counted):
         self.a = math.exp(-self.period / float(self.s["filter"])) if self.s["filter"] is not None else 0.0
         self.integral, self.before, self.f = 0.0, None, 0.0  # before: the measurement of the tick before
         self.added = None  # this tick's addition: (the integral before it, the addition, y)
+        self.waiting = True  # rule 14: it waits to track
 
     def output(self, k, t, ins):
         sp, pv, r = ins["setpoint"], ins["measurement"], ins.get("reset")
@@ -721,7 +736,7 @@ class Pid(Counted):
         state = worst((sp.state, pv.state))
         self.added = None
         if not (usable(sp) and usable(pv)):  # rule 8: no value, and the integral is kept
-            self.before, self.f = None, 0.0
+            self.before, self.f, self.waiting = None, 0.0, not resetting  # rule 14: a reset ends the waiting
             doubted = UNCERTAIN if resetting and r.state == UNCERTAIN else GOOD  # rule 9
             return {"y": Val(state), "limited": Val(state), "integral": Val(doubted, self.integral)} | counts
         if resetting and r.state == UNCERTAIN:
@@ -733,7 +748,14 @@ class Pid(Counted):
             self.f = self.a * self.f + (1.0 - self.a) * (pv.v - self.before) / self.period
         self.before = pv.v
         rest = self.s["kp"] * error - self.s["kd"] * self.f
+        if self.ends_call or not self.by_call or resetting:  # rule 14: it stops waiting, and not at a catch-up tick
+            track = ins.get("track")
+            if self.waiting and not resetting and track is not None and usable(track):
+                self.integral = track.v - rest
+            self.waiting = False
         low, high, add = self.s["min"], self.s["max"], self.s["ki"] * error * self.period
+        if self.by_call:  # rule 13: nothing at a catch-up tick, and `m` periods' worth at the last of a call
+            add = add * self.acts if self.ends_call else 0.0
         with_it, cut, was = rest + (self.integral + add), False, self.integral  # rule 5: in this order
         if high is not None and add > 0 and with_it > high:  # rule 6: cut short at the limit
             self.integral, cut = max(self.integral, high - rest), True
@@ -761,7 +783,7 @@ class Pid(Counted):
     def gap(self, k, n):
         super().gap(k, n)
         if n != 0:  # 8 rule 6: the derivative starts again, unless no tick was passed over
-            self.before, self.f = None, 0.0
+            self.before, self.f, self.waiting = None, 0.0, True
 
 
 # ---------------------------------------------------------------- models (4 rule 9)
@@ -1517,7 +1539,7 @@ CATALOGUE = {
     "estimator": Estimator,
 }
 
-_GRAPH_KEYS = {"period", "max_catch_up", "max_waiting", "inputs", "blocks"}
+_GRAPH_KEYS = {"period", "max_catch_up", "max_waiting", "commands", "act_for", "inputs", "blocks"}
 _BLOCK_KEYS = {"id", "type", "in", "settings", "out", "fallback"}
 _INPUT_KEYS = {"type", "unit", "max_age", "max_ahead", "initial"}
 
@@ -1722,6 +1744,31 @@ class Engine:
                 if not _is_constant(value) or _type_of(value) != block.outputs[port]:
                     raise CompileError(f"{where}: the fallback for {port!r} is a finite {block.outputs[port]}")
 
+        # 6 rule 13, 9 rule 8: the commands, the blocks that act by the call, and the outputs held
+        self.act_for = graph.get("act_for", 3)
+        if isinstance(self.act_for, bool) or not isinstance(self.act_for, int) or not 1 <= self.act_for <= MOST:
+            raise CompileError(f"act_for is a whole number, at least 1 and at most {MOST}")
+        commands = graph.get("commands")
+        if commands is None:
+            commands = []
+        if not isinstance(commands, list):
+            raise CompileError("commands is a list of published names")
+        self.held_over = set()
+        for name in commands:
+            if not isinstance(name, str) or name not in self.published:
+                raise CompileError(f"the command {name!r} is not the published name of a block's output")
+            if self.published[name] in self.held_over:
+                raise CompileError(f"the command {name!r} is listed twice")
+            self.held_over.add(self.published[name])
+        past_pids = {bid: set() if isinstance(self.blocks[bid], Pid) else read for bid, read in every.items()}
+        for source in {bid for bid, _ in self.held_over}:
+            for bid, block in self.blocks.items():
+                if isinstance(block, Pid) and (bid == source or self._reaches(every, source, bid)):
+                    block.by_call = True
+                if isinstance(block, RateLimit) and (bid == source or self._reaches(past_pids, source, bid)):
+                    block.by_call = True  # along a chain that passes through no pid
+        self.held_over |= {(bid, "y") for bid, block in self.blocks.items() if block.by_call}
+
         self.initial_blocks = copy.deepcopy(self.blocks)
         self.fingerprint = repr(graph)
         self.reset()
@@ -1818,6 +1865,7 @@ class Engine:
         self.thrown = 0  # writes thrown away since the last call that ran a tick
         self.loop_doubt = dict.fromkeys(self.loop_settle)  # 7.8 rule 8: each loop's doubt, a tick
         self.info = None  # what the last call that ran a tick has to say (6 rule 10)
+        self.given = {}  # 6 rule 13: what each held output was at the latest tick that was the last of its call
 
     def save(self):
         return self.fingerprint, copy.deepcopy((self.blocks, self.k, self.loop_doubt))
@@ -1952,6 +2000,8 @@ class Engine:
                     self.loop_doubt[self.loop_of[bid]] = self.k - 1
         out = None
         for i in range(due):
+            for block in self.blocks.values():  # 6 rule 13
+                block.ends_call, block.acts = i == due - 1, min(due, self.act_for) if block.by_call else 1
             out = self._run(last=i == due - 1)
         self.info = {
             "gap": gap,
@@ -2002,9 +2052,14 @@ class Engine:
             if bid in self.loop_of:
                 from_outside(bid, ins, block.used(ins))
             for port, val in given.items():
+                if (bid, port) in self.held_over and not last:  # 6 rule 13: a catch-up tick
+                    now[(bid, port)], was_unusable = self.given[(bid, port)]
+                    if was_unusable and (bid, port) in self.read_in_loop:
+                        doubts.add(self.loop_of[bid])
+                    continue
                 if usable(val) and isinstance(val.v, float) and not math.isfinite(val.v):
                     val = Val(BAD)  # 3 rule 6
-                substituted = False
+                substituted, was_unusable = False, not usable(val)
                 if not usable(val):
                     val = Val(val.state)
                     if (bid, port) in self.read_in_loop:  # 7.8 rule 8: whatever stands in for it
@@ -2015,6 +2070,8 @@ class Engine:
                         val = Val(UNCERTAIN, value if isinstance(value, bool) else float(value))
                 keeps = block.own_at and usable(val)  # 3 rule 7
                 now[(bid, port)] = Val(val.state, val.v, None if substituted else val.at if keeps else t)
+                if (bid, port) in self.held_over:
+                    self.given[(bid, port)] = now[(bid, port)], was_unusable
         for bid in self.order:  # second phase
             block, ins = self.blocks[bid], read(bid, False)
             block.update(k, ins)

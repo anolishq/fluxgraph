@@ -1,0 +1,10 @@
+# 9.8: act_for may be given where there is no command, and does nothing.
+rules: [9.8, 6.13]
+period: 1s
+act_for: 1
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 0, ki: 1}, out: {y: y, integral: i}}
+calls:
+  - {sp: 1, pv: 0, i: 1}
+  - {now: 5, ran: 5, i: 6}

@@ -1,0 +1,14 @@
+# 6.13: a block feeds a command through any number of blocks. The outer
+# PID is read by the inner, which gives the command, and both act by the
+# call. Over ticks 1 to 5 the outer adds 3, to 4, and the inner, on an
+# error of 4, adds 12, to 13.
+rules: [6.13, 7.7.13]
+period: 1s
+commands: [valve]
+inputs: {sp: {max_age: none}, level: {max_age: none}, flow: {max_age: none}}
+blocks:
+  - {id: outer, type: pid, in: {setpoint: sp, measurement: level}, settings: {kp: 0, ki: 1}, out: {integral: i_o}}
+  - {id: inner, type: pid, in: {setpoint: outer.y, measurement: flow}, settings: {kp: 1, ki: 1}, out: {y: valve, integral: i_i}}
+calls:
+  - {sp: 1, level: 0, flow: 0, i_o: 1, i_i: 1, valve: 2}
+  - {now: 5, ran: 5, i_o: 4, i_i: 13, valve: 17}

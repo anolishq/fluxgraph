@@ -1,0 +1,14 @@
+# 6.13: a PID feeds a command when the block that gives the command reads
+# it. `c` is read by the formula that gives `valve` and acts by the call;
+# `d` reads the same inputs, feeds no command, and adds at every tick.
+rules: [6.13, 7.7.13]
+period: 1s
+commands: [valve]
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 0, ki: 1}, out: {integral: i_c}}
+  - {id: scale, type: formula, in: {u: c.y}, settings: {expr: "u * 10"}, out: {y: valve}}
+  - {id: d, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 0, ki: 1}, out: {integral: i_d}}
+calls:
+  - {sp: 1, pv: 0, i_c: 1, i_d: 1, valve: 10}
+  - {now: 6, ran: 6, i_c: 4, i_d: 7, valve: 40}

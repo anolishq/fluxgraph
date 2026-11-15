@@ -1,0 +1,16 @@
+# 6.13, 7.7.13: a PID that gives a command adds nothing at a catch-up
+# tick, and at the last tick of a call adds for the ticks the call ran, or
+# for act_for of them, 3, if that is less.
+rules: [6.13, 7.7.13]
+period: 1s
+commands: [y]
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 0, ki: 1}, out: {y: y, integral: i}}
+calls:
+  - {sp: 1, pv: 0, y: 1, i: 1}
+  - {y: 2, i: 2}
+  - {now: 3, ran: 2, y: 4, i: 4}       # two ticks: two periods' worth
+  - {now: 6, ran: 3, y: 7, i: 7}
+  - {now: 16, ran: 10, y: 10, i: 10}   # ten ticks: three periods' worth
+  - {y: 11, i: 11}

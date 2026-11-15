@@ -1,0 +1,14 @@
+# 7.7.13: at a catch-up tick a PID that acts by the call adds nothing, and
+# all else is as at any tick. `reset` is true from 2 s and false from 3 s:
+# tick 2 returns the integral and the counts to zero, and tick 4, the
+# last, adds three periods' worth.
+rules: [7.7.13, 7.7.10]
+period: 1s
+commands: [y]
+inputs: {sp: {max_age: none}, pv: {max_age: none}, r: {type: boolean, max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, reset: r}, settings: {kp: 0, ki: 1}, out: {y: y, integral: i, elapsed: e}}
+calls:
+  - {now: 0, sp: 1, pv: 0, r: false, i: 1, e: 1}
+  - {now: 1, i: 2, e: 2}
+  - {now: 4, ran: 3, first: {r: {v: true, at: 2}}, r: {v: false, at: 3}, i: 3, e: 3}

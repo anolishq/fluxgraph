@@ -1,0 +1,14 @@
+# 7.7.14: a PID waits to track from the start and from a tick where an
+# input is not usable. At the tick it stops waiting its integral is set,
+# before that tick's addition, to track less kp times the error: 20 less
+# 6, and 6 added. While it is not waiting, track is not used.
+rules: [7.7.14]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}, tr: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, track: tr}, settings: {kp: 1, ki: 1}, out: {y: y, integral: i}}
+calls:
+  - {sp: 10, pv: 4, tr: 20, y: 26, i: 20}
+  - {tr: 0, y: 32, i: 26}
+  - {pv: bad, y: bad, i: 26}
+  - {pv: 4, tr: 5, y: 11, i: 5}          # 5 less 6, and 6 added

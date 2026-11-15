@@ -1,0 +1,13 @@
+# 7.7.14: a reset ends the waiting whatever its tick reads. At tick 0 the
+# measurement is bad and `reset` is true; at tick 1 the PID is not
+# waiting, and starts from the zero the reset left.
+rules: [7.7.14, 7.7.10]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}, tr: {max_age: none}, r: {type: boolean, max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, track: tr, reset: r}, settings: {kp: 0, ki: 1}, out: {y: y, integral: i}}
+calls:
+  - {sp: 1, pv: bad, tr: 30, r: true, y: bad, i: 0}
+  - {pv: 0, r: false, y: 1, i: 1}
+  - {pv: bad, y: bad, i: 1}
+  - {pv: 0, y: 31, i: 31}            # no reset: it waited, and starts from track

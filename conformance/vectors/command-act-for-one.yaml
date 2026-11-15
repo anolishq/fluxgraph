@@ -1,0 +1,12 @@
+# 6.13: with act_for of 1 a call acts for one period however many ticks
+# it ran.
+rules: [6.13, 9.8]
+period: 1s
+commands: [y]
+act_for: 1
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 0, ki: 1}, out: {y: y, integral: i}}
+calls:
+  - {sp: 1, pv: 0, i: 1}
+  - {now: 5, ran: 5, i: 2}

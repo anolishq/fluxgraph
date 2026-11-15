@@ -601,6 +601,93 @@ def graphs(d, tau):
                 block("first_order_process", {"u": "slew.y"}, {"y": "x"}, bid="plant", tau=tau(2), settle=d(6)),
             ],
         ),
+        # A third member is more keys of the graph: its commands, and act_for (6 rule 13).
+        "commands: a pid, a formula and a rate limit, each with a track": (
+            {"a": NUM, "b": NUM, "c": NUM, "p": BOOL},
+            [
+                {
+                    "id": "c",
+                    "type": "pid",
+                    "in": {"setpoint": "a", "measurement": "b", "reset": "p", "applied": "slew.y", "track": "c"},
+                    "settings": {
+                        "kp": 0.8,
+                        "ki": 0.3 / pt,
+                        "kd": 0.1 * pt,
+                        "filter": tau(1),
+                        "min": -50.0,
+                        "max": 50.0,
+                        "applied_within": 0.25,
+                    },
+                    "out": {"y": "u", "limited": "l", "integral": "i", "doubtful": "d", "gaps": "g"},
+                    "fallback": {"y": 0.0},
+                },
+                formula("scale", "u * 2", {"u": "c.y"}),
+                {
+                    "id": "slew",
+                    "type": "rate_limit",
+                    "in": {"x": "scale.y", "track": "c"},
+                    "settings": {"up": 20.0 / pt, "down": 5.0 / pt, "ride_through": d(2), "initial": 1.0},
+                    "out": {"y": "v", "limited": "m"},
+                },
+                block("integrate", {"x": "slew.y"}, {"y": "t", "missed": "tm"}, bid="total", per=tau(1)),
+                block("integrate", {"x": "c.y"}, {"y": "w"}, bid="of_pid", per=tau(1)),
+                block("latch", {"set": "slew.limited"}, {"y": "was"}),
+                block("delay", {"x": "slew.y"}, {"y": "before"}, ticks=2),
+            ],
+            {"commands": ["v"]},
+        ),
+        "commands: a cascade on a loop with a process, act_for 2": (
+            {"a": NUM, "b": NUM, "c": NUM},
+            [
+                block(
+                    "pid",
+                    {"setpoint": "a", "measurement": "plant.y"},
+                    {"y": "o", "integral": "i"},
+                    bid="outer",
+                    kp=0.5,
+                    ki=0.2 / pt,
+                ),
+                block(
+                    "pid",
+                    {"setpoint": "outer.y", "measurement": "b", "track": "c"},
+                    {"y": "u", "integral": "j", "limited": "l"},
+                    bid="inner",
+                    kp=1.2,
+                    ki=0.4 / pt,
+                    min=-20.0,
+                    max=20.0,
+                ),
+                block(
+                    "first_order_process",
+                    {"u": "inner.y"},
+                    {"y": "x", "doubtful": "d"},
+                    bid="plant",
+                    tau=tau(2),
+                    settle=d(4),
+                ),
+            ],
+            {"commands": ["u"], "act_for": 2},
+        ),
+        "commands: a formula with a fallback and a boolean, and blocks that feed none": (
+            {"a": NUM, "b": NUM},
+            [
+                {
+                    "id": "f",
+                    "type": "formula",
+                    "in": {"a": "a"},
+                    "settings": {"expr": "a * 2"},
+                    "out": {"y": "cmd"},
+                    "fallback": {"y": 7.0},
+                },
+                formula("g", "a > b", {"a": "a", "b": "b"}, "run"),
+                block("integrate", {"x": "f.y"}, {"y": "t", "doubtful": "td"}, bid="total", per=tau(1)),
+                block("latch", {"set": "g.y"}, {"y": "ran_once", "doubtful": "ld"}),
+                block("delay", {"x": "f.y"}, {"y": "before"}, ticks=2),
+                block("rate_limit", {"x": "f.y"}, {"y": "v", "limited": "m"}, up=3.0 / pt, ride_through=d(1)),
+                block("pid", {"setpoint": "a", "measurement": "b"}, {"y": "y", "integral": "i"}, kp=1.0, ki=0.5 / pt),
+            ],
+            {"commands": ["cmd", "run"], "act_for": 1},
+        ),
     }
 
 
@@ -663,7 +750,7 @@ def main():
     for base, origin in ((1000, 100), (100, 100), (37, 100), (1000, 1_700_000_000), (100, 1_700_000_000)):
         period = base * 10**6  # nanoseconds
         catalogue = graphs(lambda n, base=base: f"{n * base}ms", lambda x, base=base: f"{round(x * base)}ms")
-        for index, (label, (inputs, blocks)) in enumerate(catalogue.items()):
+        for index, (label, (inputs, blocks, *more)) in enumerate(catalogue.items()):
             declared = {}
             for name, kind in inputs.items():
                 declared[name] = {"type": kind, "max_age": f"{3 * base}ms" if name != "c" else "none"}
@@ -672,6 +759,7 @@ def main():
                 if name in INITIAL.get(label, {}):
                     declared[name]["initial"] = INITIAL[label][name]
             graph = {"period": f"{base}ms", "max_catch_up": 20, "max_waiting": 3, "inputs": declared, "blocks": blocks}
+            graph.update(*more)
             if not_built:
                 try:
                     other.Engine(graph)

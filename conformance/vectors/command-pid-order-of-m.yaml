@@ -1,0 +1,15 @@
+# 7.7.13: the addition at the last tick of a call is ki times the error
+# times the period, and that times m. With ki 0.36, an error of 1.71 and a
+# period of 100 ms, three periods' worth worked in that order leaves the
+# integral at 0.24624; with the period times m worked first it is
+# 0.24624000000000001.
+rules: [7.7.13]
+period: 100ms
+commands: [y]
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 0, ki: 0.36}, out: {y: y}}
+  - {id: f, type: formula, in: {i: c.integral}, settings: {expr: "i == 0.24624"}, out: {y: same}}
+calls:
+  - {now: 0, sp: 1.71, pv: 0, same: false}
+  - {now: 0.3, ran: 3, same: true}

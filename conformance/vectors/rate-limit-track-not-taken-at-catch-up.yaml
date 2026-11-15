@@ -1,0 +1,14 @@
+# 7.4.13: a rate limit that acts by the call takes track at the last tick
+# of a call and not before. Track is 50 until 3 s and bad from then: ticks
+# 1 and 2 take nothing, and tick 3 has no track and takes its input as it
+# is.
+rules: [7.4.13, 7.4.12]
+period: 1s
+commands: [y]
+inputs: {x: {max_age: none}, tr: {max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x, track: tr}, settings: {up: 2}, out: {y: y, limited: lim}}
+calls:
+  - {now: 0, x: bad, tr: 50, y: bad, lim: bad}
+  - {$write: [x, good, 10, 1]}
+  - {now: 3, ran: 3, tr: bad, y: 10, lim: false}

@@ -1,0 +1,18 @@
+# 6.13, 7.8.8: a held output that was not usable when it was given is not
+# usable at a catch-up tick, and starts the loop's doubt there. The
+# setpoint is bad at tick 0 and 4 from 1 s. Ticks 1 and 2 are catch-up
+# ticks: the PID would give a value, the plant reads what the host was
+# given, which is none, and does not step. The loop's doubt is tick 2, and
+# with a settle of 2 s the plant is uncertain at ticks 3 and 4.
+rules: [6.13, 7.8.8]
+period: 1s
+commands: [u]
+inputs: {sp: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: plant.y}, settings: {kp: 1}, out: {y: u}}
+  - {id: plant, type: first_order_process, in: {u: c.y}, settings: {tau: 1s, settle: 2s}, out: {y: x}}
+calls:
+  - {now: 0, sp: bad, u: bad, x: 0}
+  - {now: 3, ran: 3, first: {sp: {v: 4, at: 1}}, u: {u: 4}, x: {u: 0}}
+  - {u: {u: 1.4715177646857693}, x: {u: 2.5284822353142307}}
+  - {u: 2.139646736521363, x: 1.860353263478637}

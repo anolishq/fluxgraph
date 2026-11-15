@@ -9,8 +9,9 @@ ASSUMPTIONS-amendment-3.md, for Amendment 4 (models) in
 ASSUMPTIONS-amendment-4.md, for Amendment 5 (the estimator) in
 ASSUMPTIONS-amendment-5.md, and for Amendment 6 (the whole text, read cold)
 in ASSUMPTIONS-amendment-6.md, and for Amendment 7 (a rate limit and a PID)
-in ASSUMPTIONS-amendment-7.md, and for Amendment 8 in
-ASSUMPTIONS-amendment-8.md.
+in ASSUMPTIONS-amendment-7.md, for Amendment 8 in
+ASSUMPTIONS-amendment-8.md, and for Amendment 9 (commands, and where the
+actuator is) in ASSUMPTIONS-amendment-9.md.
 
 Every time is a whole number of nanoseconds, held as an int (rule 6.2).
 """
@@ -615,6 +616,7 @@ class _Loop:
 class Block:
     SETTINGS = ()
     has_update = False
+    by_call = False  # a pid or a rate_limit that feeds a command (rule 6.13)
     loop = None  # the loop that holds a model the block is on, if any
 
     def __init__(self, bid, settings, in_map, ctx):
@@ -1008,6 +1010,7 @@ class RateLimit(Block):
 
     def configure(self, in_map):
         self.in_ports["x"] = (NUMBER, True, True)
+        self.in_ports["track"] = (NUMBER, False, True)
         self.out_ports["y"] = NUMBER
         self.out_ports["limited"] = BOOLEAN
         self.up = s_num(self, self.st, "up")
@@ -1042,16 +1045,37 @@ class RateLimit(Block):
     def output(self, k, t, ins):
         s = self.s
         x = ins["x"]
-        if usable(x[0]):
+        if self.by_call and self.ctx.catch_up:
+            # by the call (rule 7.4.12): at a catch-up tick it does nothing,
+            # whatever its input: it takes nothing, moves nothing and
+            # forgets nothing, and the tick is one with a usable input for
+            # rules 3 and 4. Its y is held by the engine (rule 6.13).
             s["m"] = 0
             h = s["held"]
+            if not usable(x[0]):
+                return {"y": out(x[0]), "limited": out(x[0])}
+            return {"y": out(x[0] if h is not None else NR, h), "limited": out(x[0], h is not None and h != x[1])}
+        if usable(x[0]):
+            s["m"] = 0
+            tr = ins.get("track")
+            if not s["given"] and tr is not None and usable(tr[0]):
+                # where the actuator is (rule 7.4.13), in place of
+                # `initial` or of nothing
+                s["held"] = tr[1]
+            h = s["held"]
+            # a block that acts by the call has the reach of the ticks the
+            # call ran, or of `act_for` if that is less
             if h is None:
                 h = x[1]  # a first input is taken as it is
             elif x[1] > h:
                 reach = self.up * self.ctx.period
+                if self.by_call:
+                    reach = reach * self.ctx.acts
                 h = x[1] if x[1] - h <= reach else h + reach
             elif x[1] < h:
                 reach = self.down * self.ctx.period
+                if self.by_call:
+                    reach = reach * self.ctx.acts
                 h = x[1] if h - x[1] <= reach else h - reach
             s["held"] = h
             s["given"] = True
@@ -1381,6 +1405,7 @@ class Pid(Block):
         self.in_ports["measurement"] = (NUMBER, True, True)
         self.in_ports["reset"] = (BOOLEAN, False, True)
         self.in_ports["applied"] = (NUMBER, False, False)  # deferred
+        self.in_ports["track"] = (NUMBER, False, True)
         self.out_ports["y"] = NUMBER
         self.out_ports["integral"] = NUMBER
         self.out_ports["limited"] = BOOLEAN
@@ -1418,6 +1443,7 @@ class Pid(Block):
             "gaps": 0,
             "gap_at": None,
             "made": None,
+            "waiting": True,  # it waits to track (rule 7.7.14)
         }
 
     def gap(self, g, n):
@@ -1427,6 +1453,7 @@ class Pid(Block):
         if n == 0:
             return  # none passed over: nothing but one to gaps (rule 8.6)
         s["prev"] = None  # the derivative starts again (rule 7.7.7)
+        s["waiting"] = True
         if n is not None:
             s["run"] += n
             s["doubtful"] += n
@@ -1437,13 +1464,19 @@ class Pid(Block):
         me = ins["measurement"]
         rs = ins.get("reset")
         reset_unc = False
+        was_reset = False
         if rs is not None and usable(rs[0]) and rs[1]:
             gap_at = s["gap_at"]
             self.reset()
             s = self.s
             s["gap_at"] = gap_at
+            # the tick of a reset ends the waiting, a catch-up tick among
+            # them, and whatever that tick reads (rule 7.7.14)
+            s["waiting"] = False
             s["gaps"] = 1 if gap_at == k else 0
             reset_unc = rs[0] == UNC
+            was_reset = True
+        catch_up = self.by_call and self.ctx.catch_up
         s["run"] += 1
         s["made"] = None
         if sp[0] != GOOD or me[0] != GOOD:
@@ -1459,6 +1492,8 @@ class Pid(Block):
             # a controller does not drive on a value it did not see. The
             # integral is kept, and the derivative starts again
             s["prev"] = None
+            if not was_reset:
+                s["waiting"] = True
             res["y"] = out(st)
             res["limited"] = out(st)
             res["integral"] = out(UNC if reset_unc else GOOD, s["integral"])
@@ -1476,11 +1511,24 @@ class Pid(Block):
         s["prev"] = me[1]
         # the integral: an addition that would put the output before
         # limiting past a limit is cut short (rule 7.7.6)
-        add = self.ki * error * period
-        before = s["integral"]
         # the sum is worked in one order (rule 7.7.5): kp.error and the
         # derivative first, and to that the integral with its addition made
         first = self.kp * error + derivative
+        if s["waiting"] and not catch_up:
+            # it stops waiting to track (rule 7.7.14): the integral is set
+            # to where the actuator is, before this tick's addition. A
+            # reset says zero, and `track` does not gainsay it.
+            s["waiting"] = False
+            tr = ins.get("track")
+            if tr is not None and usable(tr[0]):
+                s["integral"] = tr[1] - first
+        if catch_up:
+            add = 0.0  # by the call (rule 7.7.13): nothing at a catch-up tick
+        else:
+            add = self.ki * error * period
+            if self.by_call:
+                add = add * self.ctx.acts
+        before = s["integral"]
         raw = first + (s["integral"] + add)
         cut = False
         if self.hi is not None and add > 0 and raw > self.hi:
@@ -2445,6 +2493,8 @@ class _Ctx:
     def __init__(self, period_ns):
         self.period_ns = period_ns  # the period, in nanoseconds
         self.period = float(Fraction(period_ns, _NS))  # and in seconds
+        self.catch_up = False  # the tick being run is not the last of its call
+        self.acts = 1  # the periods a block that acts by the call acts for
 
 
 class _Input:
@@ -2465,7 +2515,7 @@ class Engine:
         if not isinstance(graph, dict):
             raise CompileError("the graph must be a map")
         for key in graph:
-            if key not in ("period", "max_catch_up", "max_waiting", "inputs", "blocks"):
+            if key not in ("period", "max_catch_up", "max_waiting", "commands", "act_for", "inputs", "blocks"):
                 raise CompileError("unknown key %r at the top of the graph" % (key,))
         if "period" not in graph:
             raise CompileError("the graph has no 'period'")
@@ -2484,6 +2534,12 @@ class Engine:
             raise CompileError("max_waiting: must be a whole number, at least 1")
         if self._max_waiting > _INT32_MAX:
             raise CompileError("max_waiting: must be at most %d" % _INT32_MAX)
+        self._act_for = graph.get("act_for", 3)
+        if not isinstance(self._act_for, int) or isinstance(self._act_for, bool) or self._act_for < 1:
+            raise CompileError("act_for: must be a whole number, at least 1")
+        if self._act_for > _INT32_MAX:
+            raise CompileError("act_for: must be at most %d" % _INT32_MAX)
+        self._graph_commands = graph.get("commands")
         self._compile_inputs(graph.get("inputs"))
         self._compile_blocks(graph.get("blocks"))
         self._graph_key = json.dumps(graph, default=repr)
@@ -2668,6 +2724,7 @@ class Engine:
         self._check_delays()
         self._find_loops()
         self._check_measurements()
+        self._compile_commands(self._graph_commands)
 
         # types
         self._types = {}
@@ -2814,6 +2871,52 @@ class Engine:
                     if conn[0] == "blk" and conn[1] in ids:
                         loop.read.add((conn[1], conn[2]))
 
+    def _compile_commands(self, names):
+        """Rules 6.13 and 9.8: the commands, the blocks that feed one, and
+        the outputs that are held."""
+        if names is None:
+            names = []
+        if not isinstance(names, list):
+            raise CompileError("commands: must be a list of published names")
+        self._held_ports = set()  # (block id, port)
+        feeds = set()
+        seen = set()
+        for name in names:
+            if not isinstance(name, str) or name not in self._published:
+                raise CompileError("commands: %r is not a name a block's `out` gives to one of its outputs" % (name,))
+            if name in seen:
+                raise CompileError("commands: %r is listed twice" % (name,))
+            seen.add(name)
+            _blk, bid, port = self._published[name]
+            self._held_ports.add((bid, port))
+            feeds.add(bid)
+        # a block feeds a command when it gives it, or when a block that
+        # feeds the command reads one of its outputs, on any port
+        stack = list(feeds)
+        while stack:
+            b = self._blocks[stack.pop()]
+            for conn in b.conns.values():
+                if conn[0] == "blk" and conn[1] not in feeds:
+                    feeds.add(conn[1])
+                    stack.append(conn[1])
+        # a rate_limit acts by the call where it feeds one along a chain of
+        # such reads that passes through no pid
+        direct = set(bid for _blk, bid, _port in (self._published[name] for name in names))
+        stack = list(direct)
+        while stack:
+            b = self._blocks[stack.pop()]
+            if isinstance(b, Pid):
+                continue  # what a controller reads is not followed
+            for conn in b.conns.values():
+                if conn[0] == "blk" and conn[1] not in direct:
+                    direct.add(conn[1])
+                    stack.append(conn[1])
+        for bid in feeds:
+            b = self._blocks[bid]
+            if isinstance(b, Pid) or (isinstance(b, RateLimit) and bid in direct):
+                b.by_call = True
+                self._held_ports.add((bid, "y"))  # held as a command is
+
     def _check_measurements(self):
         """Rule 7.9.3: a measurement carries the time of a sample. Its port
         is connected to an input, or to a delay or a formula that takes its
@@ -2853,6 +2956,7 @@ class Engine:
         self._last_now = None
         self._rebase = False  # the next call is a rebase (rule 8.3)
         self._away = None  # how long the host says the graph was away, if it does
+        self._held = {}  # (block id, port) -> what a held output was last given as
         self._rebased = False  # there has been a rebase since the engine was made or last reset
         self._standing = {}  # name -> (state, value, time)
         self._waiting = {}  # name -> [(state, value, time)], in the order made
@@ -3020,6 +3124,10 @@ class Engine:
         for i, (k, t) in enumerate(ticks):
             # the last tick of a call may see what the host has in hand
             self._take_up(max(t, now) if i == len(ticks) - 1 else t)
+            # a block that acts by the call does so at the last tick, for
+            # the ticks the call ran, or for `act_for` if that is less
+            self._ctx.catch_up = i != len(ticks) - 1
+            self._ctx.acts = min(len(ticks), self._act_for)
             sig = self._run_tick(k, t)
             self._last_k = k
         self._last_now = now
@@ -3107,11 +3215,8 @@ class Engine:
                     value = float(value)
                     if not math.isfinite(value):
                         state = BAD
-                if not usable(state):
-                    if b.loop is not None and (b.id, port) in b.loop.read:
-                        # not usable, to a block of the loop that reads it,
-                        # fallback or not
-                        b.loop.s["doubt"] = k
+                lacking = not usable(state)  # before any fallback
+                if lacking:
                     if port in b.fallback:
                         # it is not a sample of anything: no sample time (rule 3.7)
                         res = (UNC, b.fallback[port], None)
@@ -3121,6 +3226,17 @@ class Engine:
                     if stime is TICK:
                         stime = t
                     res = (state, value, stime)
+                if (b.id, port) in self._held_ports:
+                    if self._ctx.catch_up:
+                        # a command is held (rule 6.13): what it was at the
+                        # latest tick that was the last of its call
+                        res, lacking = self._held[(b.id, port)]
+                    else:
+                        self._held[(b.id, port)] = (res, lacking)
+                if lacking and b.loop is not None and (b.id, port) in b.loop.read:
+                    # not usable, to a block of the loop that reads it,
+                    # fallback or not
+                    b.loop.s["doubt"] = k
                 sig[("blk", b.id, port)] = res
         # second phase: every block updates its state
         for b in self._order:
