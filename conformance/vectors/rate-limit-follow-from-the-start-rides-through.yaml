@@ -1,0 +1,13 @@
+# 7.4.14: the value a rate limit holds from following is one it took from an
+# input, at the start too, and with `initial` given. At tick 1, with no
+# input, it rides through on 7; at tick 2, with `track` usable still, its
+# input is limited from 7 and not from `track`.
+rules: [7.4.14, 7.4.13, 7.4.11]
+period: 1s
+inputs: {x: {max_age: none}, tr: {max_age: none}, f: {type: boolean, max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x, track: tr, follow: f}, settings: {up: 1, ride_through: 1s, initial: 0}, out: {y: y, limited: lim}}
+calls:
+  - {x: bad, tr: 7, f: true, y: 7, lim: false}
+  - {f: false, tr: 100, y: {u: 7}, lim: bad}
+  - {x: 10, y: 8, lim: true}

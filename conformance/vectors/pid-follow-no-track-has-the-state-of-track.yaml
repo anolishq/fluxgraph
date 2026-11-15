@@ -1,0 +1,11 @@
+# 7.7.15: with `track` not usable, what a PID that follows gives has the
+# state of `track`, whatever its inputs are. The measurement is bad and
+# `track` is not_ready: `y` and `limited` are not_ready.
+rules: [7.7.15]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}, tr: {max_age: none}, f: {type: boolean, max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, track: tr, follow: f}, settings: {kp: 1, ki: 1}, out: {y: y, integral: i, limited: lim}}
+calls:
+  - {sp: 10, pv: bad, tr: not_ready, f: true, y: not_ready, i: 0, lim: not_ready}
+  - {pv: 4, tr: bad, y: bad, i: 0, lim: bad}

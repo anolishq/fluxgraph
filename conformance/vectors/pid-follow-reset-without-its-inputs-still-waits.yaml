@@ -1,0 +1,18 @@
+# 7.7.15: a PID waits to track from every tick where it follows, a tick of a
+# reset among them, and one where an input is not usable too. At tick 0 it
+# follows with no measurement and a reset: the integral is zero. At tick 1
+# it follows no longer and is still waiting: the integral is 20 less 6, and
+# 6 are added. A PID whose reset had ended the waiting would give 12.
+rules: [7.7.15, 7.7.14, 7.7.10]
+period: 1s
+inputs:
+  sp: {max_age: none}
+  pv: {max_age: none}
+  tr: {max_age: none}
+  f: {type: boolean, max_age: none}
+  r: {type: boolean, max_age: none}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, track: tr, follow: f, reset: r}, settings: {kp: 1, ki: 1}, out: {y: y, integral: i}}
+calls:
+  - {sp: 10, pv: bad, tr: 20, f: true, r: true, y: 20, i: 0}
+  - {pv: 4, f: false, r: false, y: 26, i: 20}

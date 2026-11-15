@@ -1,0 +1,18 @@
+# 7.4.14: at a catch-up tick a rate limit that acts by the call does
+# nothing, and `follow` is not looked at. At tick 0 it holds 3. `follow` is
+# true and `track` 7 at 1 s only. Tick 1 is a catch-up tick: nothing is
+# taken. At tick 2 the reach is of two periods, from 3: 5, where a block
+# that had followed at tick 1 would give 9.
+rules: [7.4.14, 7.4.12]
+period: 1s
+commands: [y]
+inputs: {x: {max_age: none}, tr: {max_age: none}, f: {type: boolean, max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x, track: tr, follow: f}, settings: {up: 1}, out: {y: y, limited: lim}}
+calls:
+  - {now: 0, x: 10, tr: 2, f: false, y: 3, lim: true}
+  - {$write: [f, good, true, 1]}
+  - {$write: [tr, good, 7, 1]}
+  - {$write: [f, good, false, 2]}
+  - {$write: [tr, bad, null, 2]}
+  - {now: 2, ran: 2, y: 5, lim: true}

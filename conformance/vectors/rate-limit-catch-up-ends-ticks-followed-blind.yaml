@@ -1,0 +1,17 @@
+# 7.4.14, 7.4.12: a catch-up tick ends the count of ticks a rate limit
+# followed with no `track`, as it ends a run of ticks it could not use.
+# Tick 0 takes 3. At tick 1 it follows with no `track`. Ticks 2 and 3 are
+# one call: tick 2 is a catch-up tick, and at tick 3, with an input it
+# cannot use, it is one tick past that and within a `ride_through` of 1 s.
+rules: [7.4.14, 7.4.12]
+period: 1s
+commands: [y]
+inputs: {x: {max_age: none}, tr: {max_age: none}, f: {type: boolean, max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x, track: tr, follow: f}, settings: {up: 1, ride_through: 1s}, out: {y: y, limited: lim}}
+calls:
+  - {now: 0, x: 10, tr: 2, f: false, y: 3, lim: true}
+  - {now: 1, tr: bad, f: true, y: bad, lim: bad}
+  - {$write: [f, good, false, 2]}
+  - {$write: [x, bad, null, 3]}
+  - {now: 3, ran: 2, y: {u: 3}, lim: bad}

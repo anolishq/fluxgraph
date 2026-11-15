@@ -1,0 +1,14 @@
+# 7.7.15: while a PID follows its derivative starts again at a tick where an
+# input is not usable. The measurement is 0, then bad, then 2. At tick 2
+# nothing is remembered and f is zero: the integral is track, 5, less
+# nothing. A derivative that had gone on from tick 0 would have taken a
+# slope of 1 over 2 s, and the integral would be 5.8647.
+rules: [7.7.15, 7.7.7]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}, tr: {max_age: none}, f: {type: boolean, max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, track: tr, follow: f}, settings: {kp: 1, kd: 1, filter: 1s}, out: {y: y, integral: i}}
+calls:
+  - {sp: 2, pv: 0, tr: 5, f: true, y: 5, i: 3}
+  - {pv: bad, y: 5, i: 3}
+  - {pv: 2, y: 5, i: 5}

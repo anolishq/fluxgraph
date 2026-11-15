@@ -1,0 +1,19 @@
+# 7.7.15: a PID that acts by the call and follows sets its integral at a
+# catch-up tick too. At tick 0 it is 20 less 6. `track` is 3 from 1 s, and
+# the measurement is bad from 2 s. Tick 1, a catch-up tick, has both inputs
+# and `track`: the integral is 3 less 6. Tick 2, the last of the call, has
+# no measurement, and the integral stays: -3, where a PID that set it only
+# at the last tick of a call would still have 14. At tick 3 it follows no
+# longer, with no `track`, and starts from where it last was: 6 are added.
+rules: [7.7.15, 7.7.13, 6.13]
+period: 1s
+commands: [y]
+inputs: {sp: {max_age: none}, pv: {max_age: none}, tr: {max_age: none}, f: {type: boolean, max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, track: tr, follow: f}, settings: {kp: 1, ki: 1}, out: {y: y, integral: i}}
+calls:
+  - {now: 0, sp: 10, pv: 4, tr: 20, f: true, y: 20, i: 14}
+  - {$write: [tr, good, 3, 1]}
+  - {$write: [pv, bad, null, 2]}
+  - {now: 2, ran: 2, y: 3, i: -3}
+  - {now: 3, pv: 4, tr: bad, f: false, y: 9, i: 3}
