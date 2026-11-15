@@ -31,5 +31,6 @@ target_compile_features(fluxgraph_v2 PUBLIC cxx_std_20)
 if(MSVC)
     target_compile_options(fluxgraph_v2 PRIVATE /W4 /WX)
 else()
-    target_compile_options(fluxgraph_v2 PRIVATE -Wall -Wextra -Werror -pedantic)
+    # -Wshadow: MSVC's /W4 refuses a local that hides a member (C4458), and a build here should say so first.
+    target_compile_options(fluxgraph_v2 PRIVATE -Wall -Wextra -Wshadow -Werror -pedantic)
 endif()

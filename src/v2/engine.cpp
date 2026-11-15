@@ -69,7 +69,7 @@ struct Engine::Impl {
     std::vector<bool> gave_unusable;  // for each slot: what its block gave at this tick, before any fallback
     // Rule 6.13, for each slot that is held: what it was at the latest tick that was the last of its call, and
     // whether it was not usable then, before any fallback.
-    std::vector<Value> held;
+    std::vector<Value> held_over;
     std::vector<bool> held_unusable;
     std::vector<LoopState> loops;
     std::vector<bool> settling;  // for each loop: within `settle` of its doubt at the tick being run
@@ -262,10 +262,10 @@ void Engine::Impl::run_tick(std::int64_t number, Time time, Time limit, bool las
                 // Rule 6.13: at a catch-up tick a held output is what it was at the latest tick that was the
                 // last of its call, for every block that reads it, and for rule 7.8.8 as usable as it was then.
                 if (last_of_call) {
-                    held[slot] = value;
+                    held_over[slot] = value;
                     held_unusable[slot] = gave_unusable[slot];
                 } else {
-                    value = held[slot];
+                    value = held_over[slot];
                     gave_unusable[slot] = held_unusable[slot];
                 }
             }
@@ -331,7 +331,7 @@ Result<Engine> Engine::compile(const Setting &graph) {
         most_outputs = std::max(most_outputs, spec.outputs.size());
     }
     impl->gave_unusable.assign(program.slot_types.size(), false);
-    impl->held.assign(program.slot_types.size(), Value{});
+    impl->held_over.assign(program.slot_types.size(), Value{});
     impl->held_unusable.assign(program.slot_types.size(), false);
     impl->loops.assign(program.loops.size(), LoopState{});
     impl->settling.assign(program.loops.size(), false);
