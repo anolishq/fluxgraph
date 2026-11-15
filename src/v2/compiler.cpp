@@ -533,7 +533,8 @@ Result<Program> compile_graph(const Setting &graph) {
     if (!graph.is(Kind::map)) {
         return graph_error(std::format("a graph is a map, and this is {}", graph.kind_name()));
     }
-    if (const std::string *key = unknown_key(graph, {"period", "max_catch_up", "max_waiting", "inputs", "blocks"})) {
+    if (const std::string *key =
+            unknown_key(graph, {"period", "max_catch_up", "max_waiting", "commands", "act_for", "inputs", "blocks"})) {
         return graph_error(std::format("'{}' is not a key of a graph", *key));
     }
     Program program;
@@ -551,6 +552,9 @@ Result<Program> compile_graph(const Setting &graph) {
         return status.error();
     }
     if (Status status = count_setting(graph, "max_waiting", program.max_waiting); !status) {
+        return status.error();
+    }
+    if (Status status = count_setting(graph, "act_for", program.act_for); !status) {
         return status.error();
     }
     if (Status status = read_inputs(graph, program); !status) {
@@ -808,6 +812,86 @@ Result<Program> compile_graph(const Setting &graph) {
         }
     }
 
+    // Rules 6.13 and 9.8: commands, what feeds them, and which blocks act by the call.
+    std::vector<bool> held(types.size(), false);
+    std::vector<bool> by_call(drafts.size(), false);
+    if (const Setting *commands = graph.find("commands")) {
+        if (!commands->is(Kind::list)) {
+            return graph_error(
+                std::format("commands is {}, and has to be a list of published names", commands->kind_name()));
+        }
+        // A block feeds a command when it gives it, or when a block that feeds it reads one of its outputs, on
+        // any port. `plain` is the same along reads that pass through no controller, the giver among them.
+        std::vector<bool> feeds(drafts.size(), false);
+        std::vector<bool> plain(drafts.size(), false);
+        std::vector<std::size_t> stack;
+        for (const Setting &entry : commands->as_list()) {
+            const auto named = entry.is(Kind::text) ? names.find(entry.as_text()) : names.end();
+            const bool published =
+                named != names.end() && std::any_of(program.published.begin(), program.published.end(),
+                                                    [&](const Published &p) { return p.name == entry.as_text(); });
+            if (!published) {
+                return graph_error(
+                    std::format("commands lists {}, which is not the name a block's out gives to one "
+                                "of its outputs",
+                                entry.shown()));
+            }
+            if (held[named->second.slot]) {
+                return graph_error(std::format("commands lists {} twice", entry.shown()));
+            }
+            held[named->second.slot] = true;
+            const std::size_t giver = static_cast<std::size_t>(named->second.writer);
+            if (!feeds[giver]) {
+                feeds[giver] = true;
+                stack.push_back(giver);
+            }
+        }
+        const auto is = [&](std::size_t draft, CallRole::Kind kind) {
+            return drafts[draft].block->call_role().kind == kind;
+        };
+        while (!stack.empty()) {
+            const std::size_t at = stack.back();
+            stack.pop_back();
+            for (int read : drafts[at].readers_of) {
+                if (read >= 0 && !feeds[static_cast<std::size_t>(read)]) {
+                    feeds[static_cast<std::size_t>(read)] = true;
+                    stack.push_back(static_cast<std::size_t>(read));
+                }
+            }
+        }
+        for (std::size_t i = 0; i < drafts.size(); ++i) {
+            // The givers that are no controller start the chains that pass through none.
+            const bool gives = std::any_of(program.published.begin(), program.published.end(), [&](const Published &p) {
+                return held[p.slot] && p.slot >= drafts[i].first_slot &&
+                       p.slot < drafts[i].first_slot + drafts[i].outputs.size();
+            });
+            if (gives && !is(i, CallRole::Kind::controller) && !plain[i]) {
+                plain[i] = true;
+                stack.push_back(i);
+            }
+        }
+        while (!stack.empty()) {
+            const std::size_t at = stack.back();
+            stack.pop_back();
+            for (int read : drafts[at].readers_of) {
+                if (read >= 0 && !plain[static_cast<std::size_t>(read)] &&
+                    !is(static_cast<std::size_t>(read), CallRole::Kind::controller)) {
+                    plain[static_cast<std::size_t>(read)] = true;
+                    stack.push_back(static_cast<std::size_t>(read));
+                }
+            }
+        }
+        for (std::size_t i = 0; i < drafts.size(); ++i) {
+            const CallRole role = drafts[i].block->call_role();
+            by_call[i] = (role.kind == CallRole::Kind::controller && feeds[i]) ||
+                         (role.kind == CallRole::Kind::shaper && plain[i]);
+            if (by_call[i]) {
+                held[drafts[i].first_slot + role.held_output] = true;  // its `y` is held as a command is
+            }
+        }
+    }
+    program.held = held;
+
     std::vector<std::size_t> order;
     if (Status status = evaluation_order(drafts, order); !status) {
         return status.error();
@@ -826,6 +910,7 @@ Result<Program> compile_graph(const Setting &graph) {
         Draft &draft = drafts[index];
         BlockSpec spec;
         spec.loop = loop_of[index];
+        spec.acts_by_call = by_call[index];
         spec.id = std::move(draft.id);
         spec.block = std::move(draft.block);
         spec.sources = std::move(draft.sources);

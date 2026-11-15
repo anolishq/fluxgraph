@@ -50,6 +50,7 @@ struct BlockSpec {
     std::vector<OutputSpec> outputs;  // one per output port
     std::size_t first_slot = 0;       // output port i has signal slot first_slot + i
     int loop = -1;                    // the loop it is on, among Program::loops, or -1
+    bool acts_by_call = false;        // rule 6.13
 };
 
 /// A loop that holds a model block (rule 7.8.8). A loop that holds none has no rule and is not kept.
@@ -68,6 +69,10 @@ struct Program {
     Time period = 0;
     std::uint32_t max_catch_up = 100;
     std::uint32_t max_waiting = 1024;
+    std::uint32_t act_for = 3;
+    /// For each slot, whether it is held at a catch-up tick (rule 6.13): a command, or the `y` of a block that
+    /// acts by the call.
+    std::vector<bool> held;
     std::vector<InputSpec> inputs;
     std::vector<BlockSpec> blocks;  // in the one evaluation order (section 5)
     std::vector<LoopSpec> loops;

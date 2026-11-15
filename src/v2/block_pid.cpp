@@ -12,7 +12,7 @@ namespace fluxgraph::v2::detail {
 
 namespace {
 
-enum In : std::size_t { kSetpoint, kMeasurement, kReset, kApplied };
+enum In : std::size_t { kSetpoint, kMeasurement, kReset, kApplied, kTrack };
 enum Out : std::size_t { kY, kIntegral, kLimited, kElapsed, kDoubtful, kGaps, kPorts };
 
 class PidBlock : public Block {
@@ -46,7 +46,14 @@ public:
     std::span<const OutputPort> outputs() const override { return outputs_; }
     Status bind(std::span<const std::optional<Type>> /*input_types*/) override { return {}; }
 
-    void give(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out) override {
+    CallRole call_role() const override { return CallRole{CallRole::Kind::controller, kY}; }
+
+    void give(const Tick &tick, std::span<const Value> in, std::span<Value> out) override {
+        // Rule 7.7.13: one that acts by the call adds nothing at a catch-up tick, and at the last tick of a call
+        // adds for the periods it acts for. All else is as at any tick.
+        const bool acts = !tick.acts_by_call || tick.last_of_call;
+        const double periods = tick.acts_by_call ? static_cast<double>(tick.periods) : 1.0;
+        const Value &track = in[kTrack];
         const Value &setpoint = in[kSetpoint];
         const Value &measurement = in[kMeasurement];
         const Value &reset = in[kReset];
@@ -57,6 +64,7 @@ public:
             // The integral and the counts to zero and the derivative to its start, before this tick's addition.
             next_ = Memory{};
             next_.counters.gaps = now_.gap_here ? 1 : 0;  // rule 11: a gap whose tick is the reset's is counted
+            next_.waiting = false;  // rule 14: it stops waiting at the tick of a reset, whatever that tick reads
         }
         next_.gap_here = false;
         next_.counters.elapsed += 1;
@@ -69,6 +77,7 @@ public:
             // Rule 8: no value, the integral kept, and the derivative to start again when they are back.
             next_.has_last = false;
             next_.slope = 0.0;
+            next_.waiting = !resets;  // rule 14: it waits to track; a reset wins
             out[kY] = Value::none(state);
             out[kLimited] = Value::none(state, Type::boolean);
             out[kIntegral] = Value::of(next_.integral, reset_in_doubt ? State::uncertain : State::good);
@@ -89,10 +98,19 @@ public:
         const double derivative = kd_ != 0.0 ? -kd_ * next_.slope : 0.0;
         const double proportional = kp_ * error;
 
-        // Rule 6: an addition that would put the output before limiting past a limit is cut short.
-        added_ = ki_ * error * period_seconds_;
         // Rule 5: the sum in one order. The proportional term and the derivative first, then the integral.
         const double rest = proportional + derivative;
+        // Rule 14: at the tick it stops waiting to track, which is not the tick of a reset, the integral is
+        // set, before that tick's addition, to `track` less that first sum.
+        if (next_.waiting && acts) {
+            next_.waiting = false;
+            if (track.is_usable()) {
+                next_.integral = track.number - rest;
+                before_ = next_.integral;
+            }
+        }
+        // Rule 6: an addition that would put the output before limiting past a limit is cut short.
+        added_ = acts ? ki_ * error * period_seconds_ * periods : 0.0;
         const double whole = rest + (before_ + added_);
         double y = 0.0;
         bool limited = false;
@@ -141,6 +159,7 @@ public:
         if (!gap.known || gap.ticks > 0) {
             now_.has_last = false;  // the derivative starts again; the integral is unchanged
             now_.slope = 0.0;
+            now_.waiting = true;  // and it waits to track (rule 7.7.14)
         }
         if (gap.known) {
             now_.counters.elapsed += gap.ticks;
@@ -160,6 +179,8 @@ public:
 
     bool restore(StateReader &reader) override {
         now_.gap_here = false;
+        // Not saved, and need not be: a restore is a gap of no known length, which sets it (rules 8.2, 8.6).
+        now_.waiting = true;
         return reader.f64(now_.integral) && reader.flag(now_.has_last) && reader.f64(now_.last) &&
                reader.f64(now_.slope) && now_.counters.restore(reader);
     }
@@ -172,13 +193,15 @@ private:
         double slope = 0.0;     // the filtered rate of the measurement, `f`
         Counters counters;
         bool gap_here = false;
+        bool waiting = true;  // to track (rule 7.7.14): from the start
     };
 
-    std::array<InputPort, 4> inputs_ = {{
+    std::array<InputPort, 5> inputs_ = {{
         {"setpoint", Type::number, true, false},
         {"measurement", Type::number, true, false},
         {"reset", Type::boolean, false, false},
         {"applied", Type::number, false, true},
+        {"track", Type::number, false, false},
     }};
     std::array<OutputPort, kPorts> outputs_ = {{
         {"y", Type::number, false},

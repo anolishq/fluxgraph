@@ -7,7 +7,8 @@ sight of `reference.py`, `formula.py` or `second/impl.py`. It has `formula`,
 `all_good`, `delay`, `window` and `integrate`, and the whole of sections 6
 and 8. A second slice, written the same way from the text as amended
 eight times, adds eight block types, a third the models and the loop
-rule, and a fourth the estimator; each has a section of its own.
+rule, a fourth the estimator, and a fifth the ninth amendment's commands;
+each has a section of its own.
 
 This lists each place where the text left a choice or could be read two
 ways, with the reading taken. A choice the second reading already
@@ -404,6 +405,73 @@ inconsistent between measurements; a run of refusals is of measurements
 considered and not of ticks; a measurement taken by rule 5 makes its tick
 uncertain; a constant on a measurement port is refused; any measurement
 used ends "no measurement has been used since".
+
+## The fifth slice: commands, acting by the call, and `track`
+
+The ninth amendment (rules 6.13, 7.4.12, 7.4.13, 7.7.13, 7.7.14, 9.8) was
+written from its text. All 47 vectors it added agreed once one fault of
+mine was out (a PID did not wait to track from the start), and so did the
+three new graphs of `compare.py`. Entries marked **(guess)** are where the
+text did not say.
+
+73. **Rule 6.13, where a held output is put back.** As soon as its block
+    has given it, in the first phase, so that every block after it in the
+    order reads what was held, and every block in the second phase. What
+    the block worked out for it at the catch-up tick is dropped, its
+    state for rule 7.8.8 with it.
+74. **Rule 6.13, "feeds".** Worked over blocks when the graph is compiled:
+    the block that gives a command, and every block one of whose outputs
+    a feeding block reads, on any port and through any type of block. A
+    `pid` whose `integral` alone is read by a feeding block feeds.
+75. **Rule 6.13, a rate limit "along a chain ... that passes through no
+    `pid`, the one that gives the command among them".** Read as: start
+    from each block that gives a command and is not a `pid`, and go back
+    through what each reads, never through a `pid`; a `rate_limit` reached
+    so acts by the call. One that feeds two commands, one way through a
+    `pid` and one way not, acts by the call.
+76. **Rule 6.13, `m`.** The ticks the call ran, or `act_for` if less: 1
+    at the first call and at a gap. A block that does not act by the
+    call acts for one period at every tick, the last of a long call
+    among them.
+77. **Rule 7.4.12, "a catch-up tick is one with a usable input for rules
+    3 and 4".** The count of unusable ticks in a row goes back to none,
+    as a usable input makes it; it is not merely left where it was. Only
+    where the block holds a value it took from an input. **(guess)**
+78. **Rule 7.4.12, `limited` at a catch-up tick.** With a usable input,
+    whether the input is other than the value held, `initial` alone
+    among them; false where nothing is held. `track` is not looked at
+    there. It is of that tick, beside a `y` held from the call before.
+79. **Rule 7.4.12 and 7.7.13, the arithmetic of `m` periods.** In the
+    order the text gives: `up` times the period, and that times `m`;
+    `ki·error·period`, and that times `m`.
+80. **Rule 7.4.13, `track`.** Looked at only on a tick with a usable
+    input on which the block acts, where it holds nothing or `initial`
+    alone. It then stands in for both, and the input is limited from it.
+    Having taken the input, the block holds a value it took, and `track`
+    is not looked at again until it has forgotten.
+81. **Rule 7.7.14, waiting to track.** Kept as one flag beside what the
+    PID already remembers. It is not the same as "the derivative has no
+    tick before": after a reset on a tick with an input lost the
+    derivative starts again and the PID does not wait, and at a catch-up
+    tick with both inputs usable a PID that acts by the call has a tick
+    before and still waits. The flag is not saved and the saved layout is
+    unchanged: a state is restored into a gap of no known length, which
+    makes the PID wait (rule 8.6), and a state saved before any tick is
+    the start, where it waits too.
+82. **Rule 7.7.14, the tick it stops waiting.** With `track` usable the
+    integral is `track` less the first sum of rule 5, and that is also
+    "what it was before this tick's addition" for rules 6 and 12. With
+    `track` not usable it stops waiting all the same and the integral is
+    left: it does not go on waiting for a readback.
+83. **Rule 7.7.13, a catch-up tick with an input not usable, or a
+    reset.** As at any tick: the PID waits to track from the one, and the
+    other returns the integral to zero and ends the waiting.
+84. **Rule 9.8, an entry of `commands` that is not text** is refused as
+    a name that is not a published one. `act_for` with no command is read
+    and checked and does nothing.
+85. **Rule 8.2, what is held.** Not saved. After a reset or a restore the
+    first tick is the last of its call, so nothing held is read before it
+    is given again.
 
 ## Recorded already, and read the same way
 

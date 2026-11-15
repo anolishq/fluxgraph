@@ -67,6 +67,10 @@ struct Engine::Impl {
     std::vector<Value> in;     // room for one block's inputs and outputs
     std::vector<Value> out;
     std::vector<bool> gave_unusable;  // for each slot: what its block gave at this tick, before any fallback
+    // Rule 6.13, for each slot that is held: what it was at the latest tick that was the last of its call, and
+    // whether it was not usable then, before any fallback.
+    std::vector<Value> held;
+    std::vector<bool> held_unusable;
     std::vector<LoopState> loops;
     std::vector<bool> settling;  // for each loop: within `settle` of its doubt at the tick being run
     std::vector<Output> outputs;
@@ -84,7 +88,7 @@ struct Engine::Impl {
 
     Status write(std::string_view input, State state, const Value *value, Time at);
     void forget_writes();
-    void run_tick(std::int64_t number, Time time, Time limit);
+    void run_tick(std::int64_t number, Time time, Time limit, bool last_of_call, std::uint32_t periods);
     Value read_input(const detail::InputSpec &spec, const InputState &state, Time time) const;
     void save(StateWriter &writer) const;
     bool load(StateReader &reader);
@@ -181,7 +185,7 @@ Value Engine::Impl::read_input(const detail::InputSpec &spec, const InputState &
 }
 
 // Runs tick `number`, whose time is `time`. It may see a write whose time is not after `limit` (rule 6.8).
-void Engine::Impl::run_tick(std::int64_t number, Time time, Time limit) {
+void Engine::Impl::run_tick(std::int64_t number, Time time, Time limit, bool last_of_call, std::uint32_t periods) {
     for (std::size_t i = 0; i < inputs.size(); ++i) {
         InputState &held = inputs[i];
         std::size_t kept = 0;
@@ -211,6 +215,8 @@ void Engine::Impl::run_tick(std::int64_t number, Time time, Time limit) {
     }
 
     Tick tick{number, time};
+    tick.last_of_call = last_of_call;
+    tick.periods = periods;
     const auto gather = [this](const detail::BlockSpec &spec, bool second_phase) {
         for (std::size_t port = 0; port < spec.sources.size(); ++port) {
             const detail::Source &source = spec.sources[port];
@@ -230,6 +236,7 @@ void Engine::Impl::run_tick(std::int64_t number, Time time, Time limit) {
         std::fill_n(out.begin(), count, Value{});
         tick.on_model_loop = spec.loop >= 0;
         tick.loop_settling = spec.loop >= 0 && settling[static_cast<std::size_t>(spec.loop)];
+        tick.acts_by_call = spec.acts_by_call;
         spec.block->give(tick, std::span<const Value>(in.data(), spec.sources.size()),
                          std::span<Value>(out.data(), count));
         for (std::size_t port = 0; port < count; ++port) {
@@ -250,7 +257,19 @@ void Engine::Impl::run_tick(std::int64_t number, Time time, Time limit) {
                 value.timed = true;  // rule 3.7: the time of the tick
                 value.time = time;
             }
-            slots[spec.first_slot + port] = value;
+            const std::size_t slot = spec.first_slot + port;
+            if (program.held[slot]) {
+                // Rule 6.13: at a catch-up tick a held output is what it was at the latest tick that was the
+                // last of its call, for every block that reads it, and for rule 7.8.8 as usable as it was then.
+                if (last_of_call) {
+                    held[slot] = value;
+                    held_unusable[slot] = gave_unusable[slot];
+                } else {
+                    value = held[slot];
+                    gave_unusable[slot] = held_unusable[slot];
+                }
+            }
+            slots[slot] = value;
         }
     }
     // Rule 7.8.8: what starts a loop's doubt at this tick. It is seen from the next tick.
@@ -278,6 +297,7 @@ void Engine::Impl::run_tick(std::int64_t number, Time time, Time limit) {
         gather(spec, true);
         tick.on_model_loop = spec.loop >= 0;
         tick.loop_settling = spec.loop >= 0 && settling[static_cast<std::size_t>(spec.loop)];
+        tick.acts_by_call = spec.acts_by_call;
         spec.block->update(tick, std::span<const Value>(in.data(), spec.sources.size()));
     }
 }
@@ -311,6 +331,8 @@ Result<Engine> Engine::compile(const Setting &graph) {
         most_outputs = std::max(most_outputs, spec.outputs.size());
     }
     impl->gave_unusable.assign(program.slot_types.size(), false);
+    impl->held.assign(program.slot_types.size(), Value{});
+    impl->held_unusable.assign(program.slot_types.size(), false);
     impl->loops.assign(program.loops.size(), LoopState{});
     impl->settling.assign(program.loops.size(), false);
     impl->in.resize(most_inputs);
@@ -456,7 +478,9 @@ Result<TickReport> Engine::tick(Time now) {
             add_span(s.anchor_time, span_between(s.anchor_tick, number) * period, time);
         }
         // Rule 6.8: the last tick of a call sees up to the later of its own time and the call's.
-        s.run_tick(number, time, before_last == 0 ? std::max(time, now) : time);
+        // Rule 6.13: at its last tick a call acts for the ticks it ran, or for `act_for` if that is less.
+        const std::uint32_t periods = static_cast<std::uint32_t>(std::min<std::uint64_t>(due, s.program.act_for));
+        s.run_tick(number, time, before_last == 0 ? std::max(time, now) : time, before_last == 0, periods);
     }
     s.last_tick = last_number;
     for (std::size_t i = 0; i < s.outputs.size(); ++i) {

@@ -69,6 +69,27 @@ struct Tick {
     bool on_model_loop = false;
     /// That loop is within `settle` of its doubt at this tick, judged by its latest doubt before the tick.
     bool loop_settling = false;
+    /// The block acts by the call (rule 6.13): it feeds a command, and acts at the last tick of a call and not
+    /// at a catch-up tick.
+    bool acts_by_call = false;
+    /// The tick is the last of its call, and not a catch-up tick.
+    bool last_of_call = true;
+    /// For how many periods a block that acts by the call acts at the last tick of a call: the ticks the call
+    /// ran, or the graph's `act_for` if that is less. It is at least 1.
+    std::uint32_t periods = 1;
+};
+
+/// What a block is to a command (rule 6.13).
+struct CallRole {
+    enum class Kind {
+        none,        ///< It runs at every tick, whatever reads it.
+        controller,  ///< A `pid`: it acts by the call where it feeds a command.
+        shaper,      ///< A `rate_limit`: it acts by the call where it feeds a command through no controller.
+    };
+    Kind kind = Kind::none;
+    /// For a controller or a shaper: its `y`, among outputs(), which is held as a command is where the block
+    /// acts by the call.
+    std::size_t held_output = 0;
 };
 
 /// Ticks nobody saw (rule 8.6).
@@ -149,6 +170,9 @@ public:
 
     /// What the block is to a loop it stands on, as it is configured.
     virtual LoopRole loop_role() const { return {}; }
+
+    /// What the block is to a command, as it is configured.
+    virtual CallRole call_role() const { return {}; }
 
     /// Whether the block used input `input` at the tick it has just given its outputs for, for a loop's doubt
     /// (rule 7.8.8). Every block counts as using every input it has, in either phase, but a formula, which

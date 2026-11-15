@@ -229,18 +229,43 @@ public:
         return settings.finish();
     }
 
+    std::span<const InputPort> inputs() const override { return ports_; }
     std::span<const OutputPort> outputs() const override { return outputs_; }
 
-    void give(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out) override {
+    CallRole call_role() const override { return CallRole{CallRole::Kind::shaper, 0}; }
+
+    void give(const Tick &tick, std::span<const Value> in, std::span<Value> out) override {
         const Value &x = in[0];
+        const Value &track = in[1];
         next_ = now_;
+        if (tick.acts_by_call && !tick.last_of_call) {
+            // Rule 7.4.12: at a catch-up tick it takes nothing, moves nothing and forgets nothing. Where it
+            // holds a value it took from an input, the tick is one with a usable input for rules 3 and 4.
+            if (now_.holding && !now_.only_initial) {
+                next_.run = 0;
+            }
+            out[0] = Value::none(State::not_ready);  // held by the engine (rule 6.13): this is not looked at
+            out[1] = x.is_usable() ? Value::of(now_.holding && x.number != now_.value, x.state)
+                                   : Value::none(x.state, Type::boolean);
+            return;
+        }
+        // At the last tick of a call its reach is that of the periods it acts for.
+        const double periods = tick.acts_by_call ? static_cast<double>(tick.periods) : 1.0;
         if (x.is_usable()) {
+            // Rule 7.4.13: where it holds no value it took from an input, and `track` is usable, it holds the
+            // value of `track` in place of `initial` or of nothing.
+            bool holding = now_.holding;
+            double held = now_.value;
+            if ((!now_.holding || now_.only_initial) && track.is_usable()) {
+                holding = true;
+                held = track.number;
+            }
             double y = x.number;  // the first usable input, and one within reach, is taken as it is
-            if (now_.holding) {
-                if (x.number - now_.value > reach_up_) {
-                    y = now_.value + reach_up_;
-                } else if (now_.value - x.number > reach_down_) {
-                    y = now_.value - reach_down_;
+            if (holding) {
+                if (x.number - held > reach_up_ * periods) {
+                    y = held + reach_up_ * periods;
+                } else if (held - x.number > reach_down_ * periods) {
+                    y = held - reach_down_ * periods;
                 }
             }
             next_.holding = true;
@@ -300,6 +325,8 @@ private:
     // As it is made, and as it is having forgotten: holding `initial` if it was given one.
     Memory start() const { return Memory{has_initial_, has_initial_, initial_, 0}; }
 
+    // `track` is where the actuator is, read back from it, and need not be connected (rule 7.4.13).
+    std::array<InputPort, 2> ports_ = {{{"x", Type::number, true, false}, {"track", Type::number, false, false}}};
     std::array<OutputPort, 2> outputs_ = {{{"y", Type::number, false}, {"limited", Type::boolean, false}}};
     double reach_up_ = 0.0;
     double reach_down_ = 0.0;
