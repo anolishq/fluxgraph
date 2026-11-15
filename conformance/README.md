@@ -21,9 +21,9 @@ the text says, not what it should say.
 | `contract.py` | Tries every short sequence of writes, calls, rebases, resets, saves and restores against what sections 6, 7.2 and 8 promise a host. |
 
 ```bash
-python3 conformance/run.py                 # 478 vectors: ALL AGREE
-python3 conformance/run.py --second        # 478 vectors: ALL AGREE
-python3 conformance/mutate.py              # 715 breakages: 715 noticed; every vector failed by one
+python3 conformance/run.py                 # 485 vectors: ALL AGREE
+python3 conformance/run.py --second        # 485 vectors: ALL AGREE
+python3 conformance/mutate.py              # 726 breakages: 726 noticed; every vector failed by one
 python3 conformance/compare.py             # 2516993 comparisons, 0 differences
 python3 conformance/steps.py               # 750 checks: ALL HOLD; the worst error of the step is 1.81e-13
 python3 conformance/steps.py --second      # 750 checks: ALL HOLD; the worst error of the step is 7.75e-13
@@ -681,6 +681,38 @@ No vector shows what the amendment is for, a loop that does not bump
 after an outage: that is a run of many ticks against a plant, and not a
 rule.
 
+## Amendment 10: a derivative and a slope between samples
+
+A PID's derivative and a window's slope were worked as if each tick held
+a sample one period after the last. Run against a ramp of exactly 1 a
+second, with a host whose loop is 3% slower than the period, the
+derivative read from 0.79 to 1.03 and the slope from 0.72 to 1.03; over
+the times the samples carry, both read 1. That is a run of many ticks and
+is not kept here. What the rules say is in the vectors:
+
+- **Three vectors changed, and no others.** `pid-derivative` and
+  `pid-derivative-filter` each left a sample standing for a tick and
+  expected the derivative to fade; they now write it again.
+  `pid-gap-of-no-ticks` expected a rebase that passed over no tick to
+  leave the derivative running, and a rebase now starts it again.
+- **Seven are new**: a sample that stands, samples two seconds and half
+  a second apart, a value written under the time of the one that stands,
+  a measurement with no sample time, a slope of samples at their own
+  times, one sample seen at every tick of a window, and a window across
+  a rebase.
+- One hand-worked slope was wrong as first written, 15 over 26 for 21
+  over 31, and the reference right.
+
+A review of the draft ran the reference on cases of its own. It changed
+no rule, and found four clauses no vector reached: `pid-gap-of-no-ticks`
+as first reworked passed with the derivative left running, since a
+remembered time of 1 s is earlier than any time after it, and now steps
+its clock back at the rebase.
+
+`second/ASSUMPTIONS-amendment-10.md` lists where the text left the second
+reading a choice. Appendix A now writes the least-squares sums out, which
+it had not.
+
 ## The C++ core
 
 Five slices of a version 2 core in C++ are in `include/fluxgraph/v2/` and
@@ -738,6 +770,10 @@ behaviour sanitizers. `cpp/ASSUMPTIONS.md` lists where the text left the
 C++ a choice.
 
 ## What this does not cover
+
+- **The order of a slope's sums, and of a derivative's `dt`, to the last
+  place.** The text gives both; a vector compares to one part in 10⁹,
+  and another order passes.
 
 - **What a loop does on a real plant.** The cases behind amendment 9
   were runs against plants written beside the engine, and are not kept

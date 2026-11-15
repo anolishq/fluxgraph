@@ -1,0 +1,14 @@
+# 7.7.7, 3.7: a measurement with no sample time of its own has the
+# tick's. A formula of two inputs gives one, and every tick is a new
+# measurement a period after the last: with nothing written, the
+# derivative fades.
+rules: [7.7.7, 3.7]
+period: 1s
+inputs: {sp: {max_age: none}, a: {max_age: none}, b: {max_age: none}}
+blocks:
+  - {id: sum, type: formula, in: {a: a, b: b}, settings: {expr: "a + b"}}
+  - {id: c, type: pid, in: {setpoint: sp, measurement: sum.y}, settings: {kp: 0, kd: 2, filter: 1s}, out: {y: y}}
+calls:
+  - {sp: 0, a: 0, b: 0, y: 0}
+  - {a: 1, y: -1.2642411176571153}
+  - {y: -0.46508831586965926}

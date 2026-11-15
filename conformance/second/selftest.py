@@ -4873,8 +4873,8 @@ def test_pid():
     check("pid d 2", pid_step(e, 2, me=1.0)["y"], ("good", -2 * f))
     f = a * f + (1 - a) * 2.0
     check("pid d 3", pid_step(e, 3, me=3.0)["y"], ("good", -2 * f))
-    # a step of the setpoint gives none: only the filter's fading
-    f = a * f
+    # a step of the setpoint gives none, and the measurement's sample
+    # stands still: nothing is taken and f stands (amendment 10)
     check("pid d 4", pid_step(e, 4, sp=50.0)["y"], ("good", -2 * f))
     # an unusable measurement: no value; and on the first tick after it
     # there is no tick before: f is zero
@@ -4984,15 +4984,15 @@ def test_pid():
     check("pid engine reset", o["integral"], ("good", 1.0))
     counts("pid engine reset", o, elapsed=1, doubtful=0, gaps=0)
 
-    # a gap that passed over no tick adds one to gaps and nothing else
-    # (rule 8.6): the derivative goes on from the tick before
+    # a rebase that passed over no tick forgets every sample time, so the
+    # derivative starts again (rule 7.7.7, amendment 10)
     e = pid_engine({"kp": 0, "kd": 2, "filter": "1s"})
     pid_step(e, 0, sp=0.0, me=0.0, r=False)
     pid_step(e, 1, me=1.0)  # f = 1 - a
     e.rebase(1 * S)
     o = pid_step(e, 0, sp=0.0, me=3.0, r=False)  # slope 2
     check("pid gap none info", e.info, info(True, 2, 0))
-    check("pid gap none y", o["y"], ("good", -2 * (a * (1 - a) + (1 - a) * 2.0)))
+    check("pid gap none y", o["y"], ("good", 0.0))
     counts("pid gap none", o, elapsed=3, doubtful=0, gaps=1)
     # one passed over: it starts again
     e = pid_engine({"kp": 0, "kd": 2, "filter": "1s"})
@@ -5885,6 +5885,121 @@ def test_commands_revised():
     e.tick(0)
     e.write("me", "good", 0.0, 1 * S)
     check("rev no reset: it tracks", e.tick(1 * S)[1]["integral"], ("good", 6.0))
+
+
+def test_between_samples():
+    """Amendment 10: a derivative and a slope between samples."""
+    # --- the PID's derivative (rule 7.7.7). kp 0, kd 2, filter 1 s.
+    e = pid_engine({"kp": 0, "kd": 2, "filter": "1s"})
+    e.write("sp", "good", 0.0, 0)
+    e.write("me", "good", 0.0, 0)
+    check("bs pid 0", e.tick(0)[1]["y"], ("good", 0.0))  # none remembered
+    check("bs pid 1", e.tick(1 * S)[1]["y"], ("good", 0.0))  # the sample stands: nothing taken
+    # a sample taken at 1.5 s, seen at tick 2: dt is 1.5 s, s is 3 / 1.5
+    e.write("me", "good", 3.0, 1500000000)
+    a15 = math.exp(-1.5)
+    f = (1 - a15) * 2.0
+    check("bs pid 2", e.tick(2 * S)[1]["y"], ("good", -2 * f))
+    check("bs pid 3", e.tick(3 * S)[1]["y"], ("good", -2 * f))  # it stands while the sample stands
+    # a value written with the same time: not a new sample
+    e.write("me", "good", 99.0, 1500000000)
+    check("bs pid 4", e.tick(4 * S)[1]["y"], ("good", -2 * f))
+    # the next is over the time between the two samples, 1.5 s to 5 s,
+    # from the measurement last taken (3 and not 99)
+    e.write("me", "good", 10.0, 5 * S)
+    a35 = math.exp(-3.5)
+    f = a35 * f + (1 - a35) * (7.0 / 3.5)
+    check("bs pid 5", e.tick(5 * S)[1]["y"], ("good", -2 * f))
+    # a stall: nothing is remembered after a gap of either kind
+    e.write("me", "good", 20.0, 500 * S)
+    check("bs pid stall", e.tick(500 * S)[1]["y"], ("good", 0.0))
+    e.write("me", "good", 21.0, 501 * S)
+    check("bs pid after the stall", e.tick(501 * S)[1]["y"], ("good", -2 * (1 - math.exp(-1.0)) * 1.0))
+    # a measurement with no sample time has its tick's: a formula of two
+    # signals is a new one at every tick, a period after the last
+    g = {
+        "period": "500ms",
+        "inputs": {"p": {"max_age": "none"}, "q": {"max_age": "none"}},
+        "blocks": [
+            {"id": "f", "type": "formula", "in": {"p": "p", "q": "q"}, "settings": {"expr": "p + q"}},
+            {
+                "id": "c",
+                "type": "pid",
+                "in": {"setpoint": 0, "measurement": "f.y"},
+                "settings": {"kp": 0, "kd": 1, "filter": "1s"},
+                "out": {"y": "y"},
+            },
+        ],
+    }
+    e = Engine(g)
+    e.write("p", "good", 1.0, 0)
+    e.write("q", "good", 0.0, 0)
+    e.tick(0)
+    ah = math.exp(-0.5)
+    f = 0.0
+    for k, p_ in ((1, 2.0), (2, 2.0), (3, 4.0)):
+        e.write("p", "good", p_, k * 500000000 - 7)  # its own time does not matter
+        o = e.tick(k * 500000000)[1]
+        prev = {1: 1.0, 2: 2.0, 3: 2.0}[k]
+        f = ah * f + (1 - ah) * ((p_ - prev) / 0.5)
+        check("bs pid block output %d" % k, o["y"], ("good", -f))
+
+    # --- a window's slope (rule 7.3.6, Appendix A): each sample at its time
+    win = {"type": "window", "in": {"x": "x"}, "settings": {"window": "3s", "min_good": 0.5}}
+    e = one_block(win, max_catch_up=100)
+    e.write("x", "good", 0.0, 0)
+    o = e.tick(0)[1]
+    check("bs slope one sample", o["slope"], ("not_ready", None))  # two are needed: rule 3 first
+    # the same sample seen again at tick 1 is the same point: bad, though
+    # the window holds two usable samples and its mean is good
+    o = e.tick(1 * S)[1]
+    check("bs slope seen again", o["slope"], ("bad", None))
+    check("bs slope seen again, mean", o["mean"], ("good", 0.0))
+    check("bs slope seen again, count", o["count"], ("good", 2.0))
+    # a sample of 3 taken at 1.5 s: points (0, 0), (0, 0), (1.5, 3): the
+    # least-squares slope is 3 / 1.5 = 2
+    e.write("x", "good", 3.0, 1500000000)
+    check("bs slope of sample times", e.tick(2 * S)[1]["slope"], ("good", 2.0))
+    # tick 3: (0, 0), (1.5, 3), (1.5, 3): still 2
+    check("bs slope of sample times, 3", e.tick(3 * S)[1]["slope"], ("good", 2.0))
+    # tick 4: (1.5, 3) three times: one time
+    check("bs slope one time", e.tick(4 * S)[1]["slope"], ("bad", None))
+    # an exact ramp sampled off the ticks reads its rate: 1 a second
+    e = one_block(win, max_catch_up=100)
+    for k, at in enumerate((0, 1030000000, 2060000000, 3090000000)):
+        e.write("x", "good", at / 1e9, at)
+        o = e.tick(max(at, k * S))[1]
+    check("bs slope of a ramp", o["slope"], ("good", 1.0))
+    # after a rebase the samples it holds are at their ticks' times, whole
+    # periods before the tick that runs. Ticks 0 and 1 hold 0 and 5, the 5
+    # sampled at 0.2 s: 25 a second before the rebase.
+    e = one_block(win, max_catch_up=100)
+    e.write("x", "good", 0.0, 0)
+    e.tick(0)
+    e.write("x", "good", 5.0, 200000000)
+    check("bs slope before a rebase", e.tick(1 * S)[1]["slope"], ("good", 25.0))
+    # a rebase of 1 s passes over none; tick 2 runs at 100 s with a sample
+    # of 7 taken then: points (98, 0), (99, 5), (100, 7): 3.5
+    e.rebase(1 * S)
+    e.write("x", "good", 7.0, 100 * S)
+    o = e.tick(100 * S)[1]
+    check("bs slope after a rebase info", e.info, info(True, 2, 100 * S))
+    check("bs slope after a rebase", o["slope"], ("good", 3.5))
+    # only_new: each tick that holds a sample holds a new one, at its time
+    onew = {"type": "window", "in": {"x": "x"}, "settings": {"window": "3s", "min_good": 0.5, "only_new": True}}
+    e = one_block(onew, max_catch_up=100)
+    e.write("x", "good", 1.0, 0)
+    e.tick(0)
+    e.tick(1 * S)  # no new sample
+    e.write("x", "good", 4.0, 1500000000)
+    check("bs slope only_new", e.tick(2 * S)[1]["slope"], ("good", 2.0))
+    # a value with no sample time is at its tick's: a constant is a new
+    # point each tick, and its slope is zero, good
+    g = {"period": "1s", "blocks": [{"id": "w", "type": "window", "in": {"x": 4}, "settings": {"window": "2s"}}]}
+    g["blocks"][0]["out"] = {"slope": "slope"}
+    e = Engine(g)
+    e.tick(0)
+    check("bs slope of a constant", e.tick(1 * S)[1]["slope"], ("good", 0.0))
 
 
 def test_estimator():

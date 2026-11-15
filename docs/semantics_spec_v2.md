@@ -1,6 +1,6 @@
 # FluxGraph semantics, version 2 (proposal)
 
-**Status:** proposal, third revision, with nine amendments. Not in force.
+**Status:** proposal, third revision, with ten amendments. Not in force.
 [semantics_spec.md](semantics_spec.md) stays the normative contract for
 FluxGraph 1.x until this is accepted, at which point this document replaces
 it and the library becomes 2.0.
@@ -144,13 +144,26 @@ time. **Amendments so far:**
    wherever the actuator was: a `pid` and a `rate_limit` may be given
    `track`, where the actuator is, and start again from that.
 
+10. *A derivative and a slope between samples* (rules 7.7.7 and 7.3.6,
+    section 8 and Appendix A). Both were worked as if each tick held a
+    sample one period after the last. A host whose loop is 3% slower than
+    the period samples a little later each time and now and then runs two
+    ticks on one sample: of a ramp of exactly 1 a second the PID's
+    derivative read from 0.79 to 1.03 and a window's slope from 0.72 to
+    1.03. Both are now over the times the samples carry. The derivative
+    is between one sample and the next, with its filter over the time
+    between them, and stands while a sample stands. A window places each
+    sample at its own time. On that ramp both read 1. A value with no
+    sample time, a block's output, has its tick's, and is worked as
+    before.
+
 **Known to be wrong as it stands**, and not yet amended:
 
-- **A derivative and a slope are over ticks and not over sample times**
-  (rule 7.7.7 and section 7.3). Where a host's loop is a little slower or
-  faster than the period, a sample is not a period after the one before,
-  and the PID's derivative and a window's `slope` of an exact ramp are
-  off by as much as the calls are.
+- **A derivative of a low-pass's output is over ticks** (rule 7.4.5). A
+  low-pass gives a new value at every tick, on samples that came when the
+  host's calls did, and the PID's derivative of it is off as amendment 10
+  found the derivative of the samples to be. The PID's own `filter` is
+  over sample times, and is the filter to use.
 - **An estimator whose model is exactly right flags itself under
   ordinary timing** (section 7.9). It steps over whole periods on inputs
   held from one tick to the next, and compares a measurement with its
@@ -750,7 +763,14 @@ its doubt with it.
 6. A slope needs two samples. Where the window holds fewer than two `good`
    samples and at least two usable ones, its slope is of its usable
    samples and is `uncertain`, whatever rule 5 says of the rest. With one
-   usable sample the slope is `bad`. The other statistics are as rules 4
+   usable sample the slope is `bad`, and so it is where every sample it
+   would be of has one time: a sample seen again at a later tick is the
+   same point again, counted once for each tick it stands at, and not a
+   point at a second time. A window whose slope is read is longer than
+   the time between samples, and a slope of a value written only when
+   it changes wants a fallback. Where the slope is of the `good`
+   samples and they have one time, it is `bad`, whatever an `uncertain`
+   sample at another time would have added. The other statistics are as rules 4
    and 5 say. Rule 3 comes first: with fewer usable samples than are
    needed the slope takes the state the other statistics take.
 7. `count`, the number of usable samples the window holds, is always `good`.
@@ -763,9 +783,10 @@ its doubt with it.
    tick the host did not call for holds no new sample, and at 1 that one
    hole would spoil the window for its whole length.
 
-A window fed a value that has stopped being written reports no spread and
-no slope, and reports them as `good`, until the input's maximum age ends
-it. `only_new` is for the window that must not.
+A window fed a value that has stopped being written reports no spread, as
+`good`, until the input's maximum age ends it, and once it holds that one
+sample and no other its slope is `bad`. `only_new` is for the window whose
+other statistics must not go on as `good` either.
 
 ### 7.4 Blocks that hold a value
 
@@ -980,17 +1001,29 @@ lacks.
    not short of it, and still comes out of one: an addition towards the
    other limit is made whole.
 7. **The derivative** is of the measurement and not of the error, so that
-   a step of the setpoint gives none. With `s` the measurement less the
-   measurement of the tick before, over the period, the block keeps
-   `f = a·f + (1 - a)·s` from tick to tick, with
-   `a = exp(-period / filter)`, and the derivative is `-kd·f`. `filter` is
-   written as a length, and is given when `kd` is not zero and only then.
-   On the first tick where both inputs are usable, and on the first such
-   tick after one where they were not, after a reset or after a gap, there
-   is no tick before: `f` is zero, and the derivative with it. Every tick
-   is taken as a new measurement, so `filter` is chosen no shorter than
-   the time between samples: a measurement that stands for several ticks
-   and then moves gives a derivative of spikes.
+   a step of the setpoint gives none, and it is **between samples**. A
+   measurement's **time** is its sample time (rule 3.7), or the tick's
+   where it carries none. The block remembers the measurement it last
+   took and its time. On a tick where both inputs are usable:
+   - with none remembered, `f` is zero, and the measurement is taken;
+   - with a measurement whose time is later than the one remembered, `s`
+     is the measurement less the one remembered, over `dt`, the time
+     between the two in seconds: the difference of the two times, in
+     nanoseconds, divided by 10⁹. The block keeps
+     `f = a·f + (1 - a)·s`, with `a = exp(-dt / filter)` and `1 - a`
+     worked as one less that `a`, and the measurement is taken;
+   - otherwise, with the sample that was last taken standing still, or a
+     value written with its time or an earlier one, nothing is taken and
+     `f` stands.
+
+   The derivative is `-kd·f`. `filter` is written as a length, and is
+   given when `kd` is not zero and only then. Nothing is remembered at
+   the first tick where both inputs are usable, at the first such tick
+   after one where they were not, after a reset, and after a gap of
+   either kind, a rebase that passed over no tick among them, since a
+   rebase forgets every sample time (rule 8.5). A measurement that is a
+   block's output with the tick's time, a low-pass's or a formula's of
+   two signals, is a new one at every tick, a period after the last.
 8. With both inputs usable, `y` takes the worse of their two states, and
    is `uncertain` as well on a tick where `reset` is `uncertain` and true.
    With either unusable, `y` takes the worst state of the two and has no
@@ -1043,7 +1076,8 @@ lacks.
 13. **By the call.** A PID that feeds a command (rule 6.13) adds nothing
     to its integral at a catch-up tick: the addition of rule 6 is zero
     there, so nothing is cut short and nothing is taken back. All else is
-    as at any tick: the derivative's filter runs, the counts count, a
+    as at any tick: the derivative takes a new sample where there is
+    one (rule 7), the counts count, a
     `reset` is taken, rule 8 holds, and `integral` and `limited` are
     given. Its `y` at such a tick is held (rule 6.13). At the last tick
     of a call the addition is `ki·error·period`, and that times `m`.
@@ -1051,8 +1085,8 @@ lacks.
 14. **Where the actuator is.** It has an input `track`, a number, that
     need not be connected: the value the actuator has, read back from it.
     The PID **waits to track** from the start, from a tick where either
-    input is not usable, and from a gap that starts the derivative again
-    (rule 8.6). It stops waiting at a tick where both inputs are usable;
+    input is not usable, and from a gap that passed over a tick or whose
+    length nobody knows (rule 8.6). It stops waiting at a tick where both inputs are usable;
     one that acts by the call, at such a tick that is the last of its
     call, and not at a catch-up tick. It stops waiting at the tick of a
     reset too, a catch-up tick among them, and whatever that tick reads:
@@ -1606,7 +1640,32 @@ to write the stricter thing.
   integral is `good` on the next tick.
 - **A PID's derivative is zero on the tick an input comes back**, and its
   output steps by what the derivative was giving. With `kd` of zero there
-  is no step.
+  is no step. It is zero after every rebase too.
+- **A PID's derivative stands while its measurement does.** A sensor that
+  stops being sampled leaves the last rate in the output until the
+  input's maximum age ends it, or a new sample comes. On an input with
+  no maximum age it stands for good.
+- **A derivative and a slope are as true as the times the host writes.**
+  Samples stamped with the time they arrived, and not the time they were
+  taken, give the rate of arrival.
+- **A value corrected under the time it was first written with** stands
+  on the input and is not a new sample: the derivative does not take it,
+  and takes the whole correction with the sample after.
+- **A sample taken before a value that had no sample time is not taken
+  by the derivative.** A fallback's value, or an input's `initial`, has
+  its tick's time, and the first real sample after it, stamped earlier
+  than that tick, is passed by: `f` stands at the rate the fallback
+  gave, and the next sample carries the whole return.
+- **A plain window reads a little off for its own length after a
+  rebase**, by as much as its samples were taken before their ticks.
+- **A window's slope is `bad` while it holds one sample seen again and
+  again**, a window shorter than the time between samples on some ticks
+  and not on others, and of a value that is written only when it
+  changes it is the change over the time since the write before, and
+  not a step.
+- **A derivative of a low-pass's output is over ticks**, as every
+  block's output with the tick's time is. The PID's `filter` is over
+  sample times.
 - **A rate limit holding a value it moved to on an `uncertain` input** is
   `good` once its input is, as a deadband is.
 - **Only a window has a tolerance for doubtful samples.** One `uncertain`
@@ -1680,8 +1739,11 @@ to write the stricter thing.
    - every sample time a block remembers or holds is forgotten. A window
      with `only_new` takes the next usable sample, and an estimator
      considers the next measurement, as if they had seen none; an estimator
-     has used none, so its `since_<port>` is `not_ready`; and the values a
-     delay holds at that moment lose their sample times. A block that
+     has used none, so its `since_<port>` is `not_ready`; the values a
+     delay holds at that moment lose their sample times; a PID's
+     derivative starts again (rule 7.7.7); and the samples a window holds
+     are from then on at their ticks' times, a tick's time being whole
+     periods before the tick that runs. A block that
      compares sample times cannot tell a sample from before the rebase
      from the same one written again after it, whatever length the host
      gave. So a window with `only_new` keeps no sample from before a
@@ -1711,8 +1773,8 @@ to write the stricter thing.
    half, a block does nothing but add one to `gaps`, whatever the table
    says: no timer stops and no model has a doubt. What rule 5 says of a
    rebase holds all the same: nothing stands, every sample time is
-   forgotten, a window with `only_new` is emptied and an estimator's
-   variance grows. The call says it was a gap, and how many (rule 6.10).
+   forgotten, a PID's derivative starts again, a window with `only_new`
+   is emptied and an estimator's variance grows. The call says it was a gap, and how many (rule 6.10).
 
 | Block | Told that `n` ticks were passed over | Told that nobody knows |
 | --- | --- | --- |
@@ -1724,7 +1786,7 @@ to write the stricter thing.
 | `held_for` | With `reset` the timer stops. With `hold` the unusable stretch grows by `n`: within `hold_limit` the timer runs on and `doubtful` goes up by `n`, and past it the timer stops | The timer stops |
 | `since_true` | The clock is not set, with either `on_bad`. `doubtful` goes up by `n` | The input was last true longer ago than `time` (rule 7.6.2), and its counts start again at the gap's tick |
 | `latch` | Unchanged. `doubtful` goes up by `n` if it is not set | Unchanged |
-| `pid` | The integral is unchanged, the derivative starts again (rule 7.7.7), and it waits to track (rule 7.7.14), but where `n` is zero. `doubtful` goes up by `n` | The integral is unchanged, the derivative starts again, and it waits to track |
+| `pid` | The integral is unchanged and the derivative starts again (rule 7.7.7). Where `n` is not zero it waits to track (rule 7.7.14). `doubtful` goes up by `n` | The integral is unchanged, the derivative starts again, and it waits to track |
 | `integrate` | The total is unchanged. `missed` and `elapsed` go up by `n` | The total is unchanged. With `max_missed` given it is `bad` until a reset: what it missed is more than that |
 | Model block | For each of those ticks, in order, it steps on the last usable value of every input while each is within `ride_through` (rule 7.8.4), and takes no step from the first tick where one is not. `doubtful` goes up by `n`. The tick before the one that runs is a doubt (rule 7.8.6), its loop's if it is on one: with `settle` it is `uncertain` from the tick that runs | The same doubt. It takes no step, and does not ride through (rule 7.8.4) |
 | `estimator` | It predicts `n` times more on the model inputs it last had (rule 7.9.9) | Each state's variance grows by its `p0` |
@@ -1745,7 +1807,8 @@ set by it, and a fallback gives nothing for one.
 
 Nothing else changes at a gap. An estimator keeps its state and its
 counts, and a model keeps the last usable value of each input for rule
-7.8.5. At a stall, which is on one clock, a block keeps the sample times
+7.8.5. At a stall, which is on one clock, a block other than a PID, whose
+derivative starts again at any gap, keeps the sample times
 it remembers. At a rebase with a length a delay both moves on and loses
 the sample times of what it still holds.
 
@@ -2030,8 +2093,17 @@ and refused without it. `min_good` is required with `only_new: true`.
   block. `window` is `n` periods. At a tick the window is that tick
   and the `n - 1` before it. `median` of an even number of samples is the
   mean of the middle two. `spread` is `max - min`. `slope` is the
-  least-squares slope of value against time, per second, taking the oldest
-  tick of the window as time zero. Section 7.3 governs states.
+  least-squares slope of value against time, per second. The time of a
+  sample is its sample time (rule 3.7), or its tick's where it carries
+  none or a rebase has forgotten it (rule 8.5); it is taken in seconds
+  from the time of the earliest tick's sample among those the slope is
+  of, whether or not that is the earliest time, as a difference in
+  nanoseconds divided by 10⁹. A tick's time is worked at each tick, as
+  whole periods before that tick's. With `t̄` and `v̄` the means of the
+  times and of the values, each a sum from the earliest tick's sample to
+  the latest, divided by their number, the slope is the sum of
+  `(t - t̄)·(v - v̄)` over the sum of `(t - t̄)²`, each summed in that
+  order. Section 7.3 governs states.
 - **`deadband`.** The comparison with `step` is exact. Section 7.4.
 - **`lowpass`.** Section 7.4, and rule 7.8.8 for one in a loop that holds
   a model block.

@@ -298,6 +298,7 @@ class Window(Block):
         # 6 rule 3: exactly, from the decimal as it is written
         self.need = max(1, math.ceil(Fraction(str(self.s["min_good"])) * self.n))
         self.buf, self.last_at = collections.deque(maxlen=self.n), None
+        self.when = collections.deque(maxlen=self.n)  # for each tick it holds: its number, and its sample's time
 
     def output(self, k, t, ins):
         x = ins["x"]
@@ -310,6 +311,7 @@ class Window(Block):
             took = (Val(GOOD, v.v, v.at) if v.state == UNCERTAIN else v for v in self.buf)
             self.buf = collections.deque(took, maxlen=self.n)
         self.buf.append(x)
+        self.when.append((k, x.at if usable(x) else None))
         first = self.n - len(self.buf)  # the ticks of the window from before the start, or a gap
         held = [(first + i, v) for i, v in enumerate(self.buf) if usable(v)]
         good = [(i, v) for i, v in held if v.state == GOOD]
@@ -330,7 +332,10 @@ class Window(Block):
         if len(good) < 2 <= len(held):  # rule 6: no two good samples, so the slope is of the usable ones
             state, of = UNCERTAIN, held
             ys = [v.v for _, v in of]
-        ts = [i * self.period for i, _ in of]
+        # Appendix A: a sample's time is its own, or its tick's; from the first of those the slope is of
+        step = round(self.period * NS)
+        times = [at if at is not None else t - (k - tick) * step for tick, at in self.when]
+        ts = [(times[i - first] - times[of[0][0] - first]) / NS for i, _ in of] if of else []
         mt, my = sum(ts) / len(ts), sum(ys) / len(ys)
         den = sum((ti - mt) ** 2 for ti in ts)
         if len(of) < 2 or den == 0.0:
@@ -342,11 +347,14 @@ class Window(Block):
     def gap(self, k, n):
         for _ in range(self.n if n is None else min(n, self.n)):
             self.buf.append(Val(NOT_READY))
+            self.when.append((k - 1, None))
 
     def forget_times(self):
         self.last_at = None
+        self.when = collections.deque(((tick, None) for tick, _ in self.when), maxlen=self.n)  # at their ticks' times
         if self.s["only_new"]:  # it cannot tell a sample from before the rebase from one written again after
             self.buf.clear()
+            self.when.clear()
 
 
 class Deadband(Block):
@@ -720,10 +728,10 @@ class Pid(Counted):
             raise CompileError("min is less than max")
         if self.s["applied_within"] < 0:
             raise CompileError("applied_within is not negative")
-        self.a = math.exp(-self.period / float(self.s["filter"])) if self.s["filter"] is not None else 0.0
         self.integral, self.before, self.f = 0.0, None, 0.0  # before: the measurement of the tick before
         self.added = None  # this tick's addition: (the integral before it, the addition, y)
         self.waiting = True  # rule 14: it waits to track
+        self.before_at = None  # rule 7: the time of the measurement the derivative last took
 
     def output(self, k, t, ins):
         sp, pv, r = ins["setpoint"], ins["measurement"], ins.get("reset")
@@ -742,11 +750,15 @@ class Pid(Counted):
         if resetting and r.state == UNCERTAIN:
             state = UNCERTAIN
         error = sp.v - pv.v
-        if self.before is None:  # rule 7: there is no tick before
-            self.f = 0.0
-        else:
-            self.f = self.a * self.f + (1.0 - self.a) * (pv.v - self.before) / self.period
-        self.before = pv.v
+        at = pv.at if pv.at is not None else t  # rule 7: a measurement's time is its sample's, or the tick's
+        if self.before is None:  # there is no measurement before
+            self.f, self.before, self.before_at = 0.0, pv.v, at
+        elif at > self.before_at:  # a later one: the slope and the filter are over the time between the two
+            if self.s["filter"] is not None:
+                dt = (at - self.before_at) / NS
+                keep = math.exp(-dt / float(self.s["filter"]))
+                self.f = keep * self.f + (1.0 - keep) * (pv.v - self.before) / dt
+            self.before, self.before_at = pv.v, at
         rest = self.s["kp"] * error - self.s["kd"] * self.f
         if self.ends_call or not self.by_call or resetting:  # rule 14: it stops waiting, and not at a catch-up tick
             track = ins.get("track")
@@ -780,9 +792,12 @@ class Pid(Counted):
         if (add > 0 and y - got.v > within) or (add < 0 and got.v - y > within):  # rule 12: it fell short
             self.integral = was
 
+    def forget_times(self):
+        self.before, self.f, self.before_at = None, 0.0, None  # 8 rule 5: the derivative starts again
+
     def gap(self, k, n):
         super().gap(k, n)
-        if n != 0:  # 8 rule 6: the derivative starts again, unless no tick was passed over
+        if n != 0:  # 8 rule 6: the derivative starts again, and it waits to track, unless no tick was passed over
             self.before, self.f, self.waiting = None, 0.0, True
 
 
