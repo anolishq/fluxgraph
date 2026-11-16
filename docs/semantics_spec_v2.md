@@ -15,22 +15,6 @@ rule changed in the working in, and each keeps the number it had. What
 each review found, and what each amendment changed and what was measured
 for it, is in [semantics_v2_history.md](semantics_v2_history.md).
 
-**Known to be wrong as it stands**, and not yet amended:
-
-- **A derivative of a low-pass's output is over ticks** (rule 7.4.5). A
-  low-pass gives a new value at every tick, on samples that came when the
-  host's calls did, and the PID's derivative of it is off as the tenth
-  amendment found the derivative of the samples to be. The PID's own
-  `filter` is over sample times, and is the filter to use.
-- **A value does not say why it is `uncertain` or `bad`.** Room is kept
-  for it (rule 3.8), and no block fills it.
-- **An input written true for one call can be missed** by a host whose
-  loop is faster than the period: some of its calls run no tick, and the
-  next write displaces the one nobody read (section 6).
-- **An output has no stated lifetime.** A host that stalls, or whose
-  calls are refused, leaves the last command with the actuator, and
-  nothing here says for how long a given output may be acted on.
-
 What the rules give up is at the end of section 7, and for time and the
 host at the end of section 6; what is still open is under each section.
 
@@ -410,10 +394,21 @@ calls of no more than `act_for` ticks.
   the order they were taken. One with a time earlier than what stands is
   thrown away; one that is only out of order with a write still waiting
   may stand for a tick before the later one does.
+- **Go on writing a value until a call runs a tick.** A host whose loop
+  is faster than the period makes calls that run no tick (rule 6), and of
+  several writes between two ticks one is seen. An input written true at
+  one call and false at the next, a `reset` or a `follow` say, is never
+  read where neither call ran a tick. A call says whether it ran one: the
+  host writes the value again at each call until one has.
 - **List what is acted on.** An output the host hands to an actuator is
   listed as a command (rule 13). Left out, a controller behind it runs
   every catch-up tick on outputs nobody was given, and a block that reads
   the output reads what no actuator had.
+- **Bound how long a command is acted on.** The engine gives a command
+  when it is called and at no other time. A host that stalls, or whose
+  calls are refused, leaves the last command with the actuator, and
+  nothing in a graph says for how long it may stand. The host sets that
+  for each command, and what the actuator does when the time runs out.
 - **After a gap** (section 8), look to whatever it counts on: a gap and
   its length are reported to the host, and each block that counts gives
   `gaps` and adds the ticks passed over to what it missed or doubted. A
@@ -1618,8 +1613,11 @@ to write the stricter thing.
   changes it is the change over the time since the write before, and
   not a step.
 - **A derivative of a low-pass's output is over ticks**, as every
-  block's output with the tick's time is. The PID's `filter` is over
-  sample times.
+  block's output with the tick's time is. A low-pass gives a new value
+  at every tick, on samples that came when the host's calls did, so a
+  PID's derivative of it is taken over ticks and not over the times the
+  samples were taken. The PID's `filter` is over sample times, and is
+  the filter to use before a derivative.
 
 **Models.**
 

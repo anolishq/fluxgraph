@@ -199,3 +199,24 @@ time:
     The error of that estimate on a host off the period was not the
     fault and has not changed. A sample that arrives older than the
     state is passed by, counted, and makes its tick `uncertain`.
+
+## The four things the fourth revision called wrong
+
+The fourth revision opened with four things "known to be wrong as it
+stands". None changed a rule. Each is now where a reader looks for what
+the rules do not do:
+
+- **A derivative of a low-pass's output is over ticks.** A low-pass over
+  ticks is a filter of the value as it stood at each tick, and is left
+  so. What is off is a derivative taken after it, and the PID's `filter`
+  is the one to use there. It is in section 7.11, under samples and
+  their times.
+- **A value does not say why it is `uncertain` or `bad`.** Rule 3.8
+  keeps the room, so a block that gives a reason later changes no form.
+  It is open under sections 3 and 7.
+- **An input written true for one call can be missed.** A call says
+  whether it ran a tick, and a host writes the value again until one
+  has. It is in section 6, under what the host has to do.
+- **An output has no stated lifetime.** An engine that is not called
+  cannot end one. How long a command stands is the host's to bound, and
+  is in section 6 beside it.
