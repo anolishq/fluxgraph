@@ -356,8 +356,8 @@ call for reads what the host has in hand.
       gap runs. For rule 7.8.8 it is not usable at a catch-up tick where
       it was not usable then, before any fallback, and usable where it
       was, whatever its block works out at the catch-up tick.
-    - **A `pid` or a `rate_limit` that feeds a command acts by the
-      call.** A block **feeds** a command when it gives it, or when a
+    - **A `pid` that feeds a command acts by the call, and a
+      `rate_limit` that feeds one past no `pid`.** A block **feeds** a command when it gives it, or when a
       block that feeds the command reads one of its outputs, on any port,
       direct or deferred.
       - A `pid` that feeds a command acts by the call.
@@ -886,7 +886,8 @@ lacks.
    are added first, and to that the integral with this tick's addition
    already made. The test of rule 6 is of that same sum. Where an addition
    is cut short at `max`, the integral becomes `max` less the first of those
-   two, and `y` is `max` itself.
+   two, or stays as it is if that is less than it has (rule 6), and `y` is
+   `max` itself.
 6. **The integral** starts at zero. On a tick where both inputs are usable,
    `ki·error·period` is added to it, `ki` being per second, and the value at
    a tick includes that tick's addition, as a total's does (rule 1). **An
@@ -1437,10 +1438,11 @@ each measurement reads one output of the model.
    Each output has a name of its own. A graph where two would have one
    name, as with states named `x` and `sigma_x`, is refused.
 9. **At a gap** (rule 8.6).
-   - Told that `n` ticks were passed over, it does nothing then: the
-     state stands where it stood, and rule 2 carries it over them when
-     the next tick asks, on the model inputs it last had.
-   - At a rebase, whether or not anybody knows its length, the state is
+   - At a stall, told that `n` ticks were passed over, it does nothing
+     then: the state stands where it stood, and rule 2 carries it over
+     them when the next tick asks, on the model inputs it last had.
+   - At a rebase, whether or not anybody knows its length, and so where
+     it is told `n` as where it is not, the state is
      carried to the place of the tick before the one that runs, and one
      that stands after that place stays where it stands; then each
      state's variance grows by its `p0`, once in all; and no remembered
@@ -1791,8 +1793,10 @@ to write the stricter thing.
    refused by a graph that is not the same.
    - **A saved state holds** what the blocks remember, their counters,
      each loop's doubt and the number of the next tick. A loop's doubt,
-     and a model block's, are held and can never show: a restore is a
-     gap, and the gap sets a doubt later than any that was saved.
+     and a model block's, are held, and show in one case only: a restore
+     is a gap, and a gap sets a doubt later than any that was saved,
+     unless a `rebase` after the restore gives it a length that passes
+     over no tick (rule 6), which sets none.
    - **It does not hold** what stands on an input, the writes waiting,
      the clock, a `rebase` not yet followed by its call, or the count of
      writes thrown away, which stays the engine's own. What a held output
@@ -1897,7 +1901,7 @@ to write the stricter thing.
 | `pid` | The integral is unchanged and the derivative starts again (rule 7.7.7). Where `n` is not zero it waits to track (rule 7.7.14). `doubtful` goes up by `n` | The integral is unchanged, the derivative starts again, and it waits to track |
 | `integrate` | The total is unchanged. `missed` and `elapsed` go up by `n` | The total is unchanged. With `max_missed` given it is `uncertain` until a reset: what it missed is more than that |
 | Model block | For each of those ticks, in order, it steps on the last usable value of every input while each is within `ride_through` (rule 7.8.4), and takes no step from the first tick where one is not. `doubtful` goes up by `n`. The tick before the one that runs is a doubt (rule 7.8.6), its loop's if it is on one: with `settle` it is `uncertain` from the tick that runs | The same doubt. It takes no step, and does not ride through (rule 7.8.4) |
-| `estimator` | Nothing then: its state is carried over them when the next tick asks, on the model inputs it last had (rule 7.9.9) | Its state is carried to the tick before the one that runs, and each state's variance grows by its `p0` |
+| `estimator` | At a stall, nothing then: its state is carried over them when the next tick asks, on the model inputs it last had. At a rebase, as in the next column (rule 7.9.9) | Its state is carried to the tick before the one that runs, and each state's variance grows by its `p0` |
 
 `elapsed`, which counts ticks, takes in the `n` passed over with no more
 said. Every block that gives `gaps` adds one to it at a gap of either

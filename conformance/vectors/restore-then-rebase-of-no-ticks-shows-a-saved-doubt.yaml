@@ -1,0 +1,22 @@
+# 8.2, 8.6: a saved state holds a model block's doubt, and it shows where a
+# rebase after the restore passes over no tick: a gap of no ticks sets no
+# doubt of its own. The model is x' = 0.5 x + 0.5 u with u of 4 and a settle
+# of 3 s. Its input is uncertain at tick 1, so it is uncertain at ticks 2, 3
+# and 4. It is saved after tick 2 and restored, and the rebase of 0.4 s
+# passes over none: ticks 3 and 4 are uncertain still, by the doubt that
+# was saved, and tick 5 is good.
+rules: [8.2, 8.6, 7.8.6]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: state_space, in: {u: u}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 3s}, out: {y: y}}
+calls:
+  - {now: 0, u: 4, y: 0}
+  - {now: 1, u: {v: 4, state: uncertain}, y: 2}
+  - {now: 2, u: 4, y: {u: 3}}
+  - {$save: a}
+  - {$restore: a}
+  - {$rebase: 0.4}
+  - {now: 100, gap: true, skipped: 0, tick: 3, u: 4, y: {u: 3.5}}
+  - {now: 101, y: {u: 3.75}}
+  - {now: 102, y: 3.875}
