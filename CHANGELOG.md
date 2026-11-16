@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `ENABLE_FUZZING` adds FluxGraph's fuzz targets only where FluxGraph is the
+  top-level project. A project that fetched FluxGraph and set the option to
+  fuzz itself did not configure: FluxGraph asked it for a Clang toolchain,
+  or for its own JSON and YAML loaders.
+
 ## [1.1.0] - 2026-11-11
 
 1.1.0 is a minor release: it adds `CompiledProgram::model_output_signal_ids()`
