@@ -13,4 +13,4 @@ blocks:
 calls:
   - {now: 0, z: 2, x: 1, innovation: 2}
   - {$reset: true}
-  - {now: 0, z: {v: 2, at: -5}, x: 1, innovation: 2}
+  - {now: 0, z: {v: 2, at: -5}, x: {u: 1}, innovation: 2}  # the first of all, and older than the state

@@ -1,0 +1,17 @@
+# 7.9.3: the measurements due at a tick are taken in the order of their
+# places, whatever order their ports are declared in. Port b's sample was
+# taken at 0.5 s and port a's at 1 s: b's is considered first, at place 8,
+# with an innovation of 5, and then a's at the tick, against 5/3. Taken as
+# declared, b's would be late.
+rules: [7.9.3]
+period: 1s
+inputs: {a: {max_age: none}, b: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: 0, a: a, b: b}
+    settings: {model: {type: linear, A: [[0]], B: [[1]], C: [[1]]}, q: {x0: 0}, p0: {x0: 1}, measure: {a: {of: y, r: 1}, b: {of: y, r: 1}}, consistency: none}
+    out: {x0: x, sigma_x0: sigma, innovation_a: of_a, innovation_b: of_b, late_b: late}
+calls:
+  - {now: 0, a: 0, x: 0, sigma: 0.7071067811865476, of_a: 0, of_b: not_ready}
+  - {now: 1, a: 1, b: {v: 5, at: 0.5}, x: 1.5, sigma: 0.5, of_a: -0.6666666666666666, of_b: 5, late: 0}

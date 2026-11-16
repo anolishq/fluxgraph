@@ -13,8 +13,10 @@ in ASSUMPTIONS-amendment-7.md, for Amendment 8 in
 ASSUMPTIONS-amendment-8.md, for Amendment 9 (commands, and where the
 actuator is) in ASSUMPTIONS-amendment-9.md, for Amendment 10 (a
 derivative and a slope between samples) in ASSUMPTIONS-amendment-10.md, and
-for Amendment 11 (smaller faults) in ASSUMPTIONS-amendment-11.md, and for
-Amendment 12 (a controller that is not acting) in ASSUMPTIONS-amendment-12.md.
+for Amendment 11 (smaller faults) in ASSUMPTIONS-amendment-11.md, for
+Amendment 12 (a controller that is not acting) in ASSUMPTIONS-amendment-12.md,
+and for Amendment 13 (an estimator between samples) in
+ASSUMPTIONS-amendment-13.md.
 
 Every time is a whole number of nanoseconds, held as an int (rule 6.2).
 """
@@ -1725,7 +1727,8 @@ def _discretize(a, b, period_ns):
     zero = decimal.Decimal(0)
     with decimal.localcontext() as ctx:
         ctx.prec = _EXP_DIGITS
-        period = decimal.Decimal(period_ns) / decimal.Decimal(_NS)
+        length = Fraction(period_ns)  # it may be a fraction of a nanosecond
+        period = decimal.Decimal(length.numerator) / decimal.Decimal(length.denominator) / decimal.Decimal(_NS)
         big = []
         for i in range(n):
             big.append([decimal.Decimal(v) * period for v in a[i]] + [decimal.Decimal(int(i == j)) for j in range(n)])
@@ -1841,6 +1844,7 @@ def _continuous(b, inputs, states, outputs, a, bm, c, x0, d=None, named=True, de
         raise b.err("the model grows so fast that its step over one period is more than a double holds")
     model = Model(inputs, states, outputs, ad, bd, c, d, x0, _slowest(a, det) if named else None)
     model.a = a
+    model.b = bm
     return model
 
 
@@ -2215,7 +2219,7 @@ def _noise(a, q, period_ns):
 
 
 class Estimator(Block):
-    SETTINGS = ("model", "q", "p0", "measure", "consistency", "gate", "max_refused", "sigma_max")
+    SETTINGS = ("model", "q", "p0", "measure", "consistency", "gate", "max_refused", "sigma_max", "lag")
     has_update = True
 
     def _state_map(self, key, required):
@@ -2268,18 +2272,30 @@ class Estimator(Block):
         self.q = [q[n] for n in states]
         self.p0 = [p0[n] for n in states]
         # N, what process noise adds over one step (rule 7.9.2)
+        # the model's step and what process noise adds over it, N, for a
+        # whole period, and for a model in continuous time for 8, 4, 2 and
+        # 1 sixteenths of one: each (Ad, Bd, N), worked out here (rule 7.9.2)
+        self.steps = {}
+        nst = len(states)
         if self.model.a is None:
             # in discrete time: q times the period on each state's own variance
             period = self.ctx.period
-            self.noise = [
-                [self.q[i] * period if i == j else 0.0 for j in range(len(states))] for i in range(len(states))
-            ]
+            noise = [[self.q[i] * period if i == j else 0.0 for j in range(nst)] for i in range(nst)]
+            self.steps[16] = (self.model.ad, self.model.bd, noise)
         else:
-            self.noise = _noise(self.model.a, self.q, self.ctx.period_ns)
-            if self.noise is None:
-                raise self.err(
-                    "the model grows so fast that its process noise over one period is more than a double holds"
-                )
+            for size in (16, 8, 4, 2, 1):
+                length = Fraction(self.ctx.period_ns * size, 16)
+                if size == 16:
+                    ad, bd = self.model.ad, self.model.bd
+                else:
+                    ad, bd = _discretize(self.model.a, self.model.b, length)
+                noise = _noise(self.model.a, self.q, length)
+                if noise is None or ad is None:
+                    raise self.err(
+                        "the model grows so fast that its process noise over one period is more than a double holds"
+                    )
+                self.steps[size] = (ad, bd, noise)
+        self.lag = s_counted(self, self.st, "lag", 2)
         smax = self._state_map("sigma_max", False)
         for name, v in smax.items():
             if v < 0:
@@ -2359,6 +2375,7 @@ class Estimator(Block):
             self._add_out("innovation_" + port)
             self._add_out("nis_" + port)
             self._add_out("refused_" + port)
+            self._add_out("late_" + port)
             self._add_out("since_" + port)
         self.rebased = False  # between rebase() and the gap() that follows it
 
@@ -2372,9 +2389,14 @@ class Estimator(Block):
         self.s = {
             "x": self.model.initial(),
             "p": [[self.p0[i] if i == j else 0.0 for j in range(n)] for i in range(n)],
-            "last": {nm: None for nm in self.model.inputs},
+            "at": 0,  # the place the state and its covariance stand at
+            # for each model input, the values it was given, each from a
+            # place: [(place, value)], oldest first
+            "u": {nm: [] for nm in self.model.inputs},
+            "first": True,  # the next measurement due is the first (rule 7.9.3)
             "considered": {m[0]: None for m in self.measures},
             "refused": {m[0]: 0 for m in self.measures},
+            "late": {m[0]: 0 for m in self.measures},
             "run": {m[0]: 0 for m in self.measures},  # refused in a row
             "nis": {m[0]: [] for m in self.measures},  # of its last `over` considered
             "used": {m[0]: None for m in self.measures},
@@ -2383,75 +2405,129 @@ class Estimator(Block):
             "lost": False,  # a gap of no known length, and no measurement used since
         }
 
-    def _predict(self):
-        """Rule 7.9.2. Whether the state was stepped."""
-        s = self.s
-        n = len(self.model.states)
-        p = s["p"]
-        stepped = all(v is not None for v in s["last"].values())
-        if stepped:
-            f = self.model.ad
-            s["x"] = self.model.step(s["x"], s["last"])
-            fp = [[sum(f[i][m] * p[m][j] for m in range(n)) for j in range(n)] for i in range(n)]
-            p = [[sum(fp[i][m] * f[j][m] for m in range(n)) for j in range(n)] for i in range(n)]
-        s["p"] = [[p[i][j] + self.noise[i][j] for j in range(n)] for i in range(n)]
-        return stepped
+    def _place(self, k, t, stime):
+        """The place of a sample seen at tick k (rule 7.9.2): the tick's
+        place less the time from the sample to the tick, in sixteenths of a
+        period, to the nearest whole number, a half going to the later
+        place; for a model in discrete time, to the nearest whole period."""
+        if stime is None:
+            return 16 * k
+        back = t - stime
+        period = self.ctx.period_ns
+        if self.model.a is None:
+            return 16 * (k + (period - 2 * back) // (2 * period))
+        return 16 * k + (period - 32 * back) // (2 * period)
 
-    def _predict_many(self, count):
-        """The result of `count` predictions on the model inputs it last
-        had (rule 7.9.9). A few are made one by one. Many are compounded:
-        one prediction is x -> F.x + g, P -> F.P.F' + M, and two of those
-        one after the other are another of the same form, so `count` of
-        them are reached by squaring."""
-        if count <= 32:
-            for _ in range(count):
-                self._predict()
-            return
-        s = self.s
-        n = len(self.model.states)
+    def _steps(self, x, p, step, count, u):
+        """`count` steps of one length: x = Ad.x + Bd.u and P = Ad.P.Ad' + N;
+        or, with u None (a model input has no value), the state stays and
+        P = P + N for each. A few are made one by one; many are compounded:
+        two steps one after the other are one of the same form, so `count`
+        of them are reached by squaring."""
+        n = len(x)
+        ad, bd, noise = step
 
         def mul(a, b):
-            return [[sum(a[i][k] * b[k][j] for k in range(n)) for j in range(n)] for i in range(n)]
+            return [[sum(a[i][m] * b[m][j] for m in range(n)) for j in range(n)] for i in range(n)]
+
+        def apply(one, x, p):
+            f, g, nn = one
+            x = [sum(f[i][m] * x[m] for m in range(n)) + g[i] for i in range(n)]
+            fp = mul(f, p)
+            p = [[sum(fp[i][m] * f[j][m] for m in range(n)) + nn[i][j] for j in range(n)] for i in range(n)]
+            return x, p
 
         def then(first, second):
             f1, g1, m1 = first
             f2, g2, m2 = second
             fm = mul(f2, m1)
-            m = [[sum(fm[i][k] * f2[j][k] for k in range(n)) + m2[i][j] for j in range(n)] for i in range(n)]
-            g = [sum(f2[i][k] * g1[k] for k in range(n)) + g2[i] for i in range(n)]
+            m = [[sum(fm[i][q] * f2[j][q] for q in range(n)) + m2[i][j] for j in range(n)] for i in range(n)]
+            g = [sum(f2[i][q] * g1[q] for q in range(n)) + g2[i] for i in range(n)]
             return (mul(f2, f1), g, m)
 
-        if all(v is not None for v in s["last"].values()):
-            one = (self.model.ad, self.model.step([0.0] * n, s["last"]), self.noise)
+        if u is None:
+            one = ([[float(i == j) for j in range(n)] for i in range(n)], [0.0] * n, noise)
+            if count <= 32:
+                for _ in range(count):
+                    p = [[p[i][j] + noise[i][j] for j in range(n)] for i in range(n)]
+                return x, p
         else:
-            # the state stays, and the covariance takes N
-            one = ([[float(i == j) for j in range(n)] for i in range(n)], [0.0] * n, self.noise)
+            g = [sum(bd[i][j] * u[j] for j in range(len(u))) for i in range(n)]
+            one = (ad, g, noise)
+        if count <= 32:
+            for _ in range(count):
+                x, p = apply(one, x, p)
+            return x, p
         total = None
         while count:
             if count & 1:
                 total = one if total is None else then(total, one)
             one = then(one, one)
             count >>= 1
-        f, g, m = total
-        s["x"] = [sum(f[i][k] * s["x"][k] for k in range(n)) + g[i] for i in range(n)]
-        fp = mul(f, s["p"])
-        s["p"] = [[sum(fp[i][k] * f[j][k] for k in range(n)) + m[i][j] for j in range(n)] for i in range(n)]
+        return apply(total, x, p)
+
+    def _carry(self, x, p, start, end):
+        """The state and its covariance carried from one place to a later
+        one, a stretch at a time, a stretch ending wherever a model input
+        has a value from (rule 7.9.2)."""
+        us = self.s["u"]
+        cuts = sorted(set(pl for vals in us.values() for pl, _v in vals if start < pl < end))
+        a = start
+        for b in cuts + [end]:
+            # the value in force over a stretch is the last one from the
+            # stretch's first place or an earlier one
+            u = []
+            for name in self.model.inputs:
+                vals = [v for pl, v in us[name] if pl <= a]
+                u.append(vals[-1] if vals else None)
+            if any(v is None for v in u):
+                u = None  # never usable: the state is not stepped over it
+            rest = b - a
+            # as many whole-period steps as go into it, and then steps of
+            # 8, 4, 2 and 1 sixteenths, each at most once and in that order
+            x, p = self._steps(x, p, self.steps[16], rest // 16, u)
+            rest %= 16
+            for size in (8, 4, 2, 1):
+                if rest >= size:
+                    x, p = self._steps(x, p, self.steps[size], 1, u)
+                    rest -= size
+            a = b
+        return x, p
+
+    def _stand(self, place):
+        """Carry the state to a place and leave it standing there."""
+        s = self.s
+        if place > s["at"]:
+            s["x"], s["p"] = self._carry(s["x"], s["p"], s["at"], place)
+            s["at"] = place
+            # what was in force before the place the state stands at is not kept
+            for name, vals in s["u"].items():
+                before = [e for e in vals if e[0] <= place]
+                s["u"][name] = before[-1:] + [e for e in vals if e[0] > place]
 
     def _grow(self):
         for i in range(len(self.p0)):
             self.s["p"][i][i] += self.p0[i]
 
     def gap(self, g, n):
-        # told n: it predicts n times more, on the model inputs it last had
-        self._predict_many(n or 0)
-        # told nobody knows, and at a rebase whatever its length: by p0
-        if n is None or self.rebased:
+        s = self.s
+        if self.rebased:
+            # at a rebase, whether or not anybody knows its length: the
+            # state is carried to the place of the tick before the one that
+            # runs; then each state's variance grows by its p0, once in
+            # all; and no remembered place means anything any more
+            self._stand(16 * (g - 1))
             self._grow()
+            for name, vals in s["u"].items():
+                s["u"][name] = [(s["at"], vals[-1][1])] if vals else []
+            s["first"] = True
+        # told n at a stall it does nothing then: rule 2 carries the state
+        # over the ticks passed over when the next tick asks
         self.rebased = False
-        if n is None:
-            self.s["lost"] = True  # it does not know where it is until a measurement tells it
         if n != 0:
-            self.s["gap"] = True
+            s["gap"] = True
+        if n is None:
+            s["lost"] = True  # it does not know where it is until a measurement tells it
 
     def rebase(self):
         for port in self.s["considered"]:
@@ -2463,69 +2539,88 @@ class Estimator(Block):
         s = self.s
         n = len(self.model.states)
         # rule 7: what makes this tick's outputs uncertain
-        doubt = s["gap"]
+        doubt = s["gap"] or s["doubt"]
         s["gap"] = False
-        # predict, on the model inputs as they were at the tick before
-        if k != 0:
-            stepped = self._predict()
-            if s["doubt"] or not stepped:
-                doubt = True
-        # correct
+        # lag: a state that stands more than `lag` behind the tick is
+        # carried to `lag` behind it, before any measurement
+        self._stand(16 * (k - self.lag))
+        # correct: the measurements due at this tick, in the order of their
+        # places, and those of one place in the order they are declared
         res = {}
-        x = s["x"]
-        p = s["p"]
-        for port, c, r, ru in self.measures:
+        due = []
+        for order, (port, c, r, ru) in enumerate(self.measures):
             sg = ins[port]
             last = s["considered"][port]
             ok = sg[0] == GOOD or (sg[0] == UNC and ru is not None)
             if ok and sg[2] is not None and (last is None or sg[2] > last):
-                s["considered"][port] = sg[2]
-                v = r if sg[0] == GOOD else ru
-                innovation = sg[1] - sum(c[j] * x[j] for j in range(n))
-                pc = [sum(p[i][j] * c[j] for j in range(n)) for i in range(n)]  # P.c'
-                spread = sum(c[i] * pc[i] for i in range(n)) + v
-                nis = innovation * innovation / spread
-                if self.over is not None:
-                    s["nis"][port] = (s["nis"][port] + [nis])[-self.over :]
-                root = math.sqrt(spread) if spread >= 0 else float("nan")
-                use = True
-                if self.gate is not None and abs(innovation) > self.gate * root:
-                    if s["run"][port] >= self.max_refused:
-                        # one more than the most it refuses in a row: it
-                        # has disagreed for too long to be an outlier. It
-                        # gives in, and the tick is uncertain (rule 7.9.7)
-                        self._grow()
-                        pc = [sum(p[i][j] * c[j] for j in range(n)) for i in range(n)]
-                        spread = sum(c[i] * pc[i] for i in range(n)) + v
-                        doubt = True
-                    else:
-                        use = False
-                if use:
-                    g = [pc[i] / spread for i in range(n)]
-                    for i in range(n):
-                        x[i] += g[i] * innovation
-                    # P = (1 - g.c).P.(1 - g.c)' + g.v.g': the form that
-                    # rounding cannot bring to nothing (rule 7.9.4)
-                    w = [[float(i == j) - g[i] * c[j] for j in range(n)] for i in range(n)]
-                    wp = [[sum(w[i][m] * p[m][j] for m in range(n)) for j in range(n)] for i in range(n)]
-                    for i in range(n):
-                        for j in range(n):
-                            p[i][j] = sum(wp[i][m] * w[j][m] for m in range(n)) + g[i] * v * g[j]
-                    s["used"][port] = sg[2]
-                    s["run"][port] = 0
-                    s["lost"] = False
-                    if sg[0] == UNC:
-                        doubt = True
-                else:
-                    s["refused"][port] += 1
-                    s["run"][port] += 1
+                due.append((self._place(k, t, sg[2]), order))
+            res["innovation_" + port] = out(NR)
+            res["nis_" + port] = out(NR)
+        for place, order in sorted(due):
+            port, c, r, ru = self.measures[order]
+            sg = ins[port]
+            s["considered"][port] = sg[2]  # the one last considered or passed by
+            first = s["first"]
+            s["first"] = False
+            if place < s["at"] and not first:
+                # late: passed by, counted, and not considered
+                s["late"][port] += 1
+                doubt = True
+                continue
+            # considered: the state is carried to its place and stands
+            # there; the first one, if before the state, where it stands,
+            # and its tick is uncertain for it: it was taken as newer than
+            # it is (rule 7.9.7)
+            if place < s["at"]:
+                doubt = True
+            self._stand(place)
+            x = s["x"]
+            p = s["p"]
+            v = r if sg[0] == GOOD else ru
+            innovation = sg[1] - sum(c[j] * x[j] for j in range(n))
+            pc = [sum(p[i][j] * c[j] for j in range(n)) for i in range(n)]  # P.c'
+            spread = sum(c[i] * pc[i] for i in range(n)) + v
+            nis = innovation * innovation / spread
+            if self.over is not None:
+                s["nis"][port] = (s["nis"][port] + [nis])[-self.over :]
+            root = math.sqrt(spread) if spread >= 0 else float("nan")
+            use = True
+            if self.gate is not None and abs(innovation) > self.gate * root:
+                if s["run"][port] >= self.max_refused:
+                    # one more than the most it refuses in a row: it
+                    # has disagreed for too long to be an outlier. It
+                    # gives in, and the tick is uncertain (rule 7.9.7)
+                    self._grow()
+                    pc = [sum(p[i][j] * c[j] for j in range(n)) for i in range(n)]
+                    spread = sum(c[i] * pc[i] for i in range(n)) + v
                     doubt = True
-                res["innovation_" + port] = out(GOOD, innovation)
-                res["nis_" + port] = out(GOOD, nis)
+                else:
+                    use = False
+            if use:
+                g = [pc[i] / spread for i in range(n)]
+                for i in range(n):
+                    x[i] += g[i] * innovation
+                # P = (1 - g.c).P.(1 - g.c)' + g.v.g': the form that
+                # rounding cannot bring to nothing (rule 7.9.4)
+                w = [[float(i == j) - g[i] * c[j] for j in range(n)] for i in range(n)]
+                wp = [[sum(w[i][m] * p[m][j] for m in range(n)) for j in range(n)] for i in range(n)]
+                for i in range(n):
+                    for j in range(n):
+                        p[i][j] = sum(wp[i][m] * w[j][m] for m in range(n)) + g[i] * v * g[j]
+                s["used"][port] = sg[2]
+                s["run"][port] = 0
+                s["lost"] = False
+                if sg[0] == UNC:
+                    doubt = True
             else:
-                res["innovation_" + port] = out(NR)
-                res["nis_" + port] = out(NR)
+                s["refused"][port] += 1
+                s["run"][port] += 1
+                doubt = True
+            res["innovation_" + port] = out(GOOD, innovation)
+            res["nis_" + port] = out(GOOD, nis)
+        for port, _c, _r, _ru in self.measures:
             res["refused_" + port] = out(GOOD, float(s["refused"][port]))
+            res["late_" + port] = out(GOOD, float(s["late"][port]))
             if s["used"][port] is None:
                 res["since_" + port] = out(NR)
             else:
@@ -2537,6 +2632,11 @@ class Estimator(Block):
                     doubt = True  # the port is inconsistent
         if s["lost"]:
             doubt = True
+        # what is given is the state and the covariance carried on from
+        # where they stand to the tick, and not left there (rule 7.9.8)
+        x, p = s["x"], s["p"]
+        if s["at"] < 16 * k:
+            x, p = self._carry(x, p, s["at"], 16 * k)
         for i, name in enumerate(self.model.states):
             var = p[i][i]
             sigma = math.sqrt(var) if var >= 0 else float("nan")
@@ -2548,16 +2648,27 @@ class Estimator(Block):
         return res
 
     def update(self, k, t, ins):
-        # the model inputs are deferred: the step to the next tick is on
-        # them as they are at this one
+        # the model inputs are deferred. One that is usable, and whose value
+        # is not the one it last had, has that value from the latest of
+        # three places: its sample's, the place the state stands at, and
+        # the place its last value is from
         s = self.s
         s["doubt"] = False
         for name in self.model.inputs:
             sg = ins[name]
-            if usable(sg[0]):
-                s["last"][name] = sg[1]
             if sg[0] != GOOD:
                 s["doubt"] = True
+            if not usable(sg[0]):
+                continue  # it gives nothing: what it last had stays in force
+            vals = s["u"][name]
+            if vals and vals[-1][1] == sg[1]:
+                continue
+            place = max(self._place(k, t, sg[2]), s["at"])
+            if vals:
+                place = max(place, vals[-1][0])
+                if vals[-1][0] == place:
+                    vals.pop()  # two values from one place: the later given stands
+            vals.append((place, sg[1]))
 
 
 BLOCK_TYPES = {

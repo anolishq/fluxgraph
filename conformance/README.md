@@ -19,11 +19,12 @@ the text says, not what it should say.
 | `compare.py` | Runs the two readings side by side on random inputs and call times and compares every output after every call. |
 | `steps.py` | Sets an implementation's exact step (rule 7.8.7) against arithmetic of 150 digits, up to the stiffness bound. |
 | `contract.py` | Tries every short sequence of writes, calls, rebases, resets, saves and restores against what sections 6, 7.2 and 8 promise a host. |
+| `est_timing.py` | Measures an estimator with its model exactly right under a host off the period and under old samples. It draws noise, and is no check. |
 
 ```bash
-python3 conformance/run.py                 # 516 vectors: ALL AGREE
-python3 conformance/run.py --second        # 516 vectors: ALL AGREE
-python3 conformance/mutate.py              # 763 breakages: 763 noticed; every vector failed by one
+python3 conformance/run.py                 # 524 vectors: ALL AGREE
+python3 conformance/run.py --second        # 524 vectors: ALL AGREE
+python3 conformance/mutate.py              # 777 breakages: 777 noticed; every vector failed by one
 python3 conformance/compare.py             # 2637511 comparisons, 0 differences
 python3 conformance/steps.py               # 750 checks: ALL HOLD; the worst error of the step is 1.81e-13
 python3 conformance/steps.py --second      # 750 checks: ALL HOLD; the worst error of the step is 7.75e-13
@@ -781,8 +782,57 @@ looked at at a catch-up tick. The text gained a sentence for one of
 them: a catch-up tick ends the count of ticks a rate limit followed
 with no `track`.
 
+## Amendment 13: an estimator between samples
+
+An estimator stepped a period at a time and set each measurement against
+its state at the tick. `est_timing.py` is the run that showed what that
+cost: a soft sensor with its model exactly right, a core that is not
+measured and a surface that is, over 2,400 s. These are seeds 1, 2 and
+3, the columns marked before with `BEFORE` set as its first lines say.
+
+| Host | `uncertain` ticks, before | after | error of the core, rms, before | after |
+| --- | --- | --- | --- | --- |
+| on time | 4 to 13 | 4 to 13 | 0.035 to 0.037 | the same |
+| 3% slow | 132 to 182 | 9 to 68 | 0.048 to 0.052 | 0.049 to 0.052 |
+| 3% fast | 128 to 190 | 8 to 44 | 0.050 to 0.053 | 0.047 to 0.051 |
+| on time, samples 3 s old, `lag` of 4 s | 181 to 185 | 7 to 16 | 0.36 | 0.038 to 0.040 |
+
+It draws noise, and is a measurement and not a check. What the rules say
+is in the vectors.
+
+- **Two vectors changed.**
+  `estimator-sample-times-are-of-each-port` had two measurements at one
+  tick, the older declared second, and they are now taken in the order
+  of their times; it and `estimator-reset-forgets-sample-times` changed
+  again for the finding below. Every other estimator vector was written
+  with samples on ticks, and gives what it gave.
+- **Eight are new**: a sample between ticks, with a model input that
+  changes between them; one late; the first of all, older than the
+  state; a model in discrete time, whose places are ticks; two ports in
+  the order of their times; a rebase; a sample exactly half way between
+  two places; and one taken after its tick's time.
+- **The second reading, written from the text, agreed with every vector
+  as first run.** It found the rule's own lines repeated, and that the
+  first measurement after a start or a rebase was taken as current
+  however old it was, with the estimator `good` on it: that tick is now
+  `uncertain`.
+- **A mistake of mine in the measuring, not in the rule.** The run first
+  took the tick a call runs to be the one before the call. It is the
+  nearest (rule 6.6), and against the wrong tick the error of the core on
+  a host off the period read 0.085 where it is 0.05. The figures above
+  are against the tick the engine ran.
+
 ## What this does not cover
 
+- **How an estimator's steps are worked, to the last place** (rule
+  7.9.2). The text gives whole periods first and then 8, 4, 2 and 1
+  sixteenths, and leaves how many whole periods are compounded at once.
+  The other order, and compounding or not, pass every vector: they differ
+  in rounding alone.
+- **Three things about a model input's place that change no output**:
+  whether a value equal to the last counts as new, whether one sampled
+  before the state keeps its own place, and whether places are kept
+  across a rebase.
 - **The order of a slope's sums, and of a derivative's `dt`, to the last
   place.** The text gives both; a vector compares to one part in 10⁹,
   and another order passes.
