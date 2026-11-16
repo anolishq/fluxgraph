@@ -1,0 +1,33 @@
+# 7.9.2: exactly a half goes to the later place after the tick as before
+# it. The call at 1.03125 s runs tick 1, and its sample, taken a
+# thirty-second of a period after the tick, is at place 17 and not 16. The
+# model is x' = u with u of 16 and q of 16 a second, so a sixteenth adds 1
+# to x and 1 to the variance: the state is carried 17 sixteenths, to 17
+# with a variance of 17.5, and is given as it stands there.
+rules: [7.9.2, 7.9.8, 6.8]
+period: 1s
+inputs:
+  u: {max_age: none}
+  z: {max_age: none}
+blocks:
+- id: k
+  type: estimator
+  in: {u: u, z: z}
+  settings:
+    model:
+      type: linear
+      A:
+      - [0]
+      B:
+      - [1]
+      C:
+      - [1]
+    q: {x0: 16}
+    p0: {x0: 1}
+    measure:
+      z: {of: y, r: 1}
+    consistency: none
+  out: {x0: x, sigma_x0: sigma, innovation_z: innovation, late_z: late}
+calls:
+- {now: 0, u: 16, z: 0, x: 0.0, sigma: 0.7071067811865476, innovation: 0.0, late: 0.0}
+- {now: 1.03125, z: 30, x: 29.2972972972973, sigma: 0.9725975251592747, innovation: 13.0, late: 0.0}

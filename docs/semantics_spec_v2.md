@@ -1468,7 +1468,10 @@ each measurement reads one output of the model.
    and the place its last value is from. The value in force over a
    stretch is the last one from the stretch's first place or an earlier
    one. A model input that is not usable gives nothing, and what it last
-   had stays in force. What was in force before the place the state
+   had stays in force. A value written again unchanged, with a later
+   sample time, is not a new value and has no new place: a place is of a
+   change. No model input has a value before tick 0's second phase, a
+   constant among them. What was in force before the place the state
    stands at is not kept.
 
    **Lag.** `lag` is a whole number of periods, 2 unless given, and may
@@ -1590,8 +1593,9 @@ each measurement reads one output of the model.
    does nothing then: the state stands where it stood, and rule 2
    carries it over them when the next tick asks, on the model inputs it
    last had. At a rebase, whether or not anybody knows its length, the
-   state is carried to the place of the tick before the one that runs;
-   then each state's variance grows by its `p0`, once in all; and no
+   state is carried to the place of the tick before the one that runs,
+   and one that stands after that place stays where it stands; then each
+   state's variance grows by its `p0`, once in all; and no
    remembered place means anything any more: each model input has the
    value it last had from the place the state stands at, and the next
    measurement due is the first (rule 3). It compares sample times, and
