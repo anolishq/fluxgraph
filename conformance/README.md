@@ -22,9 +22,9 @@ the text says, not what it should say.
 | `est_timing.py` | Measures an estimator with its model exactly right under a host off the period and under old samples. It draws noise, and is no check. |
 
 ```bash
-python3 conformance/run.py                 # 524 vectors: ALL AGREE
-python3 conformance/run.py --second        # 524 vectors: ALL AGREE
-python3 conformance/mutate.py              # 777 breakages: 777 noticed; every vector failed by one
+python3 conformance/run.py                 # 533 vectors: ALL AGREE
+python3 conformance/run.py --second        # 533 vectors: ALL AGREE
+python3 conformance/mutate.py              # 782 breakages: 782 noticed; every vector failed by one
 python3 conformance/compare.py             # 2637511 comparisons, 0 differences
 python3 conformance/steps.py               # 750 checks: ALL HOLD; the worst error of the step is 1.81e-13
 python3 conformance/steps.py --second      # 750 checks: ALL HOLD; the worst error of the step is 7.75e-13
@@ -821,6 +821,20 @@ is in the vectors.
   nearest (rule 6.6), and against the wrong tick the error of the core on
   a host off the period read 0.085 where it is 0.05. The figures above
   are against the tick the engine ran.
+
+Building it in C++ and breaking that 58 ways showed nine breakages that
+only `compare.py` noticed, three that only `cpp/edges.py` did and three
+that nothing did, and nine vectors are new for them: the `lag` a graph
+has when it gives none, a model input's values each from its place, a
+`sigma_max` judged on the sigma given, a stall, three of a rebase or a
+save, and a sample half a sixteenth after its tick. Their numbers were
+first the C++'s, and both readings give the same; the model in each is
+x' = u, and can be worked by hand. A place does not fit in 64 bits at
+the ends of a 64-bit clock, and `cpp/edges.py` checks the C++ there. Two
+of the three that nothing noticed cannot be shown by any input, and one
+breakage of the reference written here for the same reason is not in
+the sweep: what a model input had before the place the state stands at
+is forgotten, and nothing that is given depends on that.
 
 ## What this does not cover
 

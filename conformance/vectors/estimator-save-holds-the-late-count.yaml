@@ -1,0 +1,45 @@
+# 8.2, 7.9.8: a save holds the count of measurements passed by as late.
+# With a `lag` of one period a sample taken at 2.5 s is late at tick 4.
+rules: [8.2, 7.9.8]
+period: 1s
+inputs:
+  u: {max_age: none}
+  z: {max_age: none}
+blocks:
+- id: k
+  type: estimator
+  in: {u: u, z: z}
+  settings:
+    model:
+      type: linear
+      A:
+      - [0]
+      B:
+      - [1]
+      C:
+      - [1]
+    q: {x0: 0}
+    p0: {x0: 1}
+    measure:
+      z: {of: y, r: 1}
+    consistency: none
+    lag: 1s
+  out: {x0: x, sigma_x0: sigma, innovation_z: innovation, late_z: late}
+calls:
+- {now: 0, u: 0, z: 0, x: 0.0, sigma: 0.7071067811865476, innovation: 0.0, late: 0.0}
+- {now: 3, ran: 3, x: 0.0, sigma: 0.7071067811865476, innovation: not_ready, late: 0.0}
+- now: 4
+  z: {v: 5, at: 2.5}
+  x: {u: 0.0}
+  sigma: {u: 0.7071067811865476}
+  innovation: not_ready
+  late: 1.0
+- {$save: a}
+- {now: 5, x: 0.0, sigma: 0.7071067811865476, innovation: not_ready, late: 1.0}
+- {$restore: a}
+- now: 9
+  gap: true
+  x: {u: 0.0}
+  sigma: {u: 1.224744871391589}
+  innovation: not_ready
+  late: 1.0
