@@ -74,7 +74,9 @@ endif()
 # its instrumentation applies to the code-under-test (the loaders), not just the
 # harness.
 option(ENABLE_FUZZING "Build libFuzzer fuzz targets (requires clang)" OFF)
-if(ENABLE_FUZZING)
+# The option's name is not FluxGraph's alone: a project that takes this one in
+# and fuzzes itself has it ON, and means its own targets.
+if(ENABLE_FUZZING AND _fluxgraph_is_top)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/AddFuzzTarget.cmake)
 endif()
 
@@ -175,7 +177,7 @@ if(FLUXGRAPH_BUILD_SERVER)
 endif()
 
 # Fuzz targets (libFuzzer; loaders must be enabled to have something to fuzz)
-if(ENABLE_FUZZING)
+if(ENABLE_FUZZING AND _fluxgraph_is_top)
     add_subdirectory(fuzz)
 endif()
 
