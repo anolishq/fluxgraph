@@ -743,9 +743,10 @@ other statistics must not go on as `good` either.
       written.
 14. **Not acting.** It has an input `follow`, a boolean, that need not be
     connected, and is given only where `track` is: the graph is refused
-    otherwise. `follow` is a direct input. It is what a host says while
-    nothing acts on the output: a machine in manual, a fault, an actuator
-    switched to local. A host writes `follow` as often as its maximum age
+    otherwise. A block whose `follow` is not connected never follows: that
+    is not a `follow` it cannot use. `follow` is a direct input. It is what
+    a host says while nothing acts on the output: a machine in manual, a
+    fault, an actuator switched to local. A host writes `follow` as often as its maximum age
     asks: one written once and left goes too old, and the block follows.
     - **When it follows.** The block **follows** at a tick where `follow`
       is true, and at one where `follow` is not usable: a block that is
@@ -1190,7 +1191,7 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
      This is a check for one mistake and not for stability (section
      7.11);
    - every model block in it has `settle` written in the graph, and the
-     same `settle`. A model's own time constant is not the loop's, and a
+     same `settle`, as a number of ticks. A model's own time constant is not the loop's, and a
      loop has one. The graph is refused otherwise;
    - what else remembers in it is held against that `settle`: the graph is
      refused if the `ticks` of its delays, the lengths of its windows and
@@ -1312,7 +1313,8 @@ each measurement reads one output of the model.
    from a place. At a tick's second phase a model input that is usable,
    and whose value is not the one it last had, has that value from the
    latest of three places: its sample's, the place the state stands at,
-   and the place its last value is from. The value in force over a
+   and the place its last value is from. Of two values from one place the
+   one given later is the one it has. The value in force over a
    stretch is the last one from the stretch's first place or an earlier
    one. A model input that is not usable gives nothing, and what it last
    had stays in force. A value written again unchanged, with a later
@@ -1321,8 +1323,8 @@ each measurement reads one output of the model.
    constant among them. What was in force before the place the state
    stands at is not kept.
 
-   **Lag.** `lag` is a whole number of periods, 2 unless given, and may be
-   zero. At each tick, before any measurement, a state that stands more than
+   **Lag.** `lag` is a length of time, a whole number of periods as rule
+   6.3 asks: 2 periods unless given, and it may be zero. At each tick, before any measurement, a state that stands more than
    `lag` behind the tick is carried to `lag` behind it: so it never stands
    further back than that, and a measurement older than that is late (rule
    3).
@@ -1340,8 +1342,9 @@ each measurement reads one output of the model.
    is **passed by**: counted, and not considered. But the first measurement
    due after the start, a reset or a rebase, on any port, is not late: if
    its place is before the state's, it is considered where the state stands,
-   and its tick is `uncertain` for it (rule 7). Every other one due is
-   **considered**: the state is carried to its place and stands there, and
+   and its tick is `uncertain` for it (rule 7). It is the first whatever
+   its place: the one after it is judged as any other. Every other one due
+   is **considered**: the state is carried to its place and stands there, and
    rule 4 follows. Its variance is the port's `r` if it is `good` and
    `r_uncertain` if it is `uncertain`.
 
@@ -1412,7 +1415,8 @@ each measurement reads one output of the model.
      been used since, on any port, at the gap's own tick or after it: it
      does not know where it is until one tells it. A refused measurement
      does not;
-   - the state's sigma is more than its `sigma_max`, if one is given.
+   - the state's sigma, the one given at this tick (rule 8), is more than
+     its `sigma_max`, if one is given.
      This clause is of that state alone, and its sigma exactly at
      `sigma_max` is not over it; every other clause is of every state.
 
