@@ -353,8 +353,24 @@ rules:
                       "YAML parse error at /rules: Expected sequence");
 }
 
-TEST(YamlLoaderTest, RejectsNullSection) {
-    expect_yaml_error("rules:\n", "YAML parse error at /rules: Expected sequence");
+// A key with no value, `~` or `null` is read as an empty section, as v1.0.6 read it.
+TEST(YamlLoaderTest, ReadsNullSectionAsEmpty) {
+    const auto spec = load_yaml_string("signals:\nmodels: ~\nedges: null\nrules:\n");
+    EXPECT_TRUE(spec.signals.empty());
+    EXPECT_TRUE(spec.models.empty());
+    EXPECT_TRUE(spec.edges.empty());
+    EXPECT_TRUE(spec.rules.empty());
+
+    // yaml-cpp reports an explicitly tagged null as a scalar.
+    const auto tagged = load_yaml_string("signals: !!null\nrules: !!null ''\n");
+    EXPECT_TRUE(tagged.signals.empty());
+    EXPECT_TRUE(tagged.rules.empty());
+}
+
+// A rule's actions are required: a key with no value is not read as empty.
+TEST(YamlLoaderTest, RejectsNullRuleActions) {
+    expect_yaml_error("rules:\n  - id: r1\n    condition: a.x > 1\n    actions:\n",
+                      "YAML parse error at /rules/0/actions: Expected sequence");
 }
 
 TEST(YamlLoaderTest, RejectsNonMapRoot) {

@@ -354,8 +354,19 @@ TEST(JsonLoaderTest, RejectsNonArrayRules) {
         "JSON parse error at /rules: Expected array");
 }
 
-TEST(JsonLoaderTest, RejectsNullSection) {
-    expect_json_error(R"({"rules": null})", "JSON parse error at /rules: Expected array");
+// A null section is read as empty, as v1.0.6 read it.
+TEST(JsonLoaderTest, ReadsNullSectionAsEmpty) {
+    const auto spec = load_json_string(R"({"signals": null, "models": null, "edges": null, "rules": null})");
+    EXPECT_TRUE(spec.signals.empty());
+    EXPECT_TRUE(spec.models.empty());
+    EXPECT_TRUE(spec.edges.empty());
+    EXPECT_TRUE(spec.rules.empty());
+}
+
+// A rule's actions are required: null is not read as empty.
+TEST(JsonLoaderTest, RejectsNullRuleActions) {
+    expect_json_error(R"({"rules": [{"id": "r1", "condition": "a.x > 1", "actions": null}]})",
+                      "JSON parse error at /rules/0/actions: Expected array");
 }
 
 TEST(JsonLoaderTest, RejectsNonObjectRoot) {

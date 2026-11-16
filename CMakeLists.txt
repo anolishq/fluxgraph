@@ -33,7 +33,7 @@ if(FLUXGRAPH_YAML_ENABLED)
     list(APPEND VCPKG_MANIFEST_FEATURES "yaml")
 endif()
 
-project(fluxgraph VERSION 1.0.6 LANGUAGES CXX)
+project(fluxgraph VERSION 1.1.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -74,7 +74,9 @@ endif()
 # its instrumentation applies to the code-under-test (the loaders), not just the
 # harness.
 option(ENABLE_FUZZING "Build libFuzzer fuzz targets (requires clang)" OFF)
-if(ENABLE_FUZZING)
+# The option's name is not FluxGraph's alone: a project that takes this one in
+# and fuzzes itself has it ON, and means its own targets.
+if(ENABLE_FUZZING AND _fluxgraph_is_top)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/AddFuzzTarget.cmake)
 endif()
 
@@ -127,8 +129,9 @@ target_include_directories(fluxgraph PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-# Consumers of the installed package need C++20 too
-target_compile_features(fluxgraph PUBLIC cxx_std_20)
+# The public headers need C++17. A consumer at C++17 or above keeps its own standard;
+# fluxgraph itself builds as C++20 through CMAKE_CXX_STANDARD.
+target_compile_features(fluxgraph PUBLIC cxx_std_17)
 
 # Compiler warnings
 if(MSVC)
@@ -174,7 +177,7 @@ if(FLUXGRAPH_BUILD_SERVER)
 endif()
 
 # Fuzz targets (libFuzzer; loaders must be enabled to have something to fuzz)
-if(ENABLE_FUZZING)
+if(ENABLE_FUZZING AND _fluxgraph_is_top)
     add_subdirectory(fuzz)
 endif()
 

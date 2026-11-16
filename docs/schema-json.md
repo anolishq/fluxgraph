@@ -4,7 +4,7 @@ FluxGraph JSON files define signal processing graphs using a simple, validated s
 
 ## JSON Structure
 
-A graph file is a JSON object with four top-level arrays. Each is optional, but a key that is present must hold an array (an empty array is fine), and a root that is not an object is rejected:
+A graph file is a JSON object with four top-level arrays. Each is optional, but a key that is present must hold an array or `null` (an empty array is fine, and `null` loads as an empty section), and a root that is not an object is rejected:
 
 ```json
 {

@@ -51,10 +51,11 @@ ParamValue json_to_param_value(const json &j, const std::string &path, detail::P
     }
 }
 
-// Returns j[key] when present; nullptr when absent. Throws when present but not an array.
-const json *optional_array(const json &j, const char *key, const std::string &path) {
+// Returns j[key] when present; nullptr when absent, or when null and null_is_absent.
+// Throws when present but not an array.
+const json *optional_array(const json &j, const char *key, const std::string &path, bool null_is_absent = false) {
     const auto it = j.find(key);
-    if (it == j.end()) {
+    if (it == j.end() || (null_is_absent && it->is_null())) {
         return nullptr;
     }
     if (!it->is_array()) {
@@ -243,28 +244,28 @@ GraphSpec parse_json(const json &j) {
     }
 
     // Each section is optional, but a present section must be an array.
-    if (const json *signals = optional_array(j, "signals", "/signals")) {
+    if (const json *signals = optional_array(j, "signals", "/signals", true)) {
         size_t index = 0;
         for (const auto &signal_json : *signals) {
             spec.signals.push_back(parse_signal(signal_json, "/signals", index++));
         }
     }
 
-    if (const json *models = optional_array(j, "models", "/models")) {
+    if (const json *models = optional_array(j, "models", "/models", true)) {
         size_t index = 0;
         for (const auto &model_json : *models) {
             spec.models.push_back(parse_model(model_json, "/models", index++, param_budget));
         }
     }
 
-    if (const json *edges = optional_array(j, "edges", "/edges")) {
+    if (const json *edges = optional_array(j, "edges", "/edges", true)) {
         size_t index = 0;
         for (const auto &edge_json : *edges) {
             spec.edges.push_back(parse_edge(edge_json, "/edges", index++, param_budget));
         }
     }
 
-    if (const json *rules = optional_array(j, "rules", "/rules")) {
+    if (const json *rules = optional_array(j, "rules", "/rules", true)) {
         size_t index = 0;
         for (const auto &rule_json : *rules) {
             spec.rules.push_back(parse_rule(rule_json, "/rules", index++));
