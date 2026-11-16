@@ -1,0 +1,7 @@
+# 4.7, 3.5: refused: a number constant on a boolean port.
+rules: [4.7, 3.5]
+period: 1s
+blocks:
+  - {id: l, type: latch, in: {set: 1}}
+expect: compile_error
+error_mentions: [set]

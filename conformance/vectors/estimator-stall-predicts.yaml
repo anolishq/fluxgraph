@@ -1,0 +1,23 @@
+# 8.6, 7.9.9: told that 2 ticks were passed over, an estimator predicts
+# twice more. A thermal mass with a rate of 1 a second cooling from 8
+# towards 0, variance 4, q 2: at the tick the stall runs, three seconds
+# on, it is at 8 e^-3 with a variance of 1 + 3 e^-6, and uncertain.
+rules: [8.6, 7.9.9, 7.9.7]
+period: 1s
+max_catch_up: 1
+inputs: {p: {max_age: none}, a: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {power: p, ambient: a, z: z}
+    settings:
+      model: {type: thermal_mass, thermal_mass: 1, heat_transfer: 1, initial: 8}
+      q: {temp: 2}
+      p0: {temp: 4}
+      measure: {z: {of: temp, r: 1}}
+      consistency: none
+    out: {temp: temp, sigma_temp: sigma}
+calls:
+  - {now: 0, p: 0, a: 0, temp: 8, sigma: 2}
+  - {now: 3, gap: true, skipped: 2, temp: {u: 0.39829654694291156}, sigma: {u: 1.0037112416078635}}
+  - {now: 4, temp: 0.14652511110987343, sigma: 1.0005030674034474}

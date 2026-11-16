@@ -1,0 +1,11 @@
+# 6.6, 7.7.6: with no command listed a PID adds at every tick, a catch-up
+# tick among them. A call ten ticks late adds ten periods' worth.
+rules: [6.6, 7.7.6, 6.13]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 0, ki: 1}, out: {y: y, integral: i}}
+calls:
+  - {sp: 1, pv: 0, y: 1, i: 1}
+  - {y: 2, i: 2}
+  - {now: 11, ran: 10, y: 12, i: 12}

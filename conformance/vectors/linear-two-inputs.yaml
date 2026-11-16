@@ -1,0 +1,20 @@
+# 7.8.2, 7.8.7, Appendix A: a linear model with its inputs and outputs
+# named. dx/dt = -x + a + 2b, so with a and b at 1 the state rises as
+# 3 (1 - e^-t). `level` is the state; `through` is b itself, read directly,
+# and is uncertain on the tick b is. The model's outputs are uncertain
+# together (rule 7.8.5). a is read by no output, so it is deferred, and
+# the tick it is uncertain on is good. The model has no settle.
+rules: [7.8.2, 7.8.5, 7.8.6, 7.8.7, A.linear]
+period: 1s
+inputs: {a: {max_age: none}, b: {max_age: none}}
+blocks:
+  - id: m
+    type: linear
+    in: {a: a, b: b}
+    settings: {A: [[-1]], B: [[1, 2]], C: [[1], [0]], D: [[0, 0], [0, 1]], inputs: [a, b], outputs: [level, through]}
+    out: {level: level, through: through}
+calls:
+  - {a: 1, b: 1, level: 0, through: 1}
+  - {a: 1, b: {v: 1, state: uncertain}, level: {u: 1.896361676485673}, through: {u: 1}}
+  - {a: {v: 1, state: uncertain}, b: 1, level: 2.593994150290162, through: 1}
+  - {a: 1, b: 1, level: 2.8506387948964083, through: 1}

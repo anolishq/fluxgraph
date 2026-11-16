@@ -1,0 +1,18 @@
+# 7.2.1: an initial value stands in until the first rebase and not after
+# it. After a rebase an input with nothing written is not_ready, and bad
+# once the graph has run for more than its maximum age since; one with no
+# maximum age stays not_ready until it is written.
+rules: [7.2.1, 8.5]
+period: 1s
+inputs: {sp: {max_age: none, initial: 20}, x: {max_age: 2s, initial: 5}}
+blocks:
+  - {id: f, type: formula, in: {sp: sp}, settings: {expr: "sp + 1"}, out: {y: y}}
+  - {id: g, type: formula, in: {x: x}, settings: {expr: "x + 1"}, out: {y: z}}
+calls:
+  - {now: 0, y: {u: 21}, z: {u: 6}}
+  - {now: 1, sp: 50, y: 51, z: {u: 6}}
+  - {$rebase: 0}
+  - {now: 100, gap: true, skipped: 0, tick: 2, y: not_ready, z: not_ready}
+  - {now: 102, ran: 2, y: not_ready, z: not_ready}   # has run 2 s since the rebase
+  - {now: 103, y: not_ready, z: bad}
+  - {now: 104, sp: 50, x: 1, y: 51, z: 2}

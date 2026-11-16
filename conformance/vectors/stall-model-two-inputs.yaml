@@ -1,0 +1,17 @@
+# 8.6, 7.8.4: at a stall a model steps on held values only while every
+# input is within ride_through, 3 s. The mass has thermal_mass 1 and
+# heat_transfer 1, so one step of a period moves its temperature 1 - 1/e of
+# the way to power plus ambient, which is 8. The power is last usable at
+# tick 0 and the ambient at tick 1. Ticks 2 to 5 are passed over: it steps
+# for 2 and 3, and at 4 the power is 4 ticks old. So four steps in all
+# have been taken by tick 6.
+rules: [8.6, 7.8.4, 7.8.7]
+period: 1s
+max_catch_up: 1
+inputs: {p: {max_age: none}, a: {max_age: none}}
+blocks:
+  - {id: m, type: thermal_mass, in: {power: p, ambient: a}, settings: {thermal_mass: 1, heat_transfer: 1, initial: 0, ride_through: 3s, settle: 0s}, out: {temp: temp, doubtful: md}}
+calls:
+  - {now: 0, p: 8, a: 0, temp: 0, md: 0}
+  - {now: 1, p: bad, a: 0, temp: 5.056964470628461, md: 0}
+  - {now: 6, gap: true, skipped: 4, p: 8, a: 0, temp: 7.853474888890126, md: 5}

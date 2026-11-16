@@ -1,0 +1,15 @@
+# 7.4.14: while `follow` is true a rate limit gives `track` and holds it,
+# and limits nothing. When `follow` is false again it moves from there: 7,
+# then 8. With `track` unusable it gives no value and holds what it held.
+rules: [7.4.14, 7.4.13]
+period: 1s
+inputs: {x: {max_age: none}, tr: {max_age: none}, f: {type: boolean, max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x, track: tr, follow: f}, settings: {up: 1}, out: {y: y, limited: lim}}
+calls:
+  - {x: 10, tr: 2, f: false, y: 3, lim: true}
+  - {tr: 7, f: true, y: 7, lim: false}
+  - {f: false, y: 8, lim: true}
+  - {tr: bad, f: true, y: bad, lim: bad}
+  - {f: false, y: 9, lim: true}
+  - {tr: 1, f: not_ready, y: {u: 1}, lim: {u: false}}

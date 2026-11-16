@@ -1,0 +1,13 @@
+# 7.7.13, 7.7.12: an addition of several periods is taken back whole. At
+# tick 2 the PID adds two periods' worth, to 3, and what was applied is 0:
+# from tick 3 the integral is 1 again.
+rules: [7.7.13, 7.7.12]
+period: 1s
+commands: [y]
+inputs: {sp: {max_age: none}, pv: {max_age: none}, ap: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, applied: ap}, settings: {kp: 0, ki: 1}, out: {y: y, integral: i}}
+calls:
+  - {sp: 1, pv: 0, ap: 1, y: 1, i: 1}
+  - {now: 2, ran: 2, ap: 0, y: 3, i: 3}
+  - {ap: 2, y: 2, i: 2}

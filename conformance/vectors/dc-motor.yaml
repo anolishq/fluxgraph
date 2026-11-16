@@ -1,0 +1,14 @@
+# Appendix A: L di/dt = V - R i - back_emf w, J dw/dt = torque_constant i -
+# friction w - load. With R 3, L 1, back_emf 2, torque_constant 1, J 1 and
+# no friction, the rates are -1 and -2. From rest with 2 V and a load of
+# 1 N m together, the speed is -1/2 + e^-2t / 2 and the current is
+# 1 - e^-2t; the torque is the current times the torque constant.
+rules: [7.8.7, A.dc_motor]
+period: 1s
+inputs: {v: {max_age: none}, load: {max_age: none}}
+blocks:
+  - {id: m, type: dc_motor, in: {voltage: v, load_torque: load}, settings: {resistance: 3, inductance: 1, back_emf: 2, torque_constant: 1, inertia: 1, friction: 0}, out: {speed: w, current: i, torque: tq}}
+calls:
+  - {v: 2, load: 1, w: 0, i: 0, tq: 0}
+  - {v: 2, load: 1, w: -0.43233235838169365, i: 0.8646647167633873, tq: 0.8646647167633873}
+  - {v: 2, load: 1, w: -0.4908421805556329, i: 0.9816843611112658, tq: 0.9816843611112658}

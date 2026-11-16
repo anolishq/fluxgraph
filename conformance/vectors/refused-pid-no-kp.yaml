@@ -1,0 +1,8 @@
+# A.pid: refused: a PID with no kp.
+rules: [A.pid]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {ki: 1}, out: {y: y}}
+expect: compile_error
+error_mentions: [c]

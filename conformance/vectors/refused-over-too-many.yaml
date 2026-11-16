@@ -1,0 +1,17 @@
+# Appendix A: refused: a consistency test over more than 2,147,483,647
+# measurements.
+rules: [A.estimator]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: linear, A: [[-1, 0], [0, -1]], B: [[0], [0]], C: [[1, 0]], states: [a, b]}
+      q: {a: 1, b: 1}
+      p0: {a: 1, b: 1}
+      measure: {z: {of: y, r: 1}}
+      consistency: {over: 2147483648, limit: 2}
+expect: compile_error
+error_mentions: [k]

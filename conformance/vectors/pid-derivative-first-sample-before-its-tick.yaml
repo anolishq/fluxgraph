@@ -1,0 +1,13 @@
+# 7.7.7: the block remembers the measurement it last took and its time, and
+# a measurement's time is its sample time. The first is sampled 1 s before
+# tick 0 and the second at tick 1: dt is 2 s, and not the 1 s between the
+# ticks. s is 2 / 2 = 1; filter is 2 / ln 2, so a = exp(-dt / filter) is a
+# half, and f is a half. kd is 1 and kp is 0: y is -0.5.
+rules: [7.7.7]
+period: 1s
+inputs: {m: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: 0, measurement: m}, settings: {kp: 0, kd: 1, filter: 2.8853900817779268s}, out: {y: y}}
+calls:
+  - {now: 0, m: {v: 0, at: -1}, y: 0}
+  - {now: 1, m: 2, y: -0.5}

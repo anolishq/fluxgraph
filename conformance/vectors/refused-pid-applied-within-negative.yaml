@@ -1,0 +1,8 @@
+# A.pid: refused: a negative applied_within.
+rules: [A.pid]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 1, applied_within: -1}}
+expect: compile_error
+error_mentions: [c]

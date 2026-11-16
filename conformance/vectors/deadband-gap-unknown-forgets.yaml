@@ -1,0 +1,14 @@
+# 8.6: told that nobody knows how many ticks were passed over, a deadband
+# forgets what it held, whatever its ride_through. The next usable input is
+# a first input (7.4.4), taken as it is though it is within a step of what
+# was held.
+rules: [8.6, 7.4.4]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: d, type: deadband, in: {x: x}, settings: {step: 5, ride_through: 5s}, out: {y: y}}
+calls:
+  - {now: 0, x: 2, y: 2}
+  - {$rebase: true}
+  - {now: 50, gap: true, skipped: unknown, x: 4, y: 4}
+  - {now: 51, x: 6, y: 4}

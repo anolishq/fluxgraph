@@ -1,0 +1,14 @@
+# 8.6, 7.6.3: at a stall a latch is unchanged. elapsed takes in the ticks
+# passed over and gaps goes up by one; doubtful goes up by them only while
+# the latch is not set.
+rules: [8.6, 7.6.3]
+period: 1s
+max_catch_up: 1
+inputs: {s: {type: boolean, max_age: none}}
+blocks:
+  - {id: l, type: latch, in: {set: s}, out: {y: y, elapsed: elapsed, doubtful: doubtful, gaps: gaps}}
+calls:
+  - {now: 0, s: false, y: false, elapsed: 1, doubtful: 0, gaps: 0}
+  - {now: 3, gap: true, skipped: 2, s: false, y: false, elapsed: 4, doubtful: 2, gaps: 1}
+  - {now: 4, s: true, y: true, elapsed: 5, doubtful: 2, gaps: 1}
+  - {now: 7, gap: true, skipped: 2, s: true, y: true, elapsed: 8, doubtful: 2, gaps: 2}

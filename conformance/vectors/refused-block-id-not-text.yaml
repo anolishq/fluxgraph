@@ -1,0 +1,7 @@
+# 9.2: refused: a block id that is not text.
+rules: [9.2]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: 7, type: formula, in: {x: x}, settings: {expr: "x + 1"}}
+expect: compile_error

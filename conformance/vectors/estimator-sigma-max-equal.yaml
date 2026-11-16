@@ -1,0 +1,14 @@
+# 7.9.7: a state is uncertain where its sigma is more than its sigma_max. A
+# sigma equal to it is not more.
+rules: [7.9.7]
+period: 1s
+inputs: {z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: 0, z: z}
+    settings: {model: {type: state_space, A: [[1]], B: [0], C: [1]}, q: {x0: 0}, p0: {x0: 4}, measure: {z: {of: y, r: 1}}, consistency: none, sigma_max: {x0: 2}}
+    out: {x0: x, sigma_x0: sigma}
+calls:
+  - {x: 0, sigma: 2}
+  - {x: 0, sigma: 2}

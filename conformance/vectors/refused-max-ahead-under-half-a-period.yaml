@@ -1,0 +1,8 @@
+# 6.8: refused: a max_ahead of less than half a period.
+rules: [6.8]
+period: 1s
+inputs: {x: {max_age: none, max_ahead: 0s}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}}
+expect: compile_error
+error_mentions: [x]

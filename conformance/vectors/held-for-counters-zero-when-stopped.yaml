@@ -1,0 +1,13 @@
+# 7.6.1: elapsed and doubtful are zero while the timer is not running, and
+# gaps with them (section 7, counters): on the tick an unusable input stops
+# the timer they are zero already.
+rules: [7.6.1]
+period: 1s
+inputs: {x: {type: boolean, max_age: none}}
+blocks:
+  - {id: h, type: held_for, in: {x: x}, settings: {time: 5s, on_bad: reset}, out: {y: y, elapsed: elapsed, doubtful: doubtful, gaps: gaps}}
+calls:
+  - {x: {v: true, state: uncertain}, y: {u: false}, elapsed: 1, doubtful: 1, gaps: 0}
+  - {x: true, y: false, elapsed: 2, doubtful: 1, gaps: 0}
+  - {x: bad, y: bad, elapsed: 0, doubtful: 0, gaps: 0}
+  - {x: true, y: false, elapsed: 1, doubtful: 0, gaps: 0}

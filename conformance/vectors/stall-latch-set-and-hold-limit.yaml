@@ -1,0 +1,14 @@
+# 8.6: a latch that is set counts no tick as doubtful, those a gap passed
+# over among them. held_for with hold runs on when the ticks passed over
+# are exactly hold_limit, 3 ticks. Ticks 0 and 1, then 3 are passed over.
+rules: [8.6, 7.6.1, 7.6.3]
+period: 1s
+max_catch_up: 1
+inputs: {c: {type: boolean, max_age: none}}
+blocks:
+  - {id: l, type: latch, in: {set: c}, out: {y: lit, doubtful: ld}}
+  - {id: hf, type: held_for, in: {x: c}, settings: {time: 1s, on_bad: hold, hold_limit: 3s}, out: {y: long, elapsed: fe, doubtful: fd}}
+calls:
+  - {now: 0, c: true, lit: true, ld: 0, long: false, fe: 1, fd: 0}
+  - {now: 1, c: true, lit: true, ld: 0, long: false, fe: 2, fd: 0}
+  - {now: 5, gap: true, skipped: 3, c: true, lit: true, ld: 0, long: true, fe: 6, fd: 3}

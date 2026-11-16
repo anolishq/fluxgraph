@@ -1,0 +1,24 @@
+# 8.5, 7.9.9: an estimator's variance grows by p0, here 4, at every rebase,
+# one that passed over no tick among them, whose tick is good: it cannot tell a sample from
+# before the rebase from the same one written again. The model does not
+# move and q is 0. No measurement is ever written.
+rules: [8.5, 8.6, 7.9.1]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: state_space, A: [[1]], B: [0], C: [1]}
+      q: {x0: 0}
+      p0: {x0: 4}
+      measure: {z: {of: y, r: 1}}
+      consistency: none
+    out: {sigma_x0: sigma}
+calls:
+  - {now: 0, u: 0, sigma: 2}
+  - {$rebase: 0.4}
+  - {now: 100, gap: true, skipped: 0, u: 0, sigma: 2.8284271247461903}
+  - {$rebase: 3}
+  - {now: 200, gap: true, skipped: 2, u: 0, sigma: {u: 3.4641016151377544}}

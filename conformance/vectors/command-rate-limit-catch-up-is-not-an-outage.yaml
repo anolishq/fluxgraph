@@ -1,0 +1,15 @@
+# 7.4.12: a catch-up tick is one with a usable input for riding through,
+# whatever it read. The input is bad from 1 s. Ticks 1 and 2 are catch-up
+# ticks, and at tick 3 the block is one tick past a usable input: within
+# a ride_through of 1 s.
+rules: [7.4.12, 7.4.3]
+period: 1s
+commands: [y]
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x}, settings: {up: 2, ride_through: 1s}, out: {y: y, limited: lim}}
+calls:
+  - {now: 0, x: 10, y: 10, lim: false}
+  - {$write: [x, bad, null, 1]}
+  - {now: 3, ran: 3, y: {u: 10}, lim: bad}
+  - {y: bad, lim: bad}

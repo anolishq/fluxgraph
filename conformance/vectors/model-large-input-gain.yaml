@@ -1,0 +1,13 @@
+# 7.8.7: the size of B costs Ad nothing. dx/dt = -x + 10^9 u, from 1 with
+# u at 0: x falls by e^-1 a tick. Then u at 10^-9: it goes 1 - 1/e of the
+# way to 1 from where it was.
+rules: [7.8.7, A.linear]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: linear, in: {u: u}, settings: {A: [[-1]], B: [[1.0e+9]], C: [[1]], initial: [1]}, out: {y: y}}
+calls:
+  - {u: 0, y: 1}
+  - {u: 0, y: 0.36787944117144233}
+  - {u: 1.0e-9, y: 0.1353352832366127}
+  - {u: 1.0e-9, y: 0.6819076271964216}

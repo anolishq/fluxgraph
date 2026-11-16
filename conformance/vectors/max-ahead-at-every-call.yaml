@@ -1,0 +1,12 @@
+# 6.8: a write stamped more than max_ahead after `now` is thrown away at
+# every call that is not refused, whether or not it runs a tick. Stamped
+# 3 s at a call at 0.2 s, it is gone, though by 3 s it would not be ahead.
+rules: [6.8, 6.10]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+calls:
+  - {now: 0, x: 1, y: 1}
+  - {now: 0.2, ran: 0, x: {v: 9, at: 3}}
+  - {now: 3, ran: 3, y: 1, thrown: 1, waiting: 0}

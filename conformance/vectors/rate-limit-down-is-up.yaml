@@ -1,0 +1,11 @@
+# 7.4.9: down is up unless given, and a rate of zero never moves.
+rules: [7.4.9]
+period: 500ms
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: a, type: rate_limit, in: {x: x}, settings: {up: 4}, out: {y: both}}
+  - {id: b, type: rate_limit, in: {x: x}, settings: {up: 0, down: 4}, out: {y: never_up, limited: lim}}
+calls:
+  - {x: 10, both: 10, never_up: 10, lim: false}
+  - {x: 20, both: 12, never_up: 10, lim: true}
+  - {x: 0, both: 10, never_up: 8, lim: true}

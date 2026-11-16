@@ -1,0 +1,13 @@
+# 7.7.14: a track that is not usable at the tick the PID stops waiting is
+# not used, and a later one is not either. An uncertain track is used as a
+# good one is, and the output is good.
+rules: [7.7.14]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}, tr: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, track: tr}, settings: {kp: 1, ki: 1}, out: {y: y, integral: i}}
+calls:
+  - {sp: 10, pv: 4, tr: bad, y: 12, i: 6}
+  - {tr: 20, y: 18, i: 12}
+  - {pv: bad, y: bad, i: 12}
+  - {pv: 4, tr: {v: 5, state: uncertain}, y: 11, i: 5}

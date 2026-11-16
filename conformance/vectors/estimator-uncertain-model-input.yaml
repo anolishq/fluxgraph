@@ -1,0 +1,21 @@
+# 7.9.2, 7.9.7: the model inputs are deferred. One that is uncertain at a
+# tick makes the next tick uncertain, which is the tick its step leads to.
+# x' = 0.5 x + u from 0.
+rules: [7.9.2, 7.9.7]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: state_space, A: [[0.5]], B: [1], C: [1]}
+      q: {x0: 0}
+      p0: {x0: 1}
+      measure: {z: {of: y, r: 1}}
+      consistency: none
+    out: {x0: x}
+calls:
+  - {u: {v: 2, state: uncertain}, x: 0}
+  - {u: 2, x: {u: 2}}
+  - {u: 2, x: 3}

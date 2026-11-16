@@ -1,0 +1,19 @@
+# 8.6: told that nobody knows how many ticks were passed over, a delay
+# holds nothing, an initial value it had yet to give among it, and none of
+# a window's ticks holds a sample. The delay is 3 ticks; the window is 3
+# and needs one good sample. Ticks 0 and 1, a restore, ticks 2 to 5.
+rules: [8.6, A.delay, 7.3.3]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: d, type: delay, in: {x: x}, settings: {ticks: 3, initial: 0}, out: {y: was}}
+  - {id: w, type: window, in: {x: x}, settings: {window: 3s, min_good: 0.3}, out: {count: count}}
+calls:
+  - {x: 1, was: 0, count: 1}
+  - {x: 2, was: 0, count: 2}
+  - {$save: a}
+  - {$restore: a}
+  - {now: 50, gap: true, skipped: unknown, x: 3, was: not_ready, count: 1}
+  - {now: 51, x: 4, was: not_ready, count: 2}
+  - {now: 52, x: 5, was: not_ready, count: 3}
+  - {now: 53, x: 6, was: 3, count: 3}

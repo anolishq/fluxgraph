@@ -1,0 +1,8 @@
+# Appendix A: refused: a number run into a name.
+rules: [A.formula]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 2x"}}
+expect: compile_error
+error_mentions: [f]

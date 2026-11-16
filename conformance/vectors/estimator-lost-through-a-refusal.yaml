@@ -1,0 +1,29 @@
+# 7.9.7: a refused measurement does not end an estimator's being uncertain
+# after a gap of no known length. x' = x from 0, variance 1, r 1, gate 2.
+# Tick 0: z of 1 is used: 0.5, variance 1/2. A restore. Tick 1: the
+# variance is 3/2, and z of 100 is refused. Tick 2: nothing is written and
+# nothing is refused, and it is uncertain still. Tick 3: z of 1 is used,
+# with a gain of 3/5, and it is good.
+rules: [7.9.7, 7.9.5]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: state_space, A: [[1]], B: [0], C: [1]}
+      q: {x0: 0}
+      p0: {x0: 1}
+      measure: {z: {of: y, r: 1}}
+      consistency: none
+      gate: 2
+      max_refused: 5
+    out: {x0: x, refused_z: rejected}
+calls:
+  - {u: 0, z: 1, x: 0.5, rejected: 0}
+  - {$save: a}
+  - {$restore: a}
+  - {now: 50, gap: true, skipped: unknown, u: 0, z: 100, x: {u: 0.5}, rejected: 1}
+  - {now: 51, x: {u: 0.5}, rejected: 1}
+  - {now: 52, z: 1, x: 0.8, rejected: 1}

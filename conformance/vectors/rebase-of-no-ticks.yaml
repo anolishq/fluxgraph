@@ -1,0 +1,19 @@
+# 8.6: a gap that passed over no tick does nothing to what a block
+# remembers. The host was away 0.4 s. The timer, with on_bad of reset, runs
+# on; the model, and the loop, have no doubt. The model is
+# x' = 0.5 x + 0.5 u, and the loop's plant takes u less its own output.
+rules: [8.6, 8.5, 7.6.1, 7.8.6, 7.8.8]
+period: 1s
+inputs: {c: {type: boolean, max_age: none}, u: {max_age: none}}
+blocks:
+  - {id: hf, type: held_for, in: {x: c}, settings: {time: 1s, on_bad: reset}, out: {y: long, elapsed: fe}}
+  - {id: m, type: state_space, in: {u: u}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: ym, gaps: mg}}
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: yl}}
+  - {id: ctl, type: formula, in: {u: u, y: plant.y}, settings: {expr: "u - y"}, out: {y: e}}
+calls:
+  - {now: 0, c: true, u: 4, long: false, fe: 1, ym: 0, mg: 0, yl: 0}
+  - {now: 1, c: true, u: 4, long: false, fe: 2, ym: 2, mg: 0, yl: 2}
+  - {now: 2, c: true, u: 4, long: true, fe: 3, ym: 3, mg: 0, yl: 2}
+  - {$rebase: 0.4}
+  - {now: 100, gap: true, skipped: 0, tick: 3, c: true, u: 4, long: true, fe: 4, ym: 3.5, mg: 1, yl: 2}
+  - {now: 101, c: true, u: 4, long: true, fe: 5, ym: 3.75, mg: 1, yl: 2}

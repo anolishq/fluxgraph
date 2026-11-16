@@ -1,0 +1,15 @@
+# 7.8.8: an output that is not usable, given inside the loop, is the loop's
+# doubt, whether or not a fallback stands in for it. The controller divides
+# by the plant's output, which starts at zero, and its fallback is 2. The
+# plant is x' = u; settle is 2 ticks.
+rules: [7.8.8, 7.10, 7.1.4]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0]], B: [1], C: [1], settle: 2s}, out: {y: y}}
+  - {id: ctl, type: formula, in: {r: r, y: plant.y}, settings: {expr: "r / y"}, fallback: {y: 2}, out: {y: e}}
+calls:
+  - {r: 4, y: 0, e: {u: 2}}                 # tick 0: the loop's doubt
+  - {r: 4, y: {u: 2}, e: {u: 2}}
+  - {r: 4, y: {u: 2}, e: {u: 2}}
+  - {r: 4, y: 2, e: 2}

@@ -1,0 +1,11 @@
+# 8.5: a length of zero is a length. No tick is passed over, and a total
+# that allows 2 s missed is good; with no length it would be bad.
+rules: [8.5, 8.6, 7.7.2]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: s, type: integrate, in: {x: x}, settings: {max_missed: 2s}, out: {y: strict}}
+calls:
+  - {now: 0, x: 2, strict: 2}
+  - {$rebase: 0}
+  - {now: 100, gap: true, skipped: 0, tick: 1, x: 2, strict: 4}

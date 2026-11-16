@@ -1,0 +1,19 @@
+# 7.8.8: a setpoint that is uncertain on every tick, read by the controller
+# from outside the loop, is the loop's doubt on every tick, and the plant
+# is uncertain for as long, and for settle, 2 ticks, after the last.
+# x' = 0.5 x + 0.5 (r - x).
+rules: [7.8.8, D]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: y}}
+  - {id: ctl, type: formula, in: {r: r, y: plant.y}, settings: {expr: "r - y"}, out: {y: e}}
+calls:
+  - {r: 4, y: 0, e: 4}
+  - {r: 4, y: 2, e: 2}
+  - {r: {v: 4, state: uncertain}, y: 2, e: {u: 2}}
+  - {r: {v: 4, state: uncertain}, y: {u: 2}, e: {u: 2}}
+  - {r: {v: 4, state: uncertain}, y: {u: 2}, e: {u: 2}}       # tick 4: the last doubt
+  - {r: 4, y: {u: 2}, e: {u: 2}}
+  - {r: 4, y: {u: 2}, e: {u: 2}}                              # tick 6: the second after it
+  - {r: 4, y: 2, e: 2}

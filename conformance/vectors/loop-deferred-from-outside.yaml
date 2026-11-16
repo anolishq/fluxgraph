@@ -1,0 +1,17 @@
+# 7.8.8: a model on a loop uses its deferred inputs too. The mass takes its
+# power from a formula of its own temperature, and its ambient from a
+# block outside the loop. The power is zero and the mass is at ambient, so it stays at 16.
+# An uncertain ambient at tick 1 is the loop's doubt; settle is 2 ticks.
+rules: [7.8.8]
+period: 1s
+inputs: {a: {max_age: none}}
+blocks:
+  - {id: m, type: thermal_mass, in: {power: f.y, ambient: g.y}, settings: {thermal_mass: 1, heat_transfer: 1, initial: 16, settle: 2s}, out: {temp: temp}}
+  - {id: f, type: formula, in: {t: m.temp}, settings: {expr: "t - t"}}
+  - {id: g, type: formula, in: {a: a}, settings: {expr: "a + 0"}}
+calls:
+  - {a: 16, temp: 16}
+  - {a: {v: 16, state: uncertain}, temp: 16}
+  - {a: 16, temp: {u: 16}}
+  - {a: 16, temp: {u: 16}}
+  - {a: 16, temp: 16}

@@ -1,0 +1,23 @@
+# 7.6.1: with hold, an unusable input leaves the timer running for at most
+# hold_limit, and the output is uncertain while it does. The time can run
+# out meanwhile. When the input comes back the output takes its state.
+rules: [7.6.1]
+period: 1s
+inputs: {x: {type: boolean, max_age: none}}
+blocks:
+  - {id: h3, type: held_for, in: {x: x}, settings: {time: 3s, on_bad: hold, hold_limit: 2s}, out: {y: a}}
+  - {id: h2, type: held_for, in: {x: x}, settings: {time: 2s, on_bad: hold, hold_limit: 3s}, out: {y: b}}
+calls:
+  - {x: true, a: false, b: false}                # both start at tick 0
+  - {x: true, a: false, b: false}
+  - {x: bad, a: {u: false}, b: {u: false}}
+  - {x: bad, a: {u: false}, b: {u: true}}        # 3 s: longer than 2 s, not than 3 s
+  - {x: true, a: true, b: true}
+  - {x: bad, a: {u: true}, b: {u: true}}
+  - {x: bad, a: {u: true}, b: {u: true}}
+  - {x: bad, a: bad, b: {u: true}}               # unusable for 3 s: past a's limit
+  - {x: bad, a: bad, b: bad}                     # past b's limit
+  - {x: true, a: false, b: false}                # started again at tick 9
+  - {x: not_ready, a: {u: false}, b: {u: false}}
+  - {x: false, a: false, b: false}
+  - {x: bad, a: bad, b: bad}                     # the timer is not running

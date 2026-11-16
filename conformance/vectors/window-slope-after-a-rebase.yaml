@@ -1,0 +1,14 @@
+# 8.5, Appendix A: a rebase forgets the sample times a window holds, and
+# its samples are from then on at their ticks' times. A 1 stamped 100.5 s
+# is at tick 1 after the rebase: with a 2 at tick 2 the slope is 1, where
+# times from the clock before would give nothing like it.
+rules: [8.5, A.window]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 3s, min_good: 0.3}, out: {slope: slope}}
+calls:
+  - {now: 100, x: 0, slope: bad}
+  - {now: 101, x: {v: 1, at: 100.5}, slope: 2}
+  - {$rebase: 1}
+  - {now: 5, gap: true, skipped: 0, tick: 2, x: 2, slope: 1}

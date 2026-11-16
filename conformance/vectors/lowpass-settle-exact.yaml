@@ -1,0 +1,15 @@
+# 6.3, 7.4.8: a low-pass's settle is three time constants over the period,
+# rounded up exactly. With tau of 666666667 ns at 1 s that is 2.000000001,
+# and three ticks: uncertain at tick 0 on an uncertain input, and for the
+# three ticks after it.
+rules: [6.3, 7.4.8]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: lowpass, in: {x: x}, settings: {tau: 666666667ns}, out: {y: y}}
+calls:
+  - {x: {state: uncertain, v: 1}, y: {u: 1}}
+  - {x: 1, y: {u: 1}}
+  - {x: 1, y: {u: 1}}
+  - {x: 1, y: {u: 1}}
+  - {x: 1, y: 1}

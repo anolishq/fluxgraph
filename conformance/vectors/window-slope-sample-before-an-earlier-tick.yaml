@@ -1,0 +1,15 @@
+# Appendix A (window), 3.7: a sample's time is its sample time, or its
+# tick's where it carries none, and a time is taken from that of the
+# earliest tick's sample "whether or not that is the earliest time". At
+# tick 0 the input stands on its initial value, which has no sample time
+# and so its tick's, 0 s. At tick 1 it is a 10 sampled at -4 s: four
+# seconds before the first point. The slope, of the two usable samples,
+# is 10 / -4.
+rules: [A.window, 7.3.6, 3.7]
+period: 1s
+inputs: {x: {max_age: none, initial: 0}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 2s, min_good: 0.5}, out: {mean: mean, slope: slope}}
+calls:
+  - {now: 0, mean: {u: 0}, slope: bad}
+  - {now: 1, x: {v: 10, at: -4}, mean: 10, slope: {u: -2.5}}

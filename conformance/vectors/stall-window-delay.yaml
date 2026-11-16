@@ -1,0 +1,22 @@
+# 8.6: at a stall a window holds no sample for the ticks nobody saw, and a
+# delay moves on that many places, so that what it gives is still what its
+# input was `ticks` ago. The window is 4 ticks and needs 2 good samples;
+# the delay is 3 ticks. One tick is passed over before tick 5, and 11
+# before tick 20.
+rules: [8.6, 7.3.3, A.delay]
+period: 1s
+max_catch_up: 1
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 4s, min_good: 0.5}, out: {mean: mean, count: count}}
+  - {id: d, type: delay, in: {x: x}, settings: {ticks: 3, initial: 0}, out: {y: was}}
+calls:
+  - {now: 0, x: 1, mean: not_ready, count: 1, was: 0}
+  - {now: 1, x: 2, mean: 1.5, count: 2, was: 0}
+  - {now: 2, x: 3, mean: 2, count: 3, was: 0}
+  - {now: 3, x: 4, mean: 2.5, count: 4, was: 1}
+  - {now: 5, gap: true, skipped: 1, tick: 5, x: 5, mean: 4, count: 3, was: 3}       # the window holds ticks 2, 3 and 5
+  - {now: 6, x: 6, mean: 5, count: 3, was: 4}
+  - {now: 7, x: 7, mean: 6, count: 3, was: not_ready}                               # tick 4 did not run
+  - {now: 8, x: 8, mean: 6.5, count: 4, was: 5}
+  - {now: 20, gap: true, skipped: 11, tick: 20, x: 9, mean: not_ready, count: 1, was: not_ready}

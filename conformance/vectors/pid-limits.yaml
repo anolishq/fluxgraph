@@ -1,0 +1,19 @@
+# 7.7.6, 7.7.9: an addition that would put the output before limiting past
+# a limit is cut short: the integral takes the output to the limit and no
+# further, stays where it is while the rest alone is past the limit, and
+# comes out of the limit whole. limited is true when the output was past
+# a limit or the addition was cut.
+rules: [7.7.6, 7.7.9, 7.7.5]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 1, ki: 1, min: -10, max: 10}, out: {y: y, integral: i, limited: lim}}
+calls:
+  - {sp: 4, pv: 0, y: 8, i: 4, lim: false}
+  - {y: 10, i: 6, lim: true}       # 4 + 4 + 4 is 12: cut to 6
+  - {y: 10, i: 6, lim: true}
+  - {pv: 5, y: 4, i: 5, lim: false}   # the error is -1: made whole
+  - {sp: 30, y: 10, i: 5, lim: true}  # 25 alone is past 10: nothing added
+  - {sp: -30, y: -10, i: 5, lim: true}
+  - {sp: -9, y: -10, i: 4, lim: true}  # -14 + 5 - 14: cut to -10 + 14
+  - {sp: 5, y: 4, i: 4, lim: false}

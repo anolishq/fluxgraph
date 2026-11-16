@@ -1,0 +1,11 @@
+# Appendix A: a coupling of zero is two masses apart. The first, of 1 J/K
+# losing 1 W/K, rises as 5 (1 - e^-t) under 5 W; the second stays at the
+# ambient.
+rules: [A.thermal_rc2]
+period: 1s
+inputs: {p: {max_age: none}, a: {max_age: none}}
+blocks:
+  - {id: m, type: thermal_rc2, in: {power: p, ambient: a}, settings: {thermal_mass_a: 1, thermal_mass_b: 1, heat_transfer_a: 1, heat_transfer_b: 1, coupling: 0, initial_a: 0, initial_b: 0}, out: {temp_a: ta, temp_b: tb}}
+calls:
+  - {p: 5, a: 0, ta: 0, tb: 0}
+  - {p: 5, a: 0, ta: 3.1606027941427883, tb: 0}

@@ -1,0 +1,10 @@
+# 7.7.3: missed, doubtful and elapsed are in seconds. The period is 500 ms.
+rules: [7.7.3]
+period: 500ms
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: i, type: integrate, in: {x: x}, out: {y: total, missed: missed, doubtful: doubtful, elapsed: elapsed}}
+calls:
+  - {x: 2, total: 1, missed: 0, doubtful: 0, elapsed: 0.5}
+  - {x: bad, total: 1, missed: 0.5, doubtful: 0, elapsed: 1}
+  - {x: {v: 2, state: uncertain}, total: {u: 2}, missed: 0.5, doubtful: 0.5, elapsed: 1.5}

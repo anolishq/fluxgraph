@@ -1,0 +1,10 @@
+# 7.7.8, 7.10: a PID with an input it cannot use gives no value, and a
+# fallback says what the actuator gets.
+rules: [7.7.8, 7.10]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 2}, out: {y: y}, fallback: {y: 0}}
+calls:
+  - {sp: 10, pv: 4, y: 12}
+  - {pv: bad, y: {u: 0}}

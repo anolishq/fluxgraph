@@ -1,0 +1,17 @@
+# 7.7.12: with the addition less than zero, it is taken back where what was
+# applied is more than y by more than applied_within. More by exactly
+# applied_within is not more than it: the addition stands. kp is zero, so
+# y is the integral.
+rules: [7.7.12]
+period: 1s
+inputs: {sp: {max_age: none}, a: {max_age: none}}
+blocks:
+  - id: c
+    type: pid
+    in: {setpoint: sp, measurement: 0, applied: a}
+    settings: {kp: 0, ki: 1, applied_within: 0.5}
+    out: {y: y, integral: integral}
+calls:
+  - {sp: -2, a: -1.5, y: -2, integral: -2}       # applied is 0.5 above y: the addition stands
+  - {sp: -2, a: -3.25, y: -4, integral: -4}      # 0.75 above: taken back, from the next tick
+  - {sp: -2, a: -4, y: -4, integral: -4}         # the integral was -2 again

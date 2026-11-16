@@ -1,0 +1,17 @@
+# 7.8.6: without `settle` a model's doubt lasts three of its slowest time
+# constant: tau is 2 s, so the 6 ticks after it. The power is bad at tick 1.
+rules: [7.8.6]
+period: 1s
+inputs: {p: {max_age: none}, amb: {max_age: none}}
+blocks:
+  - {id: m, type: thermal_mass, in: {power: p, ambient: amb}, settings: {thermal_mass: 2, heat_transfer: 1, initial: 0}, out: {temp: temp}}
+calls:
+  - {p: 0, amb: 0, temp: 0}
+  - {p: bad, temp: 0}             # tick 1: the state at tick 1 does not rest on it yet
+  - {p: 0, temp: {u: 0}}
+  - {temp: {u: 0}}
+  - {temp: {u: 0}}
+  - {temp: {u: 0}}
+  - {temp: {u: 0}}                # tick 6
+  - {temp: {u: 0}}                     # tick 7: the sixth tick after the doubt
+  - {temp: 0}

@@ -1,0 +1,12 @@
+# Appendix A: the same motor with no voltage and a load of 1 N m. The speed
+# is -5/2 + 3 e^-t - e^-2t / 2, and the current is J (its rate of change) +
+# friction (the speed) + the load, over the torque constant.
+rules: [7.8.7, A.dc_motor]
+period: 1s
+inputs: {v: {max_age: none}, load: {max_age: none}}
+blocks:
+  - {id: m, type: dc_motor, in: {voltage: v, load_torque: load}, settings: {resistance: 5, inductance: 2, back_emf: 0.75, torque_constant: 1, inertia: 0.5, friction: 0.25}, out: {speed: w, current: i}}
+calls:
+  - {v: 0, load: 1, w: 0, i: 0}
+  - {v: 0, load: 1, w: -1.4640293181039794, i: 0.149841150335148}
+  - {v: 0, load: 1, w: -2.103151969734529, i: 0.2803669021558157}

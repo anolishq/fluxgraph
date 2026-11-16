@@ -1,0 +1,20 @@
+# 7.7.7: the derivative is between samples, by their times. A sample that
+# stands is not another, and the derivative stands with it. Two seconds
+# after the last, a change of 2 is a slope of 1 and a is exp(-2). A sample
+# stamped half a second after the last, 1 higher, is a slope of 2 with a
+# of exp(-0.5). A value written with the time of the sample that stands is
+# not a new sample, and is not what the next is measured from: a 10 at 6 s
+# is 6 above the 4 of 3.5 s.
+rules: [7.7.7, 3.7]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 0, kd: 2, filter: 1s}, out: {y: y}}
+calls:
+  - {now: 0, sp: 0, pv: 0, y: 0}
+  - {now: 1, pv: 1, y: -1.2642411176571153}
+  - {now: 2, y: -1.2642411176571153}
+  - {now: 3, pv: 3, y: -1.900425863264272}
+  - {now: 4, pv: {v: 4, at: 3.5}, y: -2.7265439137300964}
+  - {now: 5, pv: {v: 9, at: 3.5}, y: -2.7265439137300964}
+  - {now: 6, pv: 10, y: -4.62980036001182}

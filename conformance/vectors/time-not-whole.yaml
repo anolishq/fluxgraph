@@ -1,0 +1,9 @@
+# 6.2, 6.11: a call whose time is not a whole number of nanoseconds is refused.
+rules: [6.2, 6.11]
+period: 1s
+blocks:
+  - {id: i, type: integrate, in: {x: 1}, out: {y: n}}
+calls:
+  - {now: 0, n: 1}
+  - {now: 0.9999999995, refused: true}
+  - {now: 1, n: 2}

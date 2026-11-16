@@ -1,0 +1,14 @@
+# 7.4.13, 7.4.12: a rate limit that acts by the call takes nothing at a
+# catch-up tick, track among it. The input is 10 from 1 s. Ticks 1 and 2
+# take nothing; tick 3, the last, holds the track it then reads, 30, and
+# moves down three periods' reach.
+rules: [7.4.13, 7.4.12]
+period: 1s
+commands: [y]
+inputs: {x: {max_age: none}, tr: {max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x, track: tr}, settings: {up: 2}, out: {y: y, limited: lim}}
+calls:
+  - {now: 0, x: bad, tr: 50, y: bad, lim: bad}
+  - {$write: [x, good, 10, 1]}
+  - {now: 3, ran: 3, tr: 30, y: 24, lim: true}

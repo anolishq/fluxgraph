@@ -1,0 +1,17 @@
+# 7.8.6: the determinant is taken from the model's settings and not from
+# A's entries. Two masses of 1 J/K joined by 1 W/K, each losing 10^-17 W/K:
+# the determinant is 2 * 10^-17 and a bit, and the model decays, with a
+# settle of far more ticks than this runs. (From A's entries it is
+# (1 + 10^-17)^2 - 1, which in doubles is 0, and the model would be taken
+# not to decay and be good.)
+rules: [7.8.6, A.thermal_rc2]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: r, type: thermal_rc2, in: {power: u, ambient: 0}, settings: {thermal_mass_a: 1, thermal_mass_b: 1, heat_transfer_a: 1.0e-17, heat_transfer_b: 1.0e-17, coupling: 1, initial_a: 0, initial_b: 0}}
+  - {id: sr, type: formula, in: {x: r.temp_b}, settings: {expr: "0 * x"}, out: {y: state}}
+calls:
+  - {u: 0, state: 0}
+  - {u: {v: 0, state: uncertain}, state: 0}
+  - {u: 0, state: {u: 0}}
+  - {u: 0, state: {u: 0}}

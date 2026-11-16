@@ -1,0 +1,23 @@
+# 7.8.8: what a delay on a settled loop took in as uncertain becomes good,
+# and stays so when the loop next comes into doubt. The delay is 2 ticks
+# and settle is 2. The setpoint is uncertain at tick 2, and again at tick
+# 5, the first tick the loop is settled. The value the delay took in at
+# tick 4 became good at tick 5, and is given as good at tick 6, with the
+# loop in doubt again. The plant and the controller sit at 2.
+rules: [7.8.8]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: y}}
+  - {id: acc, type: delay, in: {x: e}, settings: {ticks: 2, initial: 0}, out: {y: p}}
+  - {id: ctl, type: formula, in: {r: r, y: plant.y, p: acc.y}, settings: {expr: "r - y + 0 * p"}, out: {y: e}}
+calls:
+  - {r: 4, y: 0, e: 4, p: 0}
+  - {r: 4, y: 2, e: 2, p: 0}
+  - {r: {v: 4, state: uncertain}, y: 2, e: {u: 2}, p: 4}        # tick 2: a doubt
+  - {r: 4, y: {u: 2}, e: {u: 2}, p: 2}
+  - {r: 4, y: {u: 2}, e: {u: 2}, p: {u: 2}}
+  - {r: {v: 4, state: uncertain}, y: 2, e: {u: 2}, p: 2}        # tick 5: settled, and a doubt
+  - {r: 4, y: {u: 2}, e: {u: 2}, p: 2}                          # tick 6: what it took in at tick 4
+  - {r: 4, y: {u: 2}, e: {u: 2}, p: {u: 2}}                     # tick 7: what it took in at tick 5
+  - {r: 4, y: 2, e: 2, p: 2}

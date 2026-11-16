@@ -1,0 +1,16 @@
+# 7.8.7, Appendix A: two masses of 10 J/K, each losing 1 W/K to an ambient
+# of 0, joined by 3 W/K, the first heated at 10 W, at a period of 5 s: half
+# their own time constant. Their sum rises with a time constant of 10 s
+# towards 10, and their difference with one of 10/7 s towards 10/7. (As two
+# thermal_mass blocks this graph is refused; before it was, they reached
+# 10^19 and said good.)
+rules: [7.8.7, A.thermal_rc2]
+period: 5s
+inputs: {p: {max_age: none}, a: {max_age: none}}
+blocks:
+  - {id: m, type: thermal_rc2, in: {power: p, ambient: a}, settings: {thermal_mass_a: 10, thermal_mass_b: 10, heat_transfer_a: 1, heat_transfer_b: 1, coupling: 3, initial_a: 0, initial_b: 0}, out: {temp_a: ta, temp_b: tb}}
+calls:
+  - {now: 0, p: 10, a: 0, ta: 1.2212453270876722e-15, tb: 4.440892098500626e-16}
+  - {now: 5, p: 10, a: 0, ta: 2.6600628561351782, tb: 1.27463054673849}
+  - {now: 10, p: 10, a: 0, ta: 3.874237164167394, tb: 2.4469684241181855}
+  - {now: 15, p: 10, a: 0, ta: 4.598615244651173, tb: 3.1700831538645295}

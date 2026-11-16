@@ -1,0 +1,12 @@
+# 8.5: rebase before any tick has run does away with the writes waiting,
+# and nothing else. The next call runs tick 0 and is not a gap.
+rules: [8.5]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+calls:
+  - {$write: [x, good, 9.0, 0]}
+  - {$rebase: true}
+  - {now: 0, tick: 0, y: not_ready}
+  - {now: 1, x: 3, y: 3}

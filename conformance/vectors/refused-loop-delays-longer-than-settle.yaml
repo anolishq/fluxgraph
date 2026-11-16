@@ -1,0 +1,10 @@
+# 7.8.8: refused: a loop whose delays add up to more than its settle.
+rules: [7.8.8]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: ctl.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 1s}}
+  - {id: d, type: delay, in: {x: ctl.y}, settings: {ticks: 2, initial: 0}}
+  - {id: ctl, type: formula, in: {r: r, y: plant.y, p: d.y}, settings: {expr: "p + r - y"}}
+expect: compile_error
+error_mentions: [settle]

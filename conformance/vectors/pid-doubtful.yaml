@@ -1,0 +1,11 @@
+# 7.7.11: doubtful counts the ticks on which either input was not good.
+rules: [7.7.11]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 1}, out: {doubtful: db, elapsed: el}}
+calls:
+  - {sp: {state: uncertain, v: 1}, pv: 0, db: 1, el: 1}
+  - {sp: 1, pv: bad, db: 2, el: 2}
+  - {pv: 0, db: 2, el: 3}
+  - {sp: not_ready, db: 3, el: 4}

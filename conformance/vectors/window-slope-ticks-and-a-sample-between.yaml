@@ -1,0 +1,15 @@
+# Appendix A (window): samples with no sample time are at their ticks'
+# times, worked as whole periods before the tick that runs, and one with a
+# sample time is at that. The input stands on its initial value at ticks 0
+# and 1, and at tick 2 is a 10 sampled at 1.5 s: points at 0, 1 and 1.5 s
+# of 0, 0 and 10. The means are 5/6 and 10/3; the sums are 20/3 and 7/6;
+# the slope, of the three usable samples, is 40/7.
+rules: [A.window, 7.3.6, 3.7]
+period: 1s
+inputs: {x: {max_age: none, initial: 0}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 3s, min_good: 0.3}, out: {mean: mean, slope: slope}}
+calls:
+  - {now: 0, mean: {u: 0}, slope: bad}
+  - {now: 1, mean: {u: 0}, slope: {u: 0}}
+  - {now: 2, x: {v: 10, at: 1.5}, mean: 10, slope: {u: 5.714285714285714}}

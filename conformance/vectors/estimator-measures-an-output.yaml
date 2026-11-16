@@ -1,0 +1,23 @@
+# 7.9.4: a measurement is of an output of the model. y = x0 - x1, both from
+# 0 with variance 1. z of 4 with r of 2: the spread is 1 + 1 + 2, the gain
+# is 1/4 and -1/4, and each state's variance falls to 3/4. The normalised
+# innovation squared is 16 / 4. A second z of 4 is 2 from the output, which
+# is now 2: the spread is 1 + 2, the gain 1/6 and -1/6.
+rules: [7.9.4, 7.9.8]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: state_space, A: [[1, 0], [0, 1]], B: [0, 0], C: [1, -1]}
+      q: {x0: 0, x1: 0}
+      p0: {x0: 1, x1: 1}
+      measure: {z: {of: y, r: 2}}
+      consistency: none
+    out: {x0: a, x1: b, sigma_x0: sa, sigma_x1: sb, innovation_z: innovation, nis_z: nis}
+calls:
+  - {u: 0, z: 4, a: 1, b: -1, sa: 0.8660254037844386, sb: 0.8660254037844386, innovation: 4, nis: 4}
+  - {z: 4, a: 1.3333333333333333, b: -1.3333333333333333, sa: 0.816496580927726, sb: 0.816496580927726, innovation: 2, nis: 1.3333333333333333}
+  - {innovation: not_ready, nis: not_ready}

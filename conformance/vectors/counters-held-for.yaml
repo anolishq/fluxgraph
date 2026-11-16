@@ -1,0 +1,18 @@
+# 7.6.1: elapsed and doubtful count from the tick the timer started, and are
+# zero while it is not running. `sure` is a trip a graph can act on: true,
+# and no more than a quarter of the run in doubt.
+rules: [7.6.1, 7]
+period: 1s
+inputs: {x: {type: boolean, max_age: none}}
+blocks:
+  - {id: h, type: held_for, in: {x: x}, settings: {time: 2s, on_bad: hold, hold_limit: 2s}, out: {y: y, elapsed: elapsed, doubtful: doubtful}}
+  - {id: s, type: formula, in: {d: h.y, q: h.doubtful, e: h.elapsed}, settings: {expr: "d and q <= 0.25 * e"}, out: {y: sure}}
+calls:
+  - {x: false, y: false, elapsed: 0, doubtful: 0, sure: false}
+  - {x: true, y: false, elapsed: 1, doubtful: 0, sure: false}
+  - {x: true, y: false, elapsed: 2, doubtful: 0, sure: false}
+  - {x: bad, y: {u: false}, elapsed: 3, doubtful: 1, sure: false}   # 1 is more than a quarter of 3: that decides it
+  - {x: true, y: true, elapsed: 4, doubtful: 1, sure: true}
+  - {x: true, y: true, elapsed: 5, doubtful: 1, sure: true}
+  - {x: false, y: false, elapsed: 0, doubtful: 0, sure: false}
+  - {x: true, y: false, elapsed: 1, doubtful: 0, sure: false}

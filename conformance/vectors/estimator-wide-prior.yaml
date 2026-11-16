@@ -1,0 +1,22 @@
+# 7.9.4: the covariance after a correction is worked in the form that
+# rounding cannot bring to nothing. x' = x with a p0 of 10^16 and an r of 1:
+# the first measurement is taken whole, and leaves a variance of 1, the
+# measurement's own. The second is then weighed evenly with it. (Worked as
+# P - g (c P) the variance is 0 after the first, and nothing moves it.)
+rules: [7.9.4]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: state_space, A: [[1]], B: [0], C: [1]}
+      q: {x0: 0}
+      p0: {x0: 1.0e+16}
+      measure: {z: {of: y, r: 1}}
+      consistency: none
+    out: {x0: x, sigma_x0: sigma}
+calls:
+  - {u: 0, z: 10, x: 10, sigma: 1}
+  - {z: 12, x: 11, sigma: 0.7071067811865476}

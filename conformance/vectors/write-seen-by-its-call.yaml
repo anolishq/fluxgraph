@@ -1,0 +1,16 @@
+# 6.8: the last tick a call runs may see every write whose time is not
+# after the later of the tick's time and the call's. A sample the host has
+# in hand when it calls is seen by that call, a little late or a little
+# early. One stamped after the call waits.
+rules: [6.8]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+calls:
+  - {now: 0, x: 1, y: 1}
+  - {now: 1.001, x: {v: 2, at: 1.0005}, y: 2}     # tick 1 is at 1.0; the sample is after it and before the call
+  - {now: 1.999, x: {v: 3, at: 1.998}, y: 3}      # tick 2 is at 2.0
+  - {now: 3.4, x: {v: 4, at: 3.45}, y: 3}         # tick 3 is at 3.0; the sample is after the call: it waits
+  - {now: 4, y: 4}
+  - {now: 4.999, x: {v: 5, at: 5}, y: 5}          # tick 5 is at 5.0, after the call, and the sample is at it

@@ -1,0 +1,16 @@
+# 8.6: at a gap a PID keeps its integral and its derivative starts again.
+# doubtful takes in the ticks passed over, where their number is known,
+# and elapsed counts them.
+rules: [8.6, 7.7.7, 7.7.11]
+period: 1s
+max_catch_up: 2
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 0, ki: 1, kd: 1, filter: 1s}, out: {y: y, integral: i, elapsed: el, doubtful: db, gaps: gaps}}
+calls:
+  - {now: 0, sp: 1, pv: 0, y: 1, i: 1, el: 1, db: 0, gaps: 0}
+  - {now: 1, sp: 2, pv: 1, y: 1.3678794411714423, i: 2, el: 2, db: 0, gaps: 0}
+  - {now: 4, gap: true, skipped: 2, tick: 4, sp: 6, pv: 5, y: 3, i: 3, el: 5, db: 2, gaps: 1}
+  - {now: 5, sp: 7, pv: 6, y: 3.3678794411714423, i: 4, el: 6, db: 2, gaps: 1}
+  - {$rebase: true}
+  - {now: 50, gap: true, skipped: unknown, tick: 6, sp: 7, pv: 6, y: 5, i: 5, el: 7, db: 2, gaps: 2}

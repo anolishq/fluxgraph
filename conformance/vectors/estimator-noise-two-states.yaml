@@ -1,0 +1,22 @@
+# 7.9.2: the process noise of two states. x1 takes up x0, and the noise is
+# on x0 alone, with q of 3: over a period T it is 3 [[T, T^2/2], [T^2/2,
+# T^3/3]], which at 2 s is [[6, 6], [6, 8]]. The step is [[1, 0], [2, 1]].
+# From variances of 1 and 1: [[7, 8], [8, 13]], then [[13, 28], [28, 81]].
+rules: [7.9.2]
+period: 2s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: linear, A: [[0, 0], [1, 0]], B: [[1], [0]], C: [[1, 0], [0, 1]]}
+      q: {x0: 3, x1: 0}
+      p0: {x0: 1, x1: 1}
+      measure: {z: {of: y0, r: 1}}
+      consistency: none
+    out: {sigma_x0: s0, sigma_x1: s1}
+calls:
+  - {u: 0, s0: 1, s1: 1}
+  - {s0: 2.6457513110645907, s1: 3.605551275463989}
+  - {s0: 3.605551275463989, s1: 9}

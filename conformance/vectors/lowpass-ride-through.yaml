@@ -1,0 +1,18 @@
+# 7.4.5 to 7.4.7: a low-pass that rode through unusable ticks decays over
+# the ticks it missed, and that is not a doubt: it is good on the next
+# good input. a = 0.5.
+rules: [7.4.5, 7.4.6, 7.4.7, 7.4.8]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: lowpass, in: {x: x}, settings: {tau: 1.4426950408889634s, ride_through: 2s, settle: 2s}, out: {y: y}}
+calls:
+  - {x: 8, y: 8}
+  - {x: bad, y: {u: 8}}
+  - {x: 4, y: 5}           # two ticks at once: 0.25 * 8 + 0.75 * 4
+  - {x: 4, y: 4.5}
+  - {x: 4, y: 4.25}
+  - {x: bad, y: {u: 4.25}}
+  - {x: bad, y: {u: 4.25}}
+  - {x: bad, y: bad}            # 3 ticks: forgotten
+  - {x: 4, y: 4}                # a first input

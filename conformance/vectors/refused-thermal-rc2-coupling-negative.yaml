@@ -1,0 +1,8 @@
+# A.thermal_rc2: refused: a coupling less than zero.
+rules: [A.thermal_rc2]
+period: 1s
+inputs: {p: {max_age: none}, a: {max_age: none}}
+blocks:
+  - {id: m, type: thermal_rc2, in: {power: p, ambient: a}, settings: {thermal_mass_a: 1, thermal_mass_b: 1, heat_transfer_a: 1, heat_transfer_b: 1, coupling: -1, initial_a: 0, initial_b: 0}}
+expect: compile_error
+error_mentions: [coupling]

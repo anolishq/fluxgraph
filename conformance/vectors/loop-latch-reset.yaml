@@ -1,0 +1,18 @@
+# 7.8.8: for a loop's doubt every block but a formula counts as using every
+# input it has. The latch on this loop does not use a reset that is false,
+# and is good; an uncertain false on it, from outside, is the loop's doubt.
+rules: [7.8.8, 7.6.3]
+period: 1s
+inputs: {r: {max_age: none}, q: {type: boolean, max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: y}}
+  - {id: over, type: formula, in: {y: plant.y}, settings: {expr: "y > 100"}}
+  - {id: trip, type: latch, in: {set: over.y, reset: q}, out: {y: tripped}}
+  - {id: ctl, type: formula, in: {r: r, y: plant.y, t: trip.y}, settings: {expr: "when(t, 0, r - y)"}, out: {y: e}}
+calls:
+  - {r: 4, q: false, y: 0, e: 4, tripped: false}
+  - {r: 4, q: false, y: 2, e: 2, tripped: false}
+  - {r: 4, q: {v: false, state: uncertain}, y: 2, e: 2, tripped: false}       # tick 2: the loop's doubt
+  - {r: 4, q: false, y: {u: 2}, e: {u: 2}, tripped: {u: false}}     # its `set` is a formula of the plant
+  - {r: 4, q: false, y: {u: 2}, e: {u: 2}, tripped: {u: false}}     # its `set` is a formula of the plant
+  - {r: 4, q: false, y: 2, e: 2, tripped: false}

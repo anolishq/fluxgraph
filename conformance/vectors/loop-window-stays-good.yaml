@@ -1,0 +1,23 @@
+# 7.8.8: a sample a window on a settled loop took in as uncertain becomes a
+# good one, and stays one when the loop next comes into doubt. The window
+# is 3 ticks and needs 2 good samples; the controller reads its max. The
+# window is filling at tick 0, which is the loop's doubt; settle is 3. At
+# tick 4 the loop is settled and the setpoint is uncertain. At tick 5 the
+# window holds the samples of ticks 3 and 4 as good, and is good.
+rules: [7.8.8, 7.3.5]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 3s}, out: {y: y}}
+  - {id: w, type: window, in: {x: plant.y}, settings: {window: 3s, min_good: 0.6}, out: {max: m}}
+  - {id: ctl, type: formula, in: {r: r, m: w.max}, settings: {expr: "r - m"}, out: {y: e}}
+calls:
+  - {r: 4, y: 0, m: not_ready, e: not_ready}
+  - {r: 4, y: {u: 0}, m: {u: 0}, e: {u: 4}}
+  - {r: 4, y: {u: 2}, m: {u: 2}, e: {u: 2}}
+  - {r: 4, y: {u: 2}, m: {u: 2}, e: {u: 2}}
+  - {r: {v: 4, state: uncertain}, y: 2, m: 2, e: {u: 2}}        # tick 4: settled, and a doubt
+  - {r: 4, y: {u: 2}, m: 2, e: 2}                               # tick 5: two good samples of three
+  - {r: 4, y: {u: 2}, m: {u: 2}, e: {u: 2}}
+  - {r: 4, y: {u: 2}, m: {u: 2}, e: {u: 2}}
+  - {r: 4, y: 2, m: 2, e: 2}

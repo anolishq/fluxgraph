@@ -1,0 +1,21 @@
+# 7.8.6: a named model's settle is the least whole number not less than
+# r - 10^-9, where r is three of its slowest time constant over the period,
+# worked in doubles. A first-order process of 0.2 s at a period of 0.1 s
+# has an r of 6, which in doubles comes out a little over 6: settle is 6
+# ticks and not 7. The step of tick 0 is on an uncertain input, so tick 0
+# is its doubt, and it is uncertain on ticks 1 to 6.
+rules: [7.8.6]
+period: 100ms
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: first_order_process, in: {u: u}, settings: {tau: 0.2s}, out: {doubtful: doubtful}}
+  - {id: ok, type: all_good, in: {y: m.y}, out: {y: ok}}
+calls:
+  - {u: {v: 0, state: uncertain}, ok: true, doubtful: 0}
+  - {u: 0, ok: false, doubtful: 0.1}
+  - {ok: false}
+  - {ok: false}
+  - {ok: false}
+  - {ok: false}
+  - {ok: false, doubtful: 0.1}     # tick 6: the sixth after the doubt
+  - {ok: true, doubtful: 0.1}

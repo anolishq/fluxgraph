@@ -1,0 +1,14 @@
+# 7.8.8, rule D, 7.1.2: an uncertain value from outside the loop that did
+# not decide the controller's `or` starts no doubt: not as a false beside
+# a true, and not as a true beside a good true.
+rules: [7.8.8, D, 7.1.2]
+period: 1s
+inputs: {r: {max_age: none}, p: {type: boolean, max_age: none}, q: {type: boolean, max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: e}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: y}}
+  - {id: ctl, type: formula, in: {r: r, y: plant.y, p: p, q: q}, settings: {expr: "when(p or q, r - y, 0)"}, out: {y: e}}
+calls:
+  - {r: 4, p: true, q: {v: false, state: uncertain}, y: 0, e: 4}
+  - {q: {v: false, state: uncertain}, y: 2, e: 2}
+  - {q: {v: true, state: uncertain}, y: 2, e: 2}
+  - {q: {v: true, state: uncertain}, y: 2, e: 2}

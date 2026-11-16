@@ -1,0 +1,31 @@
+# Appendix A, 7.4.5 to 7.4.8: one pole. tau is one period over ln 2, so
+# a = 0.5 and settle, three time constants rounded up, is 5 ticks. For w,
+# tau is one period over ln 4: a = 0.25 and settle is 3 ticks. An uncertain
+# input is a doubt, and the output is uncertain for settle ticks after it.
+rules: [A.lowpass, 7.4.5, 7.4.6, 7.4.7, 7.4.8, 6.3]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: lowpass, in: {x: x}, settings: {tau: 1.4426950408889634s}, out: {y: y}}
+  - {id: g, type: lowpass, in: {x: x}, settings: {tau: 1.4426950408889634s, ride_through: 1s}, out: {y: z}}
+  - {id: q, type: lowpass, in: {x: x}, settings: {tau: 0.7213475204444817s}, out: {y: w}}
+calls:
+  - {x: 8, y: 8, z: 8, w: 8}
+  - {x: 0, y: 4, z: 4, w: 2}
+  - {x: 0, y: 2, z: 2, w: 0.5}
+  - {x: 6, y: 4, z: 4, w: 4.625}                       # 0.25 * 0.5 + 0.75 * 6
+  - {x: bad, y: bad, z: {u: 4}, w: bad}
+  - {x: bad, y: bad, z: bad, w: bad}                   # all three have forgotten
+  - {x: 0, y: 0, z: 0, w: 0}                           # a first input
+  # tick 7: an uncertain input, and the doubt is this tick
+  - {x: {v: 2, state: uncertain}, y: {u: 1}, z: {u: 1}, w: {u: 1.5}}
+  - {x: 1, y: {u: 1}, z: {u: 1}, w: {u: 1.125}}
+  - {x: 1, y: {u: 1}, z: {u: 1}, w: {u: 1.03125}}
+  - {x: 1, y: {u: 1}, z: {u: 1}, w: {u: 1.0078125}}         # the third tick after the doubt
+  - {x: 1, y: {u: 1}, z: {u: 1}, w: 1.001953125}
+  - {x: 1, y: {u: 1}, z: {u: 1}, w: 1.00048828125}               # the fifth tick after the doubt
+  # tick 13: a doubt; tick 14: forgotten, or ridden through; tick 15: a first input has no doubt, and
+  # riding through is none, but z still has tick 13's
+  - {x: {v: 3, state: uncertain}, y: {u: 2}, z: {u: 2}, w: {u: 2.5001220703125}}
+  - {x: bad, y: bad, z: {u: 2}, w: bad}
+  - {x: 5, y: 5, z: {u: 4.25}, w: 5}                   # z: two ticks at once, 0.25 * 2 + 0.75 * 5

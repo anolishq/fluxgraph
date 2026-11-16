@@ -1,0 +1,8 @@
+# 6.2, 9.3: refused: a length of time that is not a whole number of nanoseconds.
+rules: [6.2, 9.3]
+period: 1s
+inputs: {x: {max_age: 1000000000.5ns}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}}
+expect: compile_error
+error_mentions: [x]

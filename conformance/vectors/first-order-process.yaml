@@ -1,0 +1,14 @@
+# Appendix A: dy/dt = (gain u - y) / tau, with tau 2 s and a gain of 3.
+# With u at 1 it rises as 3 (1 - e^(-t/2)); with u back at 0 from tick 3 it
+# falls by e^-0.5 a tick.
+rules: [7.8.7, A.first_order_process]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: first_order_process, in: {u: u}, settings: {tau: 2s, gain: 3}, out: {y: y}}
+calls:
+  - {u: 1, y: 0}
+  - {u: 1, y: 1.1804080208620997}
+  - {u: 1, y: 1.896361676485673}
+  - {u: 0, y: 2.3306095195547107}
+  - {u: 0, y: 1.4135861294280623}

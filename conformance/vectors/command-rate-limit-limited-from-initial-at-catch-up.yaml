@@ -1,0 +1,14 @@
+# 7.4.12: at a catch-up tick a block that holds initial alone holds a
+# value. The input is 5 at 1 s and 0 from 2 s: `limited` is true at tick
+# 1, and a latch saw it. The input is bad at tick 0, so nothing is taken
+# from it before.
+rules: [7.4.12]
+period: 1s
+commands: [y]
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: r, type: rate_limit, in: {x: x}, settings: {up: 2, initial: 0}, out: {y: y, limited: lim}}
+  - {id: l, type: latch, in: {set: r.limited}, out: {y: was_limited}}
+calls:
+  - {now: 0, x: bad, y: bad, lim: bad, was_limited: bad}
+  - {now: 2, ran: 2, first: {x: {v: 5, at: 1}}, x: {v: 0, at: 2}, y: 0, lim: false, was_limited: true}

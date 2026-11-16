@@ -1,0 +1,24 @@
+# 7.6.3, 4.8: the five cases, in order. The output takes the state of the
+# input the latch used: `reset` when it clears it, `set` when it is not
+# set, and neither once it is set.
+rules: [7.6.3, 4.8]
+period: 1s
+inputs: {s: {type: boolean, max_age: none}, r: {type: boolean, max_age: none}}
+blocks:
+  - {id: l, type: latch, in: {set: s, reset: r}, out: {y: l}}
+  - {id: m, type: latch, in: {set: s}, out: {y: m}}
+calls:
+  - {s: false, r: false, l: false, m: false}
+  - {s: {v: false, state: uncertain}, l: {u: false}, m: {u: false}}   # not set: the state of set
+  - {s: false, l: false, m: false}
+  - {s: bad, l: bad, m: bad}
+  - {s: false, l: false, m: false}                # good again: nothing is remembered of the bad tick
+  - {s: not_ready, l: not_ready, m: not_ready}
+  - {s: true, l: true, m: true}                             # set
+  - {s: bad, l: true, m: true}
+  - {s: false, r: true, l: false, m: true}                  # cleared: the state of reset
+  - {s: true, r: true, l: false, m: true}                   # reset wins
+  - {s: true, r: bad, l: true, m: true}                     # an unusable reset does nothing
+  - {s: false, r: {v: true, state: uncertain}, l: {u: false}, m: true}
+  - {s: {v: true, state: uncertain}, r: false, l: {u: true}, m: true}
+  - {s: true, l: true, m: true}                             # set again by a good input

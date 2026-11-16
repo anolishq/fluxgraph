@@ -1,0 +1,27 @@
+# 7.8.6, Appendix A: the slowest rate of a model of two states is worked
+# from its determinant as its settings give it. Each of these has rates
+# with no setting at 1. The two masses (1 and 2 J/K, losing 1 and 2 W/K,
+# joined by 1 W/K) have rates of 1 and 2.5 a second: 3 ticks. The process
+# (omega_n 2, zeta 1.25) and the spring (mass 2, damping 10, stiffness 8)
+# both have 1 and 4: 3 ticks. The motor (R 8, L 2, back_emf 2,
+# torque_constant 1, J 0.5, friction 0.5) has 2 and 3: 1.5 periods, 2
+# ticks. Each steps on an uncertain input at tick 1.
+rules: [7.8.6, A.thermal_rc2, A.second_order_process, A.mass_spring_damper, A.dc_motor]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: r, type: thermal_rc2, in: {power: u, ambient: 0}, settings: {thermal_mass_a: 1, thermal_mass_b: 2, heat_transfer_a: 1, heat_transfer_b: 2, coupling: 1, initial_a: 0, initial_b: 0}}
+  - {id: o, type: second_order_process, in: {u: u}, settings: {omega_n: 2, zeta: 1.25}}
+  - {id: m, type: mass_spring_damper, in: {force: u}, settings: {mass: 2, damping: 10, stiffness: 8}}
+  - {id: d, type: dc_motor, in: {voltage: u, load_torque: 0}, settings: {resistance: 8, inductance: 2, back_emf: 2, torque_constant: 1, inertia: 0.5, friction: 0.5}}
+  - {id: sr, type: formula, in: {x: r.temp_b}, settings: {expr: "0 * x"}, out: {y: masses}}
+  - {id: so, type: formula, in: {x: o.y}, settings: {expr: "0 * x"}, out: {y: process}}
+  - {id: sm, type: formula, in: {x: m.position}, settings: {expr: "0 * x"}, out: {y: spring}}
+  - {id: sd, type: formula, in: {x: d.speed}, settings: {expr: "0 * x"}, out: {y: motor}}
+calls:
+  - {u: 1, masses: 0, process: 0, spring: 0, motor: 0}
+  - {u: {v: 1, state: uncertain}, masses: 0, process: 0, spring: 0, motor: 0}
+  - {u: 1, masses: {u: 0}, process: {u: 0}, spring: {u: 0}, motor: {u: 0}}
+  - {u: 1, masses: {u: 0}, process: {u: 0}, spring: {u: 0}, motor: {u: 0}}
+  - {u: 1, masses: {u: 0}, process: {u: 0}, spring: {u: 0}, motor: 0}
+  - {u: 1, masses: 0, process: 0, spring: 0, motor: 0}

@@ -1,0 +1,8 @@
+# A.dc_motor: refused: an inductance of zero.
+rules: [A.dc_motor]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: dc_motor, in: {voltage: u, load_torque: 0}, settings: {resistance: 1, inductance: 0, back_emf: 1, torque_constant: 1, inertia: 1, friction: 0}}
+expect: compile_error
+error_mentions: [inductance]

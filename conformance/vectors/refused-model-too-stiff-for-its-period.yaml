@@ -1,0 +1,8 @@
+# 7.8.7: refused: a row of 60,000 a second at a period of 2 s.
+rules: [7.8.7]
+period: 2s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: linear, in: {u: u}, settings: {A: [[-60000]], B: [[1]], C: [[1]]}}
+expect: compile_error
+error_mentions: [m]

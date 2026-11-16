@@ -1,0 +1,13 @@
+# 7.3.8, 7.3.3: with only_new a tick whose input is bad counts as bad, and
+# one that holds no new sample as not_ready. Short of samples, a window
+# takes the worst of the ticks that hold none.
+rules: [7.3.8, 7.3.3]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 2s, only_new: true, min_good: 1}, out: {mean: m}}
+calls:
+  - {x: 1, m: not_ready}
+  - {x: 3, m: 2}
+  - {m: not_ready}      # the 3 still stands: no new sample
+  - {x: bad, m: bad}

@@ -1,0 +1,15 @@
+# 7.3.2: the samples needed are min_good times n, rounded up, and 0.07 of a
+# hundred ticks is seven although the product in binary comes out a little over.
+rules: [7.3.2]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 100s, min_good: 0.07}, out: {mean: mean}}
+calls:
+  - {x: 1, mean: not_ready}
+  - {x: 2, mean: not_ready}
+  - {x: 3, mean: not_ready}
+  - {x: 4, mean: not_ready}
+  - {x: 5, mean: not_ready}
+  - {x: 6, mean: not_ready}
+  - {x: 7, mean: 4}

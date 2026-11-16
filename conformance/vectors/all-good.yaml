@@ -1,0 +1,12 @@
+# Appendix A: all_good is true when every input is good, and is always good.
+rules: [A.all_good]
+period: 1s
+inputs: {a: {max_age: none}, b: {type: boolean, max_age: none}}
+blocks:
+  - {id: g, type: all_good, in: {a: a, b: b}, out: {y: ok}}
+calls:
+  - {a: 1, b: true, ok: true}
+  - {a: {v: 1, state: uncertain}, ok: false}
+  - {a: bad, ok: false}
+  - {a: 1, b: not_ready, ok: false}
+  - {b: false, ok: true}

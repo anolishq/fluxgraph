@@ -1,0 +1,32 @@
+# 7.9.2, 7.9.3, 7.9.8: an estimator's state stands where its last
+# measurement was, and what it gives is carried on to the tick. The model is
+# x' = u, so a step of t seconds adds u t; q is 1 a second, and p0 and r
+# are 1. Tick 0: a measurement of 0 leaves x at 0 and a variance of 1/2.
+# Tick 1: a sample taken at 0.75 s is at place 12. The state is carried
+# there on the u of 2 that tick 0 had, to 1.5 with a variance of 5/4; the
+# innovation is 1, and it stands there at 37/18 with a variance of 5/9. At
+# the tick it gives that carried on a quarter of a second: 23/9.
+# Tick 2: no sample. A u of 0 was sampled at 1.5 s, and model inputs are
+# deferred: this tick does not know of it, and gives 41/9.
+# Tick 3: a sample at 2.5 s, place 40. The state is carried from 12 to 24
+# on 2 and from 24 to 40 on 0, to 32/9 with a variance of 83/36.
+rules: [7.9.2, 7.9.3, 7.9.4, 7.9.8]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: linear, A: [[0]], B: [[1]], C: [[1]]}
+      q: {x0: 1}
+      p0: {x0: 1}
+      measure: {z: {of: y, r: 1}}
+      consistency: none
+    out: {x0: x, sigma_x0: sigma, innovation_z: innovation, nis_z: nis, late_z: late}
+calls:
+  - {now: 0, u: 2, z: 0, x: 0.0, sigma: 0.7071067811865476, innovation: 0.0, nis: 0.0, late: 0}
+  - {now: 1, z: {v: 2.5, at: 0.75}, x: 2.5555555555555554, sigma: 0.8975274678557507, innovation: 1.0, nis: 0.4444444444444444, late: 0}
+  - {$write: [u, good, 0, 1.5]}
+  - {now: 2, x: 4.555555555555555, sigma: 1.3437096247164249, innovation: not_ready, late: 0}
+  - {now: 3, z: {v: 3, at: 2.5}, x: 3.168067226890756, sigma: 1.0942938323853602, innovation: -0.5555555555555556, nis: 0.09337068160597572, late: 0}

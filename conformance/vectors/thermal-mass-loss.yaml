@@ -1,0 +1,12 @@
+# Appendix A: a thermal mass of 4 J/K losing 2 W/K, heated at 6 W in an
+# ambient of 1: its time constant is 2 s and it settles 3 above the
+# ambient, at 4. From 0: 4 (1 - e^(-t/2)).
+rules: [7.8.7, A.thermal_mass]
+period: 1s
+inputs: {p: {max_age: none}, a: {max_age: none}}
+blocks:
+  - {id: m, type: thermal_mass, in: {power: p, ambient: a}, settings: {thermal_mass: 4, heat_transfer: 2, initial: 0}, out: {temp: temp}}
+calls:
+  - {p: 6, a: 1, temp: 0}
+  - {p: 6, a: 1, temp: 1.5738773611494663}
+  - {p: 6, a: 1, temp: 2.5284822353142307}

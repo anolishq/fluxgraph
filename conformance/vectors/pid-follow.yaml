@@ -1,0 +1,19 @@
+# 7.7.15: while `follow` is true a PID gives `track` and adds nothing to its
+# integral, which is set at each such tick to track less kp times the
+# error: 3 less 6. With no `track` it stays. At the tick `follow` is false
+# again it is set as rule 14 says, before that tick's addition: 5 less 6,
+# and 6 added. A `follow` it cannot use is
+# taken as true, and what it gives is then uncertain at best.
+rules: [7.7.15, 7.7.14]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}, tr: {max_age: none}, f: {type: boolean, max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, track: tr, follow: f}, settings: {kp: 1, ki: 1}, out: {y: y, integral: i, limited: lim}}
+calls:
+  - {sp: 10, pv: 4, tr: 20, f: false, y: 26, i: 20, lim: false}
+  - {tr: 3, f: true, y: 3, i: -3, lim: false}
+  - {tr: bad, y: bad, i: -3, lim: bad}
+  - {tr: 5, f: false, y: 11, i: 5, lim: false}
+  - {tr: 7, f: bad, y: {u: 7}, i: 1, lim: {u: false}}
+  - {tr: 0, f: false, y: 6, i: 0, lim: false}
+  - {y: 12, i: 6, lim: false}

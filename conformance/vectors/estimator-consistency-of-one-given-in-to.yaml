@@ -1,0 +1,19 @@
+# 7.9.5, 7.9.6: of a measurement over the gate that is used, the normalised
+# innovation squared, as given and as kept for consistency, is the one
+# worked before the variance grew. p0 and r are 1: the innovation of 4 is
+# over the gate with a spread of 2, which is 8; max_refused is 0, so the
+# variance grows to 2, the spread is 3, and it is used: x is 8/3 and the
+# variance 2/3. The 8 that is kept is over the limit of 6, where 16/3
+# would not be: the port is inconsistent at the next tick.
+rules: [7.9.5, 7.9.6]
+period: 1s
+inputs: {z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: 0, z: z}
+    settings: {model: {type: state_space, A: [[1]], B: [0], C: [1]}, q: {x0: 0}, p0: {x0: 1}, measure: {z: {of: y, r: 1}}, consistency: {over: 1, limit: 6}, gate: 1, max_refused: 0}
+    out: {x0: x, sigma_x0: sigma, nis_z: nis, refused_z: count}
+calls:
+  - {z: 4, x: {u: 2.6666666666666665}, sigma: {u: 0.816496580927726}, nis: 8, count: 0}
+  - {x: {u: 2.6666666666666665}, sigma: {u: 0.816496580927726}, nis: not_ready, count: 0}

@@ -1,0 +1,14 @@
+# 8.6: a gap that passed over no tick stops no timer, whatever the table
+# says of `reset`: the block adds one to gaps and nothing else. The host
+# was away for no time; the timer has run for 2 s by tick 2, which is
+# longer than 1 s.
+rules: [8.6, 7.6.1]
+period: 1s
+inputs: {x: {type: boolean, max_age: none}}
+blocks:
+  - {id: h, type: held_for, in: {x: x}, settings: {time: 1s, on_bad: reset}, out: {y: y, elapsed: elapsed, doubtful: doubtful, gaps: gaps}}
+calls:
+  - {now: 0, x: true, y: false, elapsed: 1, doubtful: 0, gaps: 0}
+  - {now: 1, y: false, elapsed: 2, doubtful: 0, gaps: 0}
+  - {$rebase: 0}
+  - {now: 50, gap: true, skipped: 0, x: true, y: true, elapsed: 3, doubtful: 0, gaps: 1}

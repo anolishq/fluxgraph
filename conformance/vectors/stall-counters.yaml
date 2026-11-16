@@ -1,0 +1,26 @@
+# 8.6, section 7 (Counters): at a stall every block that counts adds the
+# ticks nobody saw to elapsed and to doubtful, as ticks on which its input
+# was not good. since_true follows on_bad: its clock is not set, and it is
+# true once the time has run out. held_for with hold runs on while the
+# ticks passed over are no more than hold_limit, and stops when they are
+# more; with reset it stops. A model adds the steps it did not take.
+# Ticks 0 and 1; a stall of 5 ticks to tick 7; tick 8; a stall of 7 to 16.
+rules: [8.6, 7, 7.5.4, 7.6.1, 7.6.2, 7.6.3, 7.8.6]
+period: 1s
+max_catch_up: 3
+inputs: {x: {max_age: none}, b: {type: boolean, max_age: none}, c: {type: boolean, max_age: none}}
+blocks:
+  - {id: h, type: hysteresis, in: {x: x}, settings: {rise: 10, fall: 5}, out: {elapsed: he, doubtful: hd, gaps: hg}}
+  - {id: l, type: latch, in: {set: b}, out: {elapsed: le, doubtful: ld}}
+  - {id: st, type: since_true, in: {x: b}, settings: {time: 4s, on_bad: assume_false}, out: {y: quiet, elapsed: se, doubtful: sd}}
+  - {id: hf, type: held_for, in: {x: c}, settings: {time: 3s, on_bad: hold, hold_limit: 6s}, out: {y: long, elapsed: fe, doubtful: fd}}
+  - {id: hr, type: held_for, in: {x: c}, settings: {time: 3s, on_bad: reset}, out: {y: again, elapsed: re}}
+  - {id: m, type: state_space, in: {u: x}, settings: {A: [[1]], B: [1], C: [1]}, out: {elapsed: me, doubtful: md, gaps: mg}}
+calls:
+  - {now: 0, x: 12, b: false, c: true, he: 1, hd: 0, hg: 0, le: 1, ld: 0, quiet: false, se: 1, sd: 0, long: false, fe: 1, fd: 0, again: false, re: 1, me: 1, md: 0, mg: 0}
+  - {now: 1, x: 12, b: false, c: true, he: 2, hd: 0, hg: 0, le: 2, ld: 0, quiet: false, se: 2, sd: 0, long: false, fe: 2, fd: 0, again: false, re: 2, me: 2, md: 0, mg: 0}
+  # tick 7, 5 passed over: the held timer has run 7 s, and the other started again
+  - {now: 7, gap: true, skipped: 5, x: 12, b: false, c: true, he: 8, hd: 5, hg: 1, le: 8, ld: 5, quiet: true, se: 8, sd: 5, long: true, fe: 8, fd: 5, again: false, re: 1, me: 8, md: 5, mg: 1}
+  - {now: 8, x: 12, b: false, c: true, he: 9, hd: 5, hg: 1, le: 9, ld: 5, quiet: true, se: 9, sd: 5, long: true, fe: 9, fd: 5, again: false, re: 2, me: 9, md: 5, mg: 1}
+  # tick 16, 7 passed over, more than hold_limit: the held timer stops, and starts again here
+  - {now: 16, gap: true, skipped: 7, x: 12, b: false, c: true, he: 17, hd: 12, hg: 2, le: 17, ld: 12, quiet: true, se: 17, sd: 12, long: false, fe: 1, fd: 0, again: false, re: 1, me: 17, md: 12, mg: 2}

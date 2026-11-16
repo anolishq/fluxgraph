@@ -1,0 +1,17 @@
+# 7.8.8, 7.8.5: a model on a loop is as rule 7.8.5 says at the tick itself:
+# its output reads its input directly, and is uncertain on the tick that
+# input is. y = x + u and x' = u; u = r - d / 2, where d is the last y.
+rules: [7.8.8, 7.8.5, D]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: plant, type: state_space, in: {u: g.y}, settings: {A: [[0]], B: [1], C: [1], D: 1, settle: 2s}, out: {y: y}}
+  - {id: d, type: delay, in: {x: plant.y}, settings: {initial: 0}}
+  - {id: g, type: formula, in: {r: r, d: d.y}, settings: {expr: "r - 0.5 * d"}, out: {y: u}}
+calls:
+  - {r: 1, u: 1, y: 1}
+  - {r: 1, u: 0.5, y: 1.5}
+  - {r: {v: 1, state: uncertain}, u: {u: 0.25}, y: {u: 0.75}}       # tick 2
+  - {r: 1, u: {u: 0.625}, y: {u: 0.875}}
+  - {r: 1, u: {u: 0.5625}, y: {u: 1.1875}}
+  - {r: 1, u: 0.40625, y: 0.96875}

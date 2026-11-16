@@ -1,0 +1,8 @@
+# A.pid: refused: a filter with a kd of zero.
+rules: [A.pid]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 1, filter: 1s}, out: {y: y}}
+expect: compile_error
+error_mentions: [c]

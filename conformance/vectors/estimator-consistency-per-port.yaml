@@ -1,0 +1,20 @@
+# 7.9.6: each port is judged by what it keeps itself. z has 8 and 0, a mean
+# of 4, over the limit of 3.5; w has 0 and 0. Taken together the four
+# would be a mean of 2.
+rules: [7.9.6]
+period: 1s
+inputs: {u: {max_age: none}, z: {max_age: none}, w: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z, w: w}
+    settings:
+      model: {type: state_space, A: [[1]], B: [0], C: [1]}
+      q: {x0: 0}
+      p0: {x0: 1}
+      measure: {z: {of: y, r: 1}, w: {of: y, r: 1}}
+      consistency: {over: 2, limit: 3.5}
+    out: {x0: x}
+calls:
+  - {u: 0, z: 4, w: 2, x: 2}
+  - {z: 2, w: 2, x: {u: 2}}

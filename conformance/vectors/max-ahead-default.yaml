@@ -1,0 +1,9 @@
+# 6.8: max_ahead is one period unless given. Stamped 0.8 s ahead, a write waits.
+rules: [6.8]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+calls:
+  - {now: 0, x: {v: 5, at: 0.8}, y: not_ready, waiting: 1}
+  - {now: 1, y: 5, waiting: 0}

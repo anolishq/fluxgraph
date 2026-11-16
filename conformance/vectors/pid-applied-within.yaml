@@ -1,0 +1,14 @@
+# 7.7.12: an addition is taken back only where applied fell short of y by
+# more than applied_within. Exactly applied_within short, it is kept.
+rules: [7.7.12]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}, ap: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, applied: ap}, settings: {kp: 0, ki: 1, applied_within: 0.5}, out: {integral: i}}
+calls:
+  - {sp: 2, pv: 0, ap: 1.75, i: 2}    # 0.25 short of 2: kept
+  - {ap: 3.5, i: 4}                   # exactly 0.5 short of 4: kept
+  - {ap: 5.25, i: 6}                  # 0.75 short of 6: back to 4
+  - {sp: -2, ap: 2.25, i: 2}          # going down, 0.25 over 2: kept
+  - {ap: 1, i: 0}                     # 1 over 0: back to 2
+  - {ap: 0, i: 0}

@@ -1,0 +1,17 @@
+# 7.9.6: a port keeps the normalised innovation squared of its considered
+# measurements, refused ones among them. The one measurement is refused,
+# with 16 over a spread of 4; over 1 and a limit of 2 make the port
+# inconsistent, and it stays so at the next tick, which has no measurement
+# and no other reason to be uncertain.
+rules: [7.9.6, 7.9.7]
+period: 1s
+inputs: {z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: 0, z: z}
+    settings: {model: {type: state_space, A: [[1]], B: [0], C: [1]}, q: {x0: 0}, p0: {x0: 3}, measure: {z: {of: y, r: 1}}, consistency: {over: 1, limit: 2}, gate: 1.5, max_refused: 3}
+    out: {x0: x, nis_z: nis}
+calls:
+  - {z: 4, x: {u: 0}, nis: 4}
+  - {x: {u: 0}, nis: not_ready}

@@ -1,0 +1,15 @@
+# 7.9.5: a measurement is over the gate when its innovation is more than
+# gate times the square root of the spread. With p0 of 3 and r of 1 the
+# spread is 4 and its root 2: at a gate of 1.5 an innovation of 4 is over
+# 3, and is refused, though it is under 1.5 times the spread itself.
+rules: [7.9.5]
+period: 1s
+inputs: {z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: 0, z: z}
+    settings: {model: {type: state_space, A: [[1]], B: [0], C: [1]}, q: {x0: 0}, p0: {x0: 3}, measure: {z: {of: y, r: 1}}, consistency: none, gate: 1.5, max_refused: 3}
+    out: {x0: x, innovation_z: innovation, nis_z: nis, refused_z: count}
+calls:
+  - {z: 4, x: {u: 0}, innovation: 4, nis: 4, count: 1}

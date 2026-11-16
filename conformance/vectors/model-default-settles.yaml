@@ -1,0 +1,23 @@
+# 7.8.6: the default settle of a named model is three of its slowest time
+# constant, rounded up to whole ticks. The two masses (1 J/K, 1 W/K each,
+# joined by 1 W/K) have rates of 1 and 3 a second: 3 ticks. The first lag
+# has a tau of 1 s: 3 ticks. The second has a tau of 500 ms: 1.5 periods,
+# which is 2 ticks. Each steps on an uncertain input at tick 1. The
+# formulas give 0 with the state of what they read.
+rules: [7.8.6, A.thermal_rc2, A.first_order_process]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: r, type: thermal_rc2, in: {power: u, ambient: 0}, settings: {thermal_mass_a: 1, thermal_mass_b: 1, heat_transfer_a: 1, heat_transfer_b: 1, coupling: 1, initial_a: 0, initial_b: 0}}
+  - {id: f, type: first_order_process, in: {u: u}, settings: {tau: 1s}}
+  - {id: g, type: first_order_process, in: {u: u}, settings: {tau: 500ms}}
+  - {id: sr, type: formula, in: {x: r.temp_b}, settings: {expr: "0 * x"}, out: {y: masses}}
+  - {id: sf, type: formula, in: {x: f.y}, settings: {expr: "0 * x"}, out: {y: slow}}
+  - {id: sg, type: formula, in: {x: g.y}, settings: {expr: "0 * x"}, out: {y: quick}}
+calls:
+  - {u: 1, masses: 0, slow: 0, quick: 0}
+  - {u: {v: 1, state: uncertain}, masses: 0, slow: 0, quick: 0}
+  - {u: 1, masses: {u: 0}, slow: {u: 0}, quick: {u: 0}}
+  - {u: 1, masses: {u: 0}, slow: {u: 0}, quick: {u: 0}}
+  - {u: 1, masses: {u: 0}, slow: {u: 0}, quick: 0}
+  - {u: 1, masses: 0, slow: 0, quick: 0}

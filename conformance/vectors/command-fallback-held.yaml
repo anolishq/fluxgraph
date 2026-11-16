@@ -1,0 +1,14 @@
+# 6.13: what is held is what the host was given, a fallback's value among
+# them, with its state. The command is an uncertain 7 at tick 0. The input
+# is 1 from 1 s, and ticks 1 and 2 are catch-up ticks: the total adds 7,
+# 7 and then 1, and is good at the last, where what it reads is.
+rules: [6.13, 7.10]
+period: 1s
+commands: [cmd]
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x"}, fallback: {y: 7}, out: {y: cmd}}
+  - {id: t, type: integrate, in: {x: f.y}, out: {y: total}}
+calls:
+  - {now: 0, x: bad, cmd: {u: 7}, total: {u: 7}}
+  - {now: 3, ran: 3, first: {x: {v: 1, at: 1}}, cmd: 1, total: 22}

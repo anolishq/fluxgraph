@@ -1,0 +1,18 @@
+# Appendix A: at tick k a delay gives its input at tick k - ticks, state
+# included. Before that tick exists it gives its initial value, good, or
+# not_ready without one.
+rules: [A.delay, 4.4]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: d, type: delay, in: {x: x}, settings: {ticks: 2}, out: {y: d}}
+  - {id: e, type: delay, in: {x: x}, settings: {ticks: 2, initial: 9}, out: {y: e}}
+  - {id: one, type: delay, in: {x: x}, out: {y: one}}
+calls:
+  - {x: 1, d: not_ready, e: 9, one: not_ready}
+  - {x: {v: 2, state: uncertain}, d: not_ready, e: 9, one: 1}
+  - {x: 3, d: 1, e: 1, one: {u: 2}}
+  - {x: bad, d: {u: 2}, e: {u: 2}, one: 3}
+  - {x: 5, d: 3, e: 3, one: bad}
+  - {d: bad, e: bad, one: 5}
+  - {d: 5, e: 5, one: 5}

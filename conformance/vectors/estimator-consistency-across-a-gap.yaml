@@ -1,0 +1,24 @@
+# 7.9.6: a gap does not empty what a port keeps. Over 2, limit 3.5: 8 and
+# 0 are a mean of 4, and the port is inconsistent across a stall and
+# after it, until a third measurement.
+rules: [7.9.6, 8.6]
+period: 1s
+max_catch_up: 1
+inputs: {u: {max_age: none}, z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: u, z: z}
+    settings:
+      model: {type: state_space, A: [[1]], B: [0], C: [1]}
+      q: {x0: 0}
+      p0: {x0: 1}
+      measure: {z: {of: y, r: 1}}
+      consistency: {over: 2, limit: 3.5}
+    out: {x0: x}
+calls:
+  - {now: 0, u: 0, z: 4, x: 2}
+  - {now: 1, z: 2, x: {u: 2}}
+  - {now: 4, gap: true, skipped: 2, x: {u: 2}}
+  - {now: 5, x: {u: 2}}
+  - {now: 6, z: 2, x: 2}

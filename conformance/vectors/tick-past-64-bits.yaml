@@ -1,0 +1,13 @@
+# 6.11: a call that would run a tick whose time does not fit in 64 bits is
+# refused, and changes nothing. Tick 0 is 0.7 s short of the largest time;
+# tick 1 would be 0.3 s past it, and is due from 0.2 s short. The call
+# after the refused one carries an earlier time than it, and is accepted.
+rules: [6.11, 6.2]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}, out: {y: y}}
+calls:
+  - {now: "9223372036.154775807", x: 1, y: 2}
+  - {now: "9223372036.754775807", refused: true}
+  - {now: "9223372036.554775807", ran: 0}

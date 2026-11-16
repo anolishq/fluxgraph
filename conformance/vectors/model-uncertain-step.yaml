@@ -1,0 +1,15 @@
+# 7.8.6: a model, on no loop, that steps on an uncertain value is uncertain
+# for settle, 2 ticks, after. Its input is deferred, so at the tick of the
+# uncertain value itself it is good. x' = 0.5 x + 0.5 u.
+rules: [7.8.6, 7.8.2]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: state_space, in: {u: u}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}, out: {y: y}}
+calls:
+  - {u: 4, y: 0}
+  - {u: 4, y: 2}
+  - {u: {v: 4, state: uncertain}, y: 3}          # tick 2: its doubt
+  - {u: 4, y: {u: 3.5}}
+  - {u: 4, y: {u: 3.75}}
+  - {u: 4, y: 3.875}

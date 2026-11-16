@@ -1,0 +1,10 @@
+# 9.2: only an output can be read as <block id>.<port>, so an input may have the name of a block and
+# one of its input ports. With the name of a block and one of its outputs it is refused
+# (refused-input-named-as-output).
+rules: [9.2]
+period: 1s
+inputs: {x: {max_age: none}, f.x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x, other: f.x}, settings: {expr: "x + other"}, out: {y: y}}
+calls:
+  - {now: 0, x: 1.0, f.x: 2.0, y: 3.0}

@@ -1,0 +1,17 @@
+# 7.4.12: at a catch-up tick `limited` has the input's state. The call at
+# 2 s runs ticks 1 and 2; at tick 1 the input is uncertain, so `limited`
+# is uncertain there, and the total, which counts the ticks on which
+# `limited` is good, does not count it. At tick 2 the reach is that of 2
+# periods.
+rules: [7.4.12, 6.13]
+period: 1s
+commands: [cmd]
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: slew, type: rate_limit, in: {x: x}, settings: {up: 1}, out: {y: cmd}}
+  - {id: sure, type: all_good, in: {l: slew.limited}}
+  - {id: one, type: formula, in: {ok: sure.y}, settings: {expr: "when(ok, 1, 0)"}}
+  - {id: count, type: integrate, in: {x: one.y}, out: {y: n}}
+calls:
+  - {now: 0, x: 0, cmd: 0, n: 1}
+  - {now: 2, ran: 2, first: {x: {v: 5, state: uncertain, at: 1}}, x: 5, cmd: 2, n: 2}

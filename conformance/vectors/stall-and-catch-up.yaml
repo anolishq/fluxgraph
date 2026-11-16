@@ -1,0 +1,14 @@
+# 6.6, 6.9, 8.4: just under max_catch_up the ticks are run, and an input is
+# what stands, judged by its age: here good for 2 s and then bad, so the
+# total misses ticks 3 and 4. Just over it they are passed over, and the
+# total misses all of them. Either way missed and elapsed say so.
+rules: [6.6, 6.9, 8.4, 7.2.4, 7.7.3]
+period: 1s
+max_catch_up: 5
+inputs: {x: {max_age: 2s}}
+blocks:
+  - {id: i, type: integrate, in: {x: x}, out: {y: total, missed: missed, elapsed: elapsed, gaps: gaps}}
+calls:
+  - {now: 0, x: 2, total: 2, missed: 0, elapsed: 1, gaps: 0}
+  - {now: 5, ran: 5, x: 2, total: 8, missed: 2, elapsed: 6, gaps: 0}
+  - {now: 11, gap: true, skipped: 5, tick: 11, x: 2, total: 10, missed: 7, elapsed: 12, gaps: 1}

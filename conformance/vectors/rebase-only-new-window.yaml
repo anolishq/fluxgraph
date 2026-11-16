@@ -1,0 +1,16 @@
+# 8.5: a window that takes only new samples keeps none from before a
+# rebase, whatever length the host gave: the one sample, written again
+# with the time of each rebase's call, is not counted twice. A window that
+# takes every tick's value keeps what it has, less the tick passed over.
+rules: [8.5, 7.3.8]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 4s, min_good: 0.25, only_new: true}, out: {count: count}}
+  - {id: v, type: window, in: {x: x}, settings: {window: 4s, min_good: 0.25}, out: {count: every}}
+calls:
+  - {now: 0, x: 5, count: 1, every: 1}
+  - {$rebase: 0}
+  - {now: 100, gap: true, skipped: 0, x: 5, count: 1, every: 2}
+  - {$rebase: 1.5}
+  - {now: 200, gap: true, skipped: 1, x: 5, count: 1, every: 3}

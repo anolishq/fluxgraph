@@ -1,0 +1,17 @@
+# 7.8.6: a slow rate beside a fast one is not lost. A film of 10^-7 J/K on
+# a body of 10^10 J/K, each losing 0.5 W/K, joined by 0.25 W/K: the fast
+# rate is 7.5 million a second and the slow one about 7 * 10^-11. The
+# model decays, so it has a settle, of far more ticks than this runs:
+# after an uncertain step it is uncertain. (Worked as the sum of half the
+# trace and a root, the slow rate comes out as zero and the model good.)
+rules: [7.8.6, A.thermal_rc2]
+period: 1ms
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: r, type: thermal_rc2, in: {power: u, ambient: 0}, settings: {thermal_mass_a: 1.0e-7, thermal_mass_b: 1.0e+10, heat_transfer_a: 0.5, heat_transfer_b: 0.5, coupling: 0.25, initial_a: 0, initial_b: 0}}
+  - {id: sr, type: formula, in: {x: r.temp_b}, settings: {expr: "0 * x"}, out: {y: state}}
+calls:
+  - {u: 0, state: 0}
+  - {u: {v: 0, state: uncertain}, state: 0}
+  - {u: 0, state: {u: 0}}
+  - {u: 0, state: {u: 0}}

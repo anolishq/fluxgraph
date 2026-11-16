@@ -1,0 +1,18 @@
+# 7.5.4, 7: elapsed counts the ticks since its value last changed, the
+# present one among them, and doubtful those of them on which its input
+# was not good. Both are in seconds: the period here is 500 ms.
+rules: [7.5.4, 7]
+period: 500ms
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: h, type: hysteresis, in: {x: x}, settings: {rise: 10, fall: 5}, out: {y: y, elapsed: elapsed, doubtful: doubtful}}
+calls:
+  - {x: 7, y: not_ready, elapsed: 0.5, doubtful: 0}
+  - {x: bad, y: bad, elapsed: 1, doubtful: 0.5}
+  - {x: 12, y: true, elapsed: 0.5, doubtful: 0}                 # decided: the count starts again
+  - {x: 7, y: true, elapsed: 1, doubtful: 0}
+  - {x: {v: 7, state: uncertain}, y: {u: true}, elapsed: 1.5, doubtful: 0.5}
+  - {x: bad, y: bad, elapsed: 2, doubtful: 1}
+  - {x: 4, y: false, elapsed: 0.5, doubtful: 0}
+  - {x: 7, y: false, elapsed: 1, doubtful: 0}
+  - {x: {v: 12, state: uncertain}, y: {u: true}, elapsed: 0.5, doubtful: 0.5}   # changed on an input that was not good

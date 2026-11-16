@@ -1,0 +1,13 @@
+# 7.3.8, Appendix A: a window that takes only new samples has each at its
+# own time. Samples at 0, 0.5 and 3 s with nothing new at tick 2: the
+# slope is of three points, 21 over 31.
+rules: [7.3.8, A.window]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 4s, only_new: true, min_good: 0.25}, out: {slope: slope, count: n}}
+calls:
+  - {now: 0, x: 0, slope: bad, n: 1}
+  - {now: 1, x: {v: 3, at: 0.5}, slope: 6, n: 2}
+  - {now: 2, slope: 6, n: 2}
+  - {now: 3, x: 3, slope: 0.6774193548387096, n: 3}

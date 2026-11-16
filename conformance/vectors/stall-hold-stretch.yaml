@@ -1,0 +1,15 @@
+# 8.6, 7.6.1: the ticks a stall passed over are part of the unusable
+# stretch that hold_limit, 3 s, is held against. Two are passed over; the
+# input is bad at the tick that runs, the third of the stretch, and at
+# the next, the fourth, when the timer stops.
+rules: [8.6, 7.6.1]
+period: 1s
+max_catch_up: 1
+inputs: {c: {type: boolean, max_age: none}}
+blocks:
+  - {id: hf, type: held_for, in: {x: c}, settings: {time: 1s, on_bad: hold, hold_limit: 3s}, out: {y: long}}
+calls:
+  - {now: 0, c: true, long: false}
+  - {now: 1, c: true, long: false}
+  - {now: 4, gap: true, skipped: 2, c: bad, long: {u: true}}
+  - {now: 5, c: bad, long: bad}

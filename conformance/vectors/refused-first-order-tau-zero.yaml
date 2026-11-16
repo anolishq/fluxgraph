@@ -1,0 +1,8 @@
+# A.first_order_process: refused: a tau of zero.
+rules: [A.first_order_process]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: first_order_process, in: {u: u}, settings: {tau: 0s}}
+expect: compile_error
+error_mentions: [tau]

@@ -1,0 +1,9 @@
+# 3.5: refused: a block's boolean output connected to a number port.
+rules: [3.5]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: h, type: hysteresis, in: {x: x}, settings: {rise: 2, fall: 1}}
+  - {id: w, type: window, in: {x: h.y}, settings: {window: 2s}}
+expect: compile_error
+error_mentions: [w]

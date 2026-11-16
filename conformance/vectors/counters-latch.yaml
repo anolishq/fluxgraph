@@ -1,0 +1,21 @@
+# 7.6.3, 7.11: elapsed counts from the tick the latch was last cleared, and
+# doubtful the ticks of that on which it was not set and `set` was not
+# good. `loose` is set by an uncertain true and is good from the next
+# tick, and cleared by an uncertain reset. `strict` is set only by a good true.
+rules: [7.6.3, 7.11, 7]
+period: 1s
+inputs: {s: {type: boolean, max_age: none}, r: {type: boolean, max_age: none}}
+blocks:
+  - {id: l, type: latch, in: {set: s, reset: r}, out: {y: loose, elapsed: elapsed, doubtful: doubtful}}
+  - {id: ok, type: all_good, in: {s: s}}
+  - {id: g, type: formula, in: {s: s, ok: ok.y}, settings: {expr: "s and ok"}}
+  - {id: m, type: latch, in: {set: g.y}, out: {y: strict}}
+calls:
+  - {s: false, r: false, loose: false, elapsed: 1, doubtful: 0, strict: false}
+  - {s: bad, loose: bad, elapsed: 2, doubtful: 1, strict: false}
+  - {s: {v: true, state: uncertain}, loose: {u: true}, elapsed: 3, doubtful: 2, strict: false}
+  - {s: bad, loose: true, elapsed: 4, doubtful: 2, strict: false}      # set: `set` is not used, nor counted
+  - {s: false, r: {v: true, state: uncertain}, loose: {u: false}, elapsed: 1, doubtful: 0, strict: false}
+  - {s: false, r: false, loose: false, elapsed: 2, doubtful: 0, strict: false}
+  - {s: {v: false, state: uncertain}, loose: {u: false}, elapsed: 3, doubtful: 1, strict: false}
+  - {s: true, loose: true, elapsed: 4, doubtful: 1, strict: true}

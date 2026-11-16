@@ -1,0 +1,16 @@
+# 8.6, 7.8.4: told that 99 ticks were passed over, a model block steps on
+# the last usable value of every input for each of them while they are
+# within ride_through. A thermal mass of 100 J/K losing 1 W/K to an ambient
+# of 20, heated at 10 W from 20: after k steps it is 30 - 10 exp(-k / 100).
+# Tick 0 steps once, the 99 ticks passed over step 99 times on the held
+# power, and tick 100 gives 30 - 10 / e. doubtful counts the 99; the step
+# of tick 0 was on good values.
+rules: [8.6, 7.8.4, 7.8.6]
+period: 1s
+inputs: {p: {max_age: none}}
+blocks:
+  - {id: m, type: thermal_mass, in: {power: p, ambient: 20}, settings: {thermal_mass: 100, heat_transfer: 1, initial: 20, ride_through: 200s}, out: {temp: temp, elapsed: elapsed, doubtful: doubtful, gaps: gaps}}
+calls:
+  - {now: 0, p: 10, temp: 20, elapsed: 1, doubtful: 0, gaps: 0}
+  - {$rebase: 100}
+  - {now: 5000, gap: true, skipped: 99, p: 10, temp: {u: 26.321205588285577}, elapsed: 101, doubtful: 99, gaps: 1}

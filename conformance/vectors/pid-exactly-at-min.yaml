@@ -1,0 +1,16 @@
+# 7.7.9, 7.7.6: an output exactly at min, with its addition made whole, is
+# not limited: limited is true when the output before limiting was below
+# min, or the addition was cut short. The same at max.
+rules: [7.7.9, 7.7.6]
+period: 1s
+inputs: {sp: {max_age: none}}
+blocks:
+  - id: c
+    type: pid
+    in: {setpoint: sp, measurement: 0}
+    settings: {kp: 1, ki: 1, min: -8, max: 8}
+    out: {y: y, integral: integral, limited: limited}
+calls:
+  - {sp: -4, y: -8, integral: -4, limited: false}    # -4 - 4: exactly min
+  - {sp: 4, y: 4, integral: 0, limited: false}
+  - {sp: 4, y: 8, integral: 4, limited: false}       # 4 + 4: exactly max

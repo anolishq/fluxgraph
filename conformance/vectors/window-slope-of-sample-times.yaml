@@ -1,0 +1,14 @@
+# Appendix A, 3.7: a slope is of value against the time of each sample. A
+# 3 stamped 0.5 s after a 0 is a slope of 6. Seen again at the next tick
+# it is the same point twice, and the slope is 6 still. With a 3 at 3 s
+# the points are (0, 0), (0.5, 3) twice and (3, 3): 3 over 5.5.
+rules: [A.window, 3.7, 7.3.6]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 4s, min_good: 0.25}, out: {slope: slope, mean: mean}}
+calls:
+  - {now: 0, x: 0, slope: bad, mean: 0}
+  - {now: 1, x: {v: 3, at: 0.5}, slope: 6, mean: 1.5}
+  - {now: 2, slope: 6, mean: 2}
+  - {now: 3, x: 3, slope: 0.5454545454545454, mean: 2.25}

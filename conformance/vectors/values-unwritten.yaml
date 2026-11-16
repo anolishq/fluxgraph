@@ -1,0 +1,11 @@
+# 3.4, 7.2.2: a signal nobody has written is not_ready, not zero. With no
+# maximum age it stays so.
+rules: [3.4, 7.2.1]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}, out: {y: y}}
+calls:
+  - {y: not_ready}
+  - {y: not_ready}
+  - {x: 2, y: 3}

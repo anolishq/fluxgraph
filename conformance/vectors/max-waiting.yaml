@@ -1,0 +1,14 @@
+# 6.8: no more than max_waiting writes wait on an input. When one more is
+# written the one with the earliest time is thrown away.
+rules: [6.8, 6.10]
+period: 1s
+max_waiting: 2
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+calls:
+  - {now: 0, x: 1, y: 1}
+  - {$write: [x, good, 20.0, 0.6]}
+  - {$write: [x, good, 10.0, 0.5]}
+  - {$write: [x, good, 30.0, 0.7]}
+  - {now: 1, y: 30, thrown: 1, waiting: 0}

@@ -1,0 +1,8 @@
+# Appendix A: refused: an input named for a function.
+rules: [A.formula]
+period: 1s
+inputs: {min: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {min: min}, settings: {expr: "min + 1"}}
+expect: compile_error
+error_mentions: [f]

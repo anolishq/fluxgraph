@@ -1,0 +1,27 @@
+# 7.4.7, 7.4.8, rule D: a doubt is counted from when a block took the
+# doubtful value in. x is uncertain at tick 0 and the delay gives that at
+# tick 2. The first low-pass is uncertain at tick 2 and for settle, 5
+# ticks, after. The second takes an uncertain value on each of ticks 2 to
+# 7, and is uncertain until 5 ticks after the last. a = 0.5.
+rules: [7.4.7, 7.4.8, D, A.delay]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: d, type: delay, in: {x: x}, settings: {ticks: 2, initial: 0}}
+  - {id: f, type: lowpass, in: {x: d.y}, settings: {tau: 1.4426950408889634s, settle: 5s}, out: {y: y}}
+  - {id: g, type: lowpass, in: {x: f.y}, settings: {tau: 1.4426950408889634s, settle: 5s}, out: {y: z}}
+calls:
+  - {x: {v: 8, state: uncertain}, y: 0, z: 0}
+  - {x: 8, y: 0, z: 0}
+  - {x: 8, y: {u: 4}, z: {u: 2}}
+  - {x: 8, y: {u: 6}, z: {u: 4}}
+  - {x: 8, y: {u: 7}, z: {u: 5.5}}
+  - {x: 8, y: {u: 7.5}, z: {u: 6.5}}
+  - {x: 8, y: {u: 7.75}, z: {u: 7.125}}
+  - {x: 8, y: {u: 7.875}, z: {u: 7.5}}                # tick 7: the fifth after the first's doubt
+  - {x: 8, y: 7.9375, z: {u: 7.71875}}
+  - {x: 8, y: 7.96875, z: {u: 7.84375}}
+  - {x: 8, y: 7.984375, z: {u: 7.9140625}}
+  - {x: 8, y: 7.9921875, z: {u: 7.953125}}
+  - {x: 8, y: 7.99609375, z: {u: 7.974609375}}        # tick 12: the fifth after the second's last doubt, at 7
+  - {x: 8, y: 7.998046875, z: 7.986328125}

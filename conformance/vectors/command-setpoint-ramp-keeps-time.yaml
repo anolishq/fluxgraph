@@ -1,0 +1,14 @@
+# 6.13: a rate limit that feeds a command only through a PID does not act
+# by the call. It ramps the PID's setpoint at 1 a second and moves at
+# every tick: after a call of five ticks it is at 6, where three periods'
+# reach would leave it at 4.
+rules: [6.13]
+period: 1s
+commands: [y]
+inputs: {x: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: ramp, type: rate_limit, in: {x: x}, settings: {up: 1, initial: 0}, out: {y: sp}}
+  - {id: c, type: pid, in: {setpoint: ramp.y, measurement: pv}, settings: {kp: 1}, out: {y: y}}
+calls:
+  - {x: 100, pv: 0, sp: 1, y: 1}
+  - {now: 5, ran: 5, sp: 6, y: 6}

@@ -1,0 +1,42 @@
+# 7.9.7: `sigma_max` is of the sigma given at the tick, carried on from
+# where the state stands. The model is x' = u with q of 1 a second. After
+# tick 0 the variance that stands is 1/2, a sigma of 0.707; given at tick 1
+# it is 3/2, a sigma of 1.22, and that is over a `sigma_max` of 1.
+rules: [7.9.7, 7.9.8]
+period: 1s
+inputs:
+  u: {max_age: none}
+  z: {max_age: none}
+blocks:
+- id: k
+  type: estimator
+  in: {u: u, z: z}
+  settings:
+    model:
+      type: linear
+      A:
+      - [0]
+      B:
+      - [1]
+      C:
+      - [1]
+    q: {x0: 1}
+    p0: {x0: 1}
+    measure:
+      z: {of: y, r: 1}
+    consistency: none
+    sigma_max: {x0: 1}
+  out: {x0: x, sigma_x0: sigma, innovation_z: innovation, late_z: late}
+calls:
+- {now: 0, u: 0, z: 0, x: 0.0, sigma: 0.7071067811865476, innovation: 0.0, late: 0.0}
+- now: 1
+  x: {u: 0.0}
+  sigma: {u: 1.224744871391589}
+  innovation: not_ready
+  late: 0.0
+- now: 2
+  z: {v: 0, at: 2}
+  x: 0.0
+  sigma: 0.8451542547285166
+  innovation: 0.0
+  late: 0.0

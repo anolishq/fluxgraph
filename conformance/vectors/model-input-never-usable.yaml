@@ -1,0 +1,15 @@
+# 7.8.4: with an input unusable a model steps on that input's last usable
+# value. An input that has never been usable has none, so the model does
+# not step, whatever its ride_through, and not on zero. x' = 0.5 x + u
+# from 4: it stays at 4 until u is first written, and doubtful counts the
+# steps not taken.
+rules: [7.8.4, 7.8.6]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: state_space, in: {u: u}, settings: {A: [[0.5]], B: [1], C: [1], initial: [4], ride_through: 5s}, out: {y: y, doubtful: doubtful}}
+calls:
+  - {y: 4, doubtful: 0}
+  - {y: 4, doubtful: 1}
+  - {u: 1, y: 4, doubtful: 2}
+  - {y: 3, doubtful: 2}          # 0.5 * 4 + 1

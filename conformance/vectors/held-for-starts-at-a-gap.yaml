@@ -1,0 +1,13 @@
+# 8.6, 7.6.1: a timer that starts on the tick a gap runs counts from that
+# tick, and its gaps is one. Before it started every count was zero, the
+# gap's too.
+rules: [8.6, 7.6.1]
+period: 1s
+max_catch_up: 1
+inputs: {x: {type: boolean, max_age: none}}
+blocks:
+  - {id: h, type: held_for, in: {x: x}, settings: {time: 2s, on_bad: reset}, out: {y: y, elapsed: elapsed, doubtful: doubtful, gaps: gaps}}
+calls:
+  - {now: 0, x: false, y: false, elapsed: 0, doubtful: 0, gaps: 0}
+  - {now: 3, gap: true, skipped: 2, x: true, y: false, elapsed: 1, doubtful: 0, gaps: 1}
+  - {now: 4, y: false, elapsed: 2, doubtful: 0, gaps: 1}

@@ -1,0 +1,14 @@
+# Appendix A: left unnamed, one input is u, one output is y and the states
+# are x0, x1. A pure integrator of its input into x0, and of x0 into x1,
+# read as their sum: from rest with u at 2, x0 = 2t and x1 = t^2. Nothing
+# of it decays, and it has no settle.
+rules: [7.8.7, 7.8.6, A.linear]
+period: 1s
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: linear, in: {u: u}, settings: {A: [[0, 0], [1, 0]], B: [[1], [0]], C: [[1, 1]]}, out: {y: y}}
+calls:
+  - {u: 2, y: 0}
+  - {u: 2, y: 3}
+  - {u: {v: 2, state: uncertain}, y: 8}
+  - {u: 2, y: 15}

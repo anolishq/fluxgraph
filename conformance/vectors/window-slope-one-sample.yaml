@@ -1,0 +1,10 @@
+# 7.3.6: a slope needs two usable samples. With one it is bad, while the
+# other statistics report.
+rules: [7.3.6]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 4s, min_good: 0.25}, out: {mean: mean, slope: slope}}
+calls:
+  - {x: 5, mean: 5, slope: bad}
+  - {x: 7, mean: 6, slope: 2}

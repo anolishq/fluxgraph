@@ -1,0 +1,8 @@
+# Appendix A: refused: a delay of more than 2,147,483,647 ticks.
+rules: [A.delay]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: d, type: delay, in: {x: x}, settings: {ticks: 2147483648}}
+expect: compile_error
+error_mentions: [d]

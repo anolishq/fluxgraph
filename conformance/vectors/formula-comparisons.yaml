@@ -1,0 +1,15 @@
+# Appendix A: the six comparisons.
+rules: [A.formula]
+period: 1s
+inputs: {x: {max_age: none}, y: {max_age: none}}
+blocks:
+  - {id: lt, type: formula, in: {x: x, y: y}, settings: {expr: "x < y"}, out: {y: lt}}
+  - {id: le, type: formula, in: {x: x, y: y}, settings: {expr: "x <= y"}, out: {y: le}}
+  - {id: gt, type: formula, in: {x: x, y: y}, settings: {expr: "x > y"}, out: {y: gt}}
+  - {id: ge, type: formula, in: {x: x, y: y}, settings: {expr: "x >= y"}, out: {y: ge}}
+  - {id: eq, type: formula, in: {x: x, y: y}, settings: {expr: "x == y"}, out: {y: eq}}
+  - {id: ne, type: formula, in: {x: x, y: y}, settings: {expr: "x != y"}, out: {y: ne}}
+calls:
+  - {x: 1, y: 2, lt: true, le: true, gt: false, ge: false, eq: false, ne: true}
+  - {x: 2, y: 2, lt: false, le: true, gt: false, ge: true, eq: true, ne: false}
+  - {x: 3, y: 2, lt: false, le: false, gt: true, ge: true, eq: false, ne: true}

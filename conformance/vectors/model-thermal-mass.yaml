@@ -1,0 +1,14 @@
+# 7.8.1, 7.8.7, Appendix A: the value at a tick is the state at that tick,
+# and tick 0 gives the initial state. tau is 2 s, so over one period of
+# 1 s the temperature moves 1 - e^-0.5 of the way to where it is going:
+# to the ambient, and from tick 2 to the ambient plus power / heat_transfer.
+rules: [7.8.1, 7.8.2, 7.8.3, 7.8.7, A.thermal_mass]
+period: 1s
+inputs: {p: {max_age: none}, amb: {max_age: none}}
+blocks:
+  - {id: m, type: thermal_mass, in: {power: p, ambient: amb}, settings: {thermal_mass: 2, heat_transfer: 1, initial: 16}, out: {temp: temp}}
+calls:
+  - {p: 0, amb: 0, temp: 16}
+  - {temp: 9.704490555402135}
+  - {p: 2, temp: 5.886071058743077}          # the state at tick 2; the power acts from here
+  - {temp: 4.35702124294961}               # 2 + (what it was - 2) * e^-0.5

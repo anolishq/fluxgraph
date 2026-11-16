@@ -1,0 +1,10 @@
+# 7.8.7: the bound is on the row's sum times the period. A row that sums to
+# 150,000 a second is within it at a period of 500 ms.
+rules: [7.8.7, A.linear]
+period: 500ms
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: linear, in: {u: u}, settings: {A: [[-150000]], B: [[150000]], C: [[1]]}, out: {y: y}}
+calls:
+  - {u: 3, y: 0}
+  - {u: 3, y: 3}

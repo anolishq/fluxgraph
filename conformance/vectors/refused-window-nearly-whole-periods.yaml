@@ -1,0 +1,8 @@
+# 6.3: refused: a length a hair off a whole number of periods.
+rules: [6.3]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: w, type: window, in: {x: x}, settings: {window: 3000.000001ms}}
+expect: compile_error
+error_mentions: [window]

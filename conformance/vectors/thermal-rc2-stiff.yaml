@@ -1,0 +1,13 @@
+# 7.8.7: a model near the bound on how fast it may be for its period. Two
+# masses of 1 J/K losing 1 W/K each, joined by 20,000 W/K: the largest row
+# of A sums to 40,001 a second, and the period is 1 s. Their difference
+# settles at once, at 10/40001; their sum rises as 10 (1 - e^-t).
+rules: [7.8.7, A.thermal_rc2]
+period: 1s
+inputs: {p: {max_age: none}, a: {max_age: none}}
+blocks:
+  - {id: m, type: thermal_rc2, in: {power: p, ambient: a}, settings: {thermal_mass_a: 1, thermal_mass_b: 1, heat_transfer_a: 1, heat_transfer_b: 1, coupling: 20000, initial_a: 0, initial_b: 0}, out: {temp_a: ta, temp_b: tb}}
+calls:
+  - {p: 10, a: 0, ta: 0, tb: 0}
+  - {p: 10, a: 0, ta: 3.1607277910178664, tb: 3.1604777972677103}
+  - {p: 10, a: 0, ta: 4.323448580692014, tb: 4.323198586941858}

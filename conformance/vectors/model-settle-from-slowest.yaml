@@ -1,0 +1,20 @@
+# 7.8.6: a named model's settle is three of its slowest time constant. The
+# spring's rates are -1 and -2 a second, so the slowest is 1 s and settle
+# is 3 ticks at a period of 1 s; the motor's are the same. Each is given
+# an uncertain input at tick 1, and is uncertain at ticks 2 to 4. The
+# formulas give 0 with the state of what they read.
+rules: [7.8.6, A.mass_spring_damper, A.dc_motor]
+period: 1s
+inputs: {f: {max_age: none}}
+blocks:
+  - {id: m, type: mass_spring_damper, in: {force: f}, settings: {mass: 1, damping: 3, stiffness: 2}}
+  - {id: d, type: dc_motor, in: {voltage: f, load_torque: 0}, settings: {resistance: 3, inductance: 1, back_emf: 2, torque_constant: 1, inertia: 1, friction: 0}}
+  - {id: sm, type: formula, in: {x: m.position}, settings: {expr: "0 * x"}, out: {y: spring}}
+  - {id: sd, type: formula, in: {x: d.speed}, settings: {expr: "0 * x"}, out: {y: motor}}
+calls:
+  - {f: 2, spring: 0, motor: 0}
+  - {f: {v: 2, state: uncertain}, spring: 0, motor: 0}
+  - {f: 2, spring: {u: 0}, motor: {u: 0}}
+  - {f: 2, spring: {u: 0}, motor: {u: 0}}
+  - {f: 2, spring: {u: 0}, motor: {u: 0}}
+  - {f: 2, spring: 0, motor: 0}

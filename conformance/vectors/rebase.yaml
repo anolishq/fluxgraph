@@ -1,0 +1,18 @@
+# 8.3, 8.5: after the host says its clock has stepped, the next call is a
+# gap at any time, earlier ones too. Nothing stands on any input, and for
+# an input never written the graph has run since that tick.
+rules: [8.3, 8.5, 6.10, 7.2.1]
+period: 1s
+inputs: {x: {max_age: none}, never: {max_age: 2s}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 0"}, out: {y: y}}
+  - {id: g, type: formula, in: {n: never}, settings: {expr: "n + 0"}, out: {y: v}}
+calls:
+  - {now: 100, x: 2, y: 2, v: not_ready}
+  - {now: 101, y: 2, v: not_ready}
+  - {now: 102, y: 2, v: not_ready}
+  - {now: 103, y: 2, v: bad}
+  - {$rebase: true}
+  - {now: 7.3, gap: true, tick: 4, time: 7.3, y: not_ready, v: not_ready}
+  - {now: 8.3, x: 5, tick: 5, time: 8.3, y: 5, v: not_ready}
+  - {now: 10.3, ran: 2, y: 5, v: bad}

@@ -1,0 +1,16 @@
+# 8.6, 7.8.6: at a gap that passed over ticks, the tick before the one that
+# runs is a model block's doubt: with settle it is uncertain from the tick
+# that runs, for settle. x' = 0.5 x + u from 4, with no ride_through and a
+# settle of 2 s. Tick 0 steps to 3; ticks 1 and 2 are passed over and take
+# no step; tick 2 is the doubt, and ticks 3 and 4 are uncertain.
+rules: [8.6, 7.8.6]
+period: 1s
+max_catch_up: 1
+inputs: {u: {max_age: none}}
+blocks:
+  - {id: m, type: state_space, in: {u: u}, settings: {A: [[0.5]], B: [1], C: [1], initial: [4], settle: 2s}, out: {y: y, doubtful: doubtful, gaps: gaps}}
+calls:
+  - {now: 0, u: 1, y: 4, doubtful: 0, gaps: 0}
+  - {now: 3, gap: true, skipped: 2, y: {u: 3}, doubtful: 2, gaps: 1}
+  - {now: 4, y: {u: 2.5}, doubtful: 2, gaps: 1}
+  - {now: 5, y: 2.25, doubtful: 2, gaps: 1}

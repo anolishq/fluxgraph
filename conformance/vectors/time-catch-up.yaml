@@ -1,0 +1,15 @@
+# 6.6, 6.8: a call runs every tick that is due. A write stamped at the
+# call's time is seen by the last of them. The ticks before see what stood,
+# a period older each time, until its maximum age ends it.
+rules: [6.6, 6.8, 6.10, 7.2.4]
+period: 1s
+inputs: {x: {max_age: 2s}}
+blocks:
+  - {id: i, type: integrate, in: {x: x}, out: {y: total, missed: missed}}
+calls:
+  - {now: 0, x: 2, total: 2, missed: 0}
+  - {now: 1, x: 2, total: 4, missed: 0}
+  # ticks 2 and 3 add the 2 sampled at 1 s; at tick 4 it is 3 s old; tick 5 takes the 10
+  - {now: 5, ran: 4, x: 10, total: 18, missed: 1}
+  - {now: 5.2, ran: 0}
+  - {now: 6, total: 28, missed: 1}

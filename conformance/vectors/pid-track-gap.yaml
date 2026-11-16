@@ -1,0 +1,13 @@
+# 7.7.14, 8.6: a gap that passed over a tick starts the derivative again,
+# and the PID waits to track. One that passed over none does neither.
+rules: [7.7.14, 8.6]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}, tr: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv, track: tr}, settings: {kp: 1, ki: 1}, out: {y: y, integral: i}}
+calls:
+  - {now: 0, sp: 10, pv: 4, tr: 20, y: 26, i: 20}
+  - {$rebase: 5}
+  - {now: 100, gap: true, skipped: 4, tick: 5, sp: 10, pv: 4, tr: 3, y: 9, i: 3}      # 3 less 6, and 6 added
+  - {$rebase: 0}
+  - {now: 200, gap: true, skipped: 0, tick: 6, sp: 10, pv: 4, tr: 50, y: 15, i: 9}    # not waiting

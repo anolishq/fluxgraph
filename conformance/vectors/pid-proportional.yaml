@@ -1,0 +1,15 @@
+# 7.7.5, 7.7.8, 7.7.9: the error is the setpoint less the measurement. y
+# takes the worse state of the two; with either unusable it has no value,
+# limited has none, and the integral is good.
+rules: [7.7.5, 7.7.8, 7.7.9]
+period: 1s
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 2}, out: {y: y, integral: i, limited: lim}}
+calls:
+  - {sp: 10, pv: 4, y: 12, i: 0, lim: false}
+  - {sp: {state: uncertain, v: 10}, pv: 5, y: {u: 10}, i: {u: 0}, lim: {u: false}}
+  - {sp: 10, pv: {state: uncertain, v: 11}, y: {u: -2}, i: {u: 0}, lim: {u: false}}
+  - {pv: bad, y: bad, i: 0, lim: bad}
+  - {sp: {state: uncertain, v: 10}, pv: not_ready, y: not_ready, i: 0, lim: not_ready}
+  - {sp: not_ready, pv: bad, y: bad, i: 0, lim: bad}

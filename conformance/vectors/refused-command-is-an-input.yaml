@@ -1,0 +1,9 @@
+# 9.8: the name of an input is not a command.
+rules: [9.8]
+period: 1s
+commands: [sp]
+inputs: {sp: {max_age: none}, pv: {max_age: none}}
+blocks:
+  - {id: c, type: pid, in: {setpoint: sp, measurement: pv}, settings: {kp: 1}, out: {y: y}}
+expect: compile_error
+error_mentions: ["sp"]

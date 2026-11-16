@@ -1,0 +1,12 @@
+# 7.8.8: refused: the second plant takes the first's output directly, and
+# the first takes the second's through a formula alone. A controller written
+# as a formula is not told from a coupling.
+rules: [7.8.8]
+period: 1s
+inputs: {r: {max_age: none}}
+blocks:
+  - {id: e, type: formula, in: {r: r, y: second.y}, settings: {expr: "r - y"}}
+  - {id: first, type: state_space, in: {u: e.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}}
+  - {id: second, type: state_space, in: {u: first.y}, settings: {A: [[0.5]], B: [0.5], C: [1], settle: 2s}}
+expect: compile_error
+error_mentions: [first, second, one]

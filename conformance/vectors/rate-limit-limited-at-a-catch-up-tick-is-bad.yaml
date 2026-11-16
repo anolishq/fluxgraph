@@ -1,0 +1,13 @@
+# 7.4.12: at a catch-up tick `limited` has the input's state: bad where the
+# input is bad. The delay gives at tick 2 what `limited` was at tick 1, a
+# catch-up tick at which the input was bad.
+rules: [7.4.12, 6.13]
+period: 1s
+commands: [cmd]
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: slew, type: rate_limit, in: {x: x}, settings: {up: 1}, out: {y: cmd}}
+  - {id: d, type: delay, in: {x: slew.limited}, out: {y: was}}
+calls:
+  - {now: 0, x: 0, cmd: 0, was: not_ready}
+  - {now: 2, ran: 2, first: {x: {v: bad, at: 1}}, x: 5, cmd: 2, was: bad}

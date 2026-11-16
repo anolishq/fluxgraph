@@ -1,0 +1,8 @@
+# 9.2: refused: an output published under a name that is empty.
+rules: [9.2]
+period: 1s
+inputs: {x: {max_age: none}}
+blocks:
+  - {id: f, type: formula, in: {x: x}, settings: {expr: "x + 1"}, out: {y: ""}}
+expect: compile_error
+error_mentions: [f]
