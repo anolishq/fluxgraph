@@ -1,13 +1,16 @@
 # Conformance for the version 2 semantics (proposal)
 
-Tests of [the version 2 proposal](../docs/semantics_spec_v2.md), third
-revision as amended, not of the library. Nothing here is built or run by
-the library's presets.
+Tests of [the version 2 proposal](../docs/semantics_spec_v2.md), fourth
+revision, not of the library. Nothing here is built or run by the
+library's presets.
 
-The third revision did not pass review, and is being amended a section at
-a time. Everything here follows the text as amended so far. The rules still
-to be amended are tested as they stand, wrong or not: a vector says what
-the text says, not what it should say.
+The third revision did not pass review, and was amended thirteen times, a
+section at a time; the fourth is the third with those amendments worked
+into its text ([its history](../docs/semantics_v2_history.md)). The
+sections below follow that order, an amendment each. Everything here
+follows the text as it now is. What the proposal lists as known to be
+wrong is tested as it stands: a vector says what the text says, not what
+it should say.
 
 | Path | What it is |
 | --- | --- |
@@ -22,8 +25,8 @@ the text says, not what it should say.
 | `est_timing.py` | Measures an estimator with its model exactly right under a host off the period and under old samples. It draws noise, and is no check. |
 
 ```bash
-python3 conformance/run.py                 # 533 vectors: ALL AGREE
-python3 conformance/run.py --second        # 533 vectors: ALL AGREE
+python3 conformance/run.py                 # 534 vectors: ALL AGREE
+python3 conformance/run.py --second        # 534 vectors: ALL AGREE
 python3 conformance/mutate.py              # 782 breakages: 782 noticed; every vector failed by one
 python3 conformance/compare.py             # 2637511 comparisons, 0 differences
 python3 conformance/steps.py               # 750 checks: ALL HOLD; the worst error of the step is 1.81e-13
@@ -836,6 +839,23 @@ breakage of the reference written here for the same reason is not in
 the sweep: what a model input had before the place the state stands at
 is forgotten, and nothing that is given depends on that.
 
+## The fourth revision
+
+The amendments were worked into the proposal's text with no rule meant
+to change. Nothing here can check that: no implementation reads the
+text again by itself. Each rule was compared, old against new, by a
+reader who had seen neither written, and the second reading and the C++
+were each read again against the new text. One slip of the rewriting was
+found, by all three: a total given no `max_missed` read as `uncertain`
+after a gap of no known length.
+
+Read whole, the text was found to contradict itself in three places
+where all three implementations agreed, and it now says what they do:
+an estimator at a rebase of known length, a PID's integral cut short at
+a limit, and a saved doubt, which the text said can never show. It
+shows after a restore and then a rebase that passes over no tick, and
+`restore-then-rebase-of-no-ticks-shows-a-saved-doubt` is new for it.
+
 ## The C++ core
 
 Nine slices of a version 2 core in C++ are in `include/fluxgraph/v2/` and
@@ -857,7 +877,7 @@ against it as they do against the readings:
 cmake -S . -B build/v2 -G Ninja -DFLUXGRAPH_BUILD_V2=ON -DFLUXGRAPH_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
 cmake --build build/v2 --target fluxgraph_v2_driver
 export FLUXGRAPH_V2_DRIVER=$PWD/build/v2/tools/fluxgraph_v2_driver/fluxgraph_v2_driver
-python3 conformance/run.py --cpp        # 533 vectors: 533 agree, 0 skipped (block types not built)
+python3 conformance/run.py --cpp        # 534 vectors: 534 agree, 0 skipped (block types not built)
 python3 conformance/compare.py --cpp    # 260 graphs run, 0 skipped; 2637511 comparisons, 0 differences
 python3 conformance/contract.py --cpp   # 748648 sequences: ALL HOLD
 python3 conformance/cpp/edges.py        # 72545 checks: ALL HOLD
