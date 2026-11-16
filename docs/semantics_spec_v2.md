@@ -1,6 +1,6 @@
 # FluxGraph semantics, version 2 (proposal)
 
-**Status:** proposal, third revision, with twelve amendments. Not in force.
+**Status:** proposal, third revision, with thirteen amendments. Not in force.
 [semantics_spec.md](semantics_spec.md) stays the normative contract for
 FluxGraph 1.x until this is accepted, at which point this document replaces
 it and the library becomes 2.0.
@@ -179,6 +179,25 @@ time. **Amendments so far:**
     `follow`. While it is true the block gives `track`, where the
     actuator is, and when it is false again starts from there.
 
+13. *An estimator between samples* (section 7.9, the table of section 8
+    and Appendix A). An estimator stepped a whole period at a time, on
+    model inputs held from one tick to the next, and set each measurement
+    against its state at the tick, whatever time the sample carried. With
+    a model that was exactly right, a host 3% off the period had it call
+    itself `uncertain` on 128 to 190 ticks of 2,400, over three runs of
+    each, where 4 to 13 were due to chance, and samples 3 s old put its
+    estimate of a state it did not measure ten times further out. Its
+    state now stands where the last measurement was. Each measurement is
+    met by a prediction to its own sample time, on each model input from
+    the place its value is from, and what the estimator gives at a tick
+    is carried on from there. The steps between are of sixteenths of a
+    period, worked out when the graph is compiled as the period's is. On
+    the same runs it is `uncertain` on 8 to 68 ticks, and with a `lag` of
+    4 s the samples 3 s old leave its estimate as near as fresh ones do.
+    The error of that estimate on a host off the period was not the
+    fault and has not changed. A sample that arrives older than the
+    state is passed by, counted, and makes its tick `uncertain`.
+
 **Known to be wrong as it stands**, and not yet amended:
 
 - **A derivative of a low-pass's output is over ticks** (rule 7.4.5). A
@@ -186,12 +205,6 @@ time. **Amendments so far:**
   host's calls did, and the PID's derivative of it is off as amendment 10
   found the derivative of the samples to be. The PID's own `filter` is
   over sample times, and is the filter to use.
-- **An estimator whose model is exactly right flags itself under
-  ordinary timing** (section 7.9). It steps over whole periods on inputs
-  held from one tick to the next, and compares a measurement with its
-  state at the tick whatever time the sample carries. A host a few
-  percent off the period, or an input that changes between ticks, is
-  enough for it to refuse measurements and say `uncertain`.
 - **A value does not say why it is `uncertain` or `bad`.** Room is kept
   for it (rule 3.8), and no block fills it.
 - **An input written true for one call can be missed** by a host whose
@@ -1414,38 +1427,83 @@ each measurement reads one output of the model.
 1. It starts from the model's initial state, with the variance its `p0`
    gives each state and no covariance between states, and gives outputs
    from tick 0.
-2. **Predict.** Its model inputs are deferred. On every tick after tick 0
-   it steps the model one period, from the tick before to this one, on
-   the model inputs **as they were at the tick before**, as a model
-   block's step is (rule 7.8.1): for each, its value then, or if it was
-   unusable then, the last usable value it had had. The covariance goes
-   with it: `P = Ad·P·Adᵀ + N`. `N` is what process noise has added by the
-   end of the step. For a model in continuous time it is the integral of
-   `exp(A·s)·Q·exp(Aᵀ·s)` for `s` from zero to the period, where `Q` has
+2. **Places, and what is carried between them.** A time has a **place**: a
+   whole number of sixteenths of a period, counted from tick 0, so that
+   tick `k` is at `16·k`. The place of a sample seen at a tick is the
+   tick's place less the time from the sample to the tick, in sixteenths
+   of a period, to the nearest whole number; exactly a half goes to the
+   later place. A value with no sample time has the place of the tick it
+   is seen at. The last tick of a call may see a sample taken after its
+   own time (rule 6.8), and that sample's place is after the tick's. For a model in discrete time (`state_space`) a place is a
+   tick: the time from the sample to the tick is taken to the nearest
+   whole period, a half going to the later tick.
+
+   The estimator has the model's step, and what process noise adds over
+   it, `N`, for a whole period, and for a model in continuous time for 8,
+   4, 2 and 1 sixteenths of one. Each is worked out when the graph is
+   compiled, exactly, on the terms of rule 7.8.7. For a model in
+   continuous time `N` over a length of time is the integral of
+   `exp(A·s)·Q·exp(Aᵀ·s)` for `s` from zero to that length, where `Q` has
    each state's `q` on its diagonal and nothing off it: `q` is a variance
-   per second, and `N` is exact as `Ad` is, on the same terms (rule
-   7.8.7). For `state_space` it is `q` times the period on each state's
-   own variance. If some model input had never been usable by then, it
-   does not step the state on this tick: the state stays and the
-   covariance is `P + N`.
-3. **Correct.** Then, on every tick, tick 0 among them, where there is
-   nothing to predict, for each measurement in the order they
-   are declared: it is **considered** if its sample time is later than
-   the sample time last considered on that port, and it is either `good`,
-   or `uncertain` on a port that gives `r_uncertain`. A measurement with no
-   sample time is never considered. One that is not considered is not the
-   one last considered: an `uncertain` sample passed by on a port with no
-   `r_uncertain`, and written again as `good` with the same time, is
-   considered then. Its variance is the port's `r` if it
-   is `good` and `r_uncertain` if it is `uncertain`. **A measurement
-   carries the time of a sample**: its port is connected to an input, or
-   to a delay or a formula that takes its sample time, through any number
-   of those, from an input (rule 3.7). One connected to any other block,
-   or to a constant, is refused when the graph is compiled: such a block
-   gives its output the time of the tick, and every tick would count as a
-   new sample. Only the path the time comes by is followed. A formula's
-   `sample_of` is its author's word that its value is as new as that
-   input, whatever else the formula reads.
+   per second. For `state_space` it is `q` times the period on each
+   state's own variance.
+
+   The state and its covariance **stand at** a place: at the start, tick
+   0's. They are **carried** from the place they stand at to a later one
+   a stretch at a time, a stretch ending wherever a model input has a
+   value from (below). Over a stretch of `n` sixteenths they take as many
+   whole-period steps as go into `n`, and then steps of 8, 4, 2 and 1
+   sixteenths, each at most once and in that order, as many as make up
+   the rest; each step is `x = Ad·x + Bd·u` and `P = Ad·P·Adᵀ + N`, with
+   `u` the model inputs in force over the stretch. Where some model input
+   has no value over a stretch, never having been usable, the state is
+   not stepped over it: it stays, and the covariance is `P + N` for each
+   step. What is specified is the result and not that whole periods are
+   stepped one by one.
+
+   **Model inputs** are deferred. Each has the values it was given, each
+   from a place. At a tick's second phase a model input that is usable,
+   and whose value is not the one it last had, has that value from the
+   latest of three places: its sample's, the place the state stands at,
+   and the place its last value is from. The value in force over a
+   stretch is the last one from the stretch's first place or an earlier
+   one. A model input that is not usable gives nothing, and what it last
+   had stays in force. What was in force before the place the state
+   stands at is not kept.
+
+   **Lag.** `lag` is a whole number of periods, 2 unless given, and may
+   be zero. At each tick, before any measurement, a state that stands
+   more than `lag`
+   behind the tick is carried to `lag` behind it: so it never stands
+   further back than that, and a measurement older than that is late
+   (rule 3).
+3. **Correct.** Then, on every tick, tick 0 among them: a measurement is
+   **due** if its sample time is later than the sample time last
+   considered or passed by on that port, and it is either `good`, or
+   `uncertain` on a port that gives `r_uncertain`. A measurement with no
+   sample time is never due. One that is not due is not the one last
+   considered: an `uncertain` sample left alone on a port with no
+   `r_uncertain`, and written again as `good` with the same time, is due
+   then. The measurements due at a tick are taken in the order of their
+   places, and those of one place in the order they are declared.
+
+   One whose place is before the place the state stands at is **late**.
+   It is **passed by**: counted, and not considered. But the first
+   measurement due after the start, a reset or a rebase, on any port, is
+   not late: if its place is before the state's, it is considered where
+   the state stands, and its tick is `uncertain` for it (rule 7). Every other one due is **considered**: the state is
+   carried to its place and stands there, and rule 4 follows. Its
+   variance is the port's `r` if it is `good` and `r_uncertain` if it is
+   `uncertain`.
+
+   **A measurement carries the time of a sample**: its port is connected
+   to an input, or to a delay or a formula that takes its sample time,
+   through any number of those, from an input (rule 3.7). One connected
+   to any other block, or to a constant, is refused when the graph is
+   compiled: such a block gives its output the time of the tick, and
+   every tick would count as a new sample. Only the path the time comes
+   by is followed. A formula's `sample_of` is its author's word that its
+   value is as new as that input, whatever else the formula reads.
 4. A considered measurement `z` of the output whose row of the model's
    `C` is `c`, with variance `v`, has the innovation `z - c·x`, the spread
    `s = c·P·cᵀ + v`, and the **normalised innovation squared**, the
@@ -1484,11 +1542,16 @@ each measurement reads one output of the model.
    A reset empties what a port keeps; a gap does not.
 7. **When it is `good`.** A state's outputs are `uncertain` on a tick
    where any of these is so, and otherwise `good`:
-   - the step to this tick (rule 2) was on a model input that was
-     `uncertain` or unusable at the tick before, or was not taken, or
+   - at the tick before, a model input was `uncertain` or not usable, or
      this tick is the one a gap ran (rule 8.6), unless the gap passed
      over no tick. A gap of no known length is not one that passed over
      none;
+   - a measurement was passed by as late at this tick: it was given
+     something it could not use, and the graph's `lag` may be too short
+     for its sensor;
+   - the first measurement after the start, a reset or a rebase was
+     considered at this tick where the state stands, its place being
+     before that: it was taken as newer than it is;
    - a measurement was refused at this tick, or one over the gate was
      used at this tick by rule 5: it has given in to what it was refusing,
      and cannot tell a sensor that is right from one that is stuck;
@@ -1507,11 +1570,16 @@ each measurement reads one output of the model.
    last three, which last as long as they are so.
 8. Outputs, each a number:
    - one per state, by the state's name, and `sigma_<state>`, the square
-     root of its variance;
+     root of its variance: of the state and the covariance carried on
+     from where they stand to the tick, as rule 2 carries them, and not
+     left there. What stands is where the last measurement left it.
+     Where they stand after the tick, on a sample taken after its time,
+     they are given as they stand: nothing is carried back;
    - `innovation_<port>` and `nis_<port>`: on a tick where the measurement
      was considered, its innovation and its normalised innovation squared,
      `good`; on any other tick `not_ready`;
    - `refused_<port>`: how many have been refused, `good`;
+   - `late_<port>`: how many have been passed by as late, `good`;
    - `since_<port>`: the time from the sample time of the measurement last
      used to the tick, and not less than zero, `good`; `not_ready` until one
      has been used.
@@ -1519,17 +1587,17 @@ each measurement reads one output of the model.
    Each output has a name of its own. A graph where two would have one
    name, as with states named `x` and `sigma_x`, is refused.
 9. **At a gap** (rule 8.6). Told that `n` ticks were passed over, it
-   predicts `n` times more, each as rule 2, on the model inputs it last
-   had: that is what those ticks would have done. What is specified is
-   the result of `n` predictions and not that they are made one by one;
-   the same goes for a model block's steps in rule 8.6. At a rebase,
-   whether or not anybody knows its length, each state's variance grows
-   by its `p0`, once in all, after the predictions for the ticks passed
-   over, where their number is known, and before the one for the tick
-   that runs: it compares sample times, and cannot tell
-   a measurement from before the rebase from the same one written again
-   (rule 8.5). A graph whose `N` holds more than a double does is
-   refused, as for `Ad` (rule 7.8.7).
+   does nothing then: the state stands where it stood, and rule 2
+   carries it over them when the next tick asks, on the model inputs it
+   last had. At a rebase, whether or not anybody knows its length, the
+   state is carried to the place of the tick before the one that runs;
+   then each state's variance grows by its `p0`, once in all; and no
+   remembered place means anything any more: each model input has the
+   value it last had from the place the state stands at, and the next
+   measurement due is the first (rule 3). It compares sample times, and
+   cannot tell a measurement from before the rebase from the same one
+   written again (rule 8.5). A graph whose `N` holds more than a double
+   does is refused, as for `Ad` (rule 7.8.7).
 
 An estimator with a stable model and little process noise stays confident
 through a long stretch without measurements, and is right to if the model
@@ -1559,6 +1627,11 @@ fewer. The counts move with the noise drawn.
 - **The model's outputs, estimated.** The estimator gives its states. A
   graph that wants an output that is not a state, a motor's torque say,
   works it from them in a formula.
+- **Sensors with different delays.** The state stands at the latest
+  measurement considered, so the samples of a slower sensor beside a
+  faster one are mostly late. Using both in the order of their times
+  means holding the state back to the slowest and keeping the others in
+  a queue. Settled by: the first graph with two such sensors.
 - **An estimator on a loop with a model block** is refused (rule 7.8.8).
   Its model inputs are deferred, so a loop through them alone compiles;
   what its being `uncertain` means for a loop's doubt is not worked out.
@@ -1617,8 +1690,26 @@ to write the stricter thing.
   zero.** The total is `uncertain` on that tick and `good` from the next,
   with nothing to say it was reset on doubt. Give it `r and ok`, as for a
   latch. A PID's `reset` is the same.
-- **An `uncertain` measurement on a port with no `r_uncertain` is passed
-  by**, and the estimator stays `good`. `since_<port>` shows how long it
+- **An estimator places a sample to the nearest sixteenth of a period**,
+  and one over a model in discrete time to the nearest tick. With a
+  period of 1 s a sample is placed up to 31 ms from where it was taken.
+- **A sample older than an estimator's state is thrown away.** The tick
+  is `uncertain` for it and `late_<port>` counts it. With `lag` shorter
+  than a sensor's delay that is every sample, and the estimator runs on
+  its model alone, `uncertain` on every tick.
+- **A model input sampled before the place an estimator's state stands
+  at is in force from there**, and not from when it was sampled: what is
+  past is not worked again.
+- **What an estimator gives at the last tick of a call may be of a time
+  after the tick's.** A sample taken after that tick's time is
+  considered at its own place, and the state is given as it stands
+  there: the estimate is of when the newest sample was taken, up to a
+  period after the time the tick is said to have.
+- **A second sensor slower than the first is not used.** Its samples are
+  older than the state whenever the faster one has been considered
+  since: each is late, and its tick is `uncertain` (section 7.9, Open).
+- **An `uncertain` measurement on a port with no `r_uncertain` is left
+  alone**, and the estimator stays `good`. `since_<port>` shows how long it
   has gone without one.
 - **A formula's logic and its choices are `good` beside an operand that is
   not.** `a or b` with `a` true and `good` is `good` whatever `b` is, and
@@ -1924,7 +2015,7 @@ to write the stricter thing.
 | `pid` | The integral is unchanged and the derivative starts again (rule 7.7.7). Where `n` is not zero it waits to track (rule 7.7.14). `doubtful` goes up by `n` | The integral is unchanged, the derivative starts again, and it waits to track |
 | `integrate` | The total is unchanged. `missed` and `elapsed` go up by `n` | The total is unchanged. With `max_missed` given it is `uncertain` until a reset: what it missed is more than that |
 | Model block | For each of those ticks, in order, it steps on the last usable value of every input while each is within `ride_through` (rule 7.8.4), and takes no step from the first tick where one is not. `doubtful` goes up by `n`. The tick before the one that runs is a doubt (rule 7.8.6), its loop's if it is on one: with `settle` it is `uncertain` from the tick that runs | The same doubt. It takes no step, and does not ride through (rule 7.8.4) |
-| `estimator` | It predicts `n` times more on the model inputs it last had (rule 7.9.9) | Each state's variance grows by its `p0` |
+| `estimator` | Nothing then: its state is carried over them when the next tick asks, on the model inputs it last had (rule 7.9.9) | Its state is carried to the tick before the one that runs, and each state's variance grows by its `p0` |
 
 `elapsed`, which counts ticks, takes in the `n` passed over with no more
 said. Every block that gives `gaps` adds one to it at a gap of either
@@ -2133,7 +2224,7 @@ what the vectors pin down.
 | `mass_spring_damper` | `force` | `mass`, `damping`, `stiffness`, `initial_position` (0), `initial_velocity` (0), and the model settings | `position`, `velocity`; and the model outputs |
 | `dc_motor` | `voltage`, `load_torque` | `resistance`, `inductance`, `back_emf`, `torque_constant`, `inertia`, `friction`, `initial_current` (0), `initial_speed` (0), and the model settings | `speed`, `current`, `torque`; and the model outputs |
 | `state_space` | `u` | `A`, `B`, `C`, `D` (0), `initial` (zeros), and the model settings | `y`; and the model outputs |
-| `estimator` | the model's inputs, deferred, and one per measurement | `model`, `q`, `p0`, `measure`, `consistency`, `gate` (none), `max_refused`, `sigma_max` (none) | see 7.9.8 |
+| `estimator` | the model's inputs, deferred, and one per measurement | `model`, `q`, `p0`, `measure`, `consistency`, `gate` (none), `max_refused`, `sigma_max` (none), `lag` (2 periods) | see 7.9.8 |
 
 A setting with a value in brackets may be left out and takes that value.
 One with none is required, unless its entry below says what it is when
