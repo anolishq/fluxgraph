@@ -37,12 +37,13 @@ public:
     std::span<const OutputPort> outputs() const override { return outputs_; }
 
     Status bind(std::span<const std::optional<Type>> input_types) override {
-        if (!input_types[0].has_value()) {
+        const std::optional<Type> &input = input_types[0];
+        if (!input.has_value()) {
             return {};  // not known yet: an initial value has said what the output is, if there is one
         }
-        if (has_initial_ && initial_.type != *input_types[0]) {
+        if (has_initial_ && initial_.type != *input) {
             return graph_error(std::format("block '{}': its input is a {} and its initial value is a {}", id_,
-                                           name_of(*input_types[0]), name_of(initial_.type)));
+                                           name_of(*input), name_of(initial_.type)));
         }
         outputs_[0].type = input_types[0];
         return {};

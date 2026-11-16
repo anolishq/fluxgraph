@@ -282,6 +282,7 @@ Status read_block(const Setting &given, std::size_t position, Time period, const
             std::format("block '{}': settings is {}, and has to be a map", draft.id, settings->kind_name()));
     }
     std::vector<Connection> connections;
+    connections.reserve(draft.wires.size());
     for (const Wire &wire : draft.wires) {
         connections.push_back(Connection{wire.port, wire.constant});
     }

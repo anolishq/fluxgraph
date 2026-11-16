@@ -31,7 +31,7 @@ public:
     explicit operator bool() const { return !error_.has_value(); }
     bool ok() const { return !error_.has_value(); }
     /// Only when not ok().
-    const Error &error() const { return *error_; }
+    const Error &error() const { return *error_; }  // NOLINT(bugprone-unchecked-optional-access): the caller's to check
 
 private:
     std::optional<Error> error_;

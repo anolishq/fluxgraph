@@ -250,7 +250,7 @@ State state_named(std::string_view name) {
             return state;
         }
     }
-    return static_cast<State>(0xFF);
+    return static_cast<State>(0xFF);  // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange): out of range on purpose
 }
 
 std::string value_tokens(const Value &value) {

@@ -639,14 +639,17 @@ bool Formula::type(std::span<const std::optional<Type>> inputs, std::optional<Ty
                 break;
             }
             case Op::equal:
-            case Op::not_equal:
-                if (types[node.a].has_value() && types[node.b].has_value() && *types[node.a] != *types[node.b]) {
+            case Op::not_equal: {
+                const std::optional<Type> &left = types[node.a];
+                const std::optional<Type> &right = types[node.b];
+                if (left.has_value() && right.has_value() && *left != *right) {
                     problem =
                         std::format("'{}' takes two of one type, and is given a number and a boolean", shown(node.op));
                     return false;
                 }
                 types[i] = Type::boolean;
                 break;
+            }
             case Op::logical_not:
                 if (is_not(node.a, Type::boolean)) {
                     problem = "'not' takes a boolean, and is given a number";
@@ -662,17 +665,20 @@ bool Formula::type(std::span<const std::optional<Type>> inputs, std::optional<Ty
                 }
                 types[i] = Type::boolean;
                 break;
-            case Op::when:
+            case Op::when: {
                 if (is_not(node.a, Type::boolean)) {
                     problem = "the condition of 'when' is a number, and has to be a boolean";
                     return false;
                 }
-                if (types[node.b].has_value() && types[node.c].has_value() && *types[node.b] != *types[node.c]) {
+                const std::optional<Type> &then = types[node.b];
+                const std::optional<Type> &otherwise = types[node.c];
+                if (then.has_value() && otherwise.has_value() && *then != *otherwise) {
                     problem = "the two branches of 'when' are a number and a boolean, and have to be of one type";
                     return false;
                 }
-                types[i] = types[node.b].has_value() ? types[node.b] : types[node.c];
+                types[i] = then.has_value() ? then : otherwise;
                 break;
+            }
         }
     }
     type = types.back();
