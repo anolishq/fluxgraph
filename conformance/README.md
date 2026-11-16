@@ -1,6 +1,6 @@
-# Conformance for the version 2 semantics (proposal)
+# Conformance for the version 2 semantics
 
-Tests of [the version 2 proposal](../docs/semantics_spec_v2.md), fourth
+Tests of [the version 2 semantics](../docs/semantics_spec_v2.md), fourth
 revision, not of the library. Nothing here is built or run by the
 library's presets.
 
@@ -8,9 +8,8 @@ The third revision did not pass review, and was amended thirteen times, a
 section at a time; the fourth is the third with those amendments worked
 into its text ([its history](../docs/semantics_v2_history.md)). The
 sections below follow that order, an amendment each. Everything here
-follows the text as it now is. What the proposal lists as known to be
-wrong is tested as it stands: a vector says what the text says, not what
-it should say.
+follows the text as it now is. What the text gives up is tested as it
+stands: a vector says what the text says, not what it should say.
 
 | Path | What it is |
 | --- | --- |
@@ -145,10 +144,9 @@ the amended text alone, and the amendment was reviewed by itself.
   first written. The comparison now also runs at a period of 37 ms, at
   times on any nanosecond, with calls and writes that must be refused, two
   rebases in a row, and restores of a state saved before any tick.
-- Two things the review found are left for later amendments and named at
-  the head of the proposal: a window with `only_new` under a host slower
-  than the period, and a pause short of `max_catch_up` being run as
-  ordinary ticks.
+- Two things the review found were left for later amendments: a window
+  with `only_new` under a host slower than the period, and a pause short
+  of `max_catch_up` being run as ordinary ticks.
 
 ## Amendment 2: doubt through memory
 

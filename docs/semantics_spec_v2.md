@@ -1,13 +1,14 @@
-# FluxGraph semantics, version 2 (proposal)
+# FluxGraph semantics, version 2
 
-**Status:** proposal, fourth revision. Not in force.
-[semantics_spec.md](semantics_spec.md) stays the normative contract for
-FluxGraph 1.x until this is accepted, at which point this document replaces
-it and the library becomes 2.0.
+**Status:** accepted as the target for FluxGraph 2.0, fourth revision.
+Not in force. [semantics_spec.md](semantics_spec.md) stays the normative
+contract for FluxGraph 1.x, and this document replaces it when 2.0 is
+released.
 
-Each section is marked **Proposed** (a position to argue with) or **Open**
+Each section is marked **Accepted** (what 2.0 is built to) or **Open**
 (a question with what would settle it). Nothing here is implemented in the
-library.
+library. A rule that building 2.0 shows to be wrong is changed here, with
+its vectors, before the library departs from it.
 
 The fourth revision is the third with its thirteen amendments worked into
 the text. It says what the third said once amended, and nothing more: no
@@ -65,7 +66,7 @@ its setpoint.
 
 ## 3. Values
 
-**Proposed.**
+**Accepted.**
 
 1. A signal carries a **value** and a **state**. The state is one of:
    - `good`: the value is usable, and nothing is known against it.
@@ -126,7 +127,7 @@ its setpoint.
 
 ## 4. Blocks
 
-**Proposed.**
+**Accepted.**
 
 1. There is one kind of computing element, a **block**. A block has a type,
    named **input ports**, named **output ports**, **settings**, and state of
@@ -175,7 +176,7 @@ its setpoint.
 
 ## 5. Order and loops
 
-**Proposed.**
+**Accepted.**
 
 1. The compiler sorts all blocks into one evaluation order for the first
    phase. A block gives its outputs after every block whose output it reads
@@ -196,7 +197,7 @@ its setpoint.
 
 ## 6. Time and the host
 
-**Proposed.** A fixed timestep. The host says what time it is; the engine
+**Accepted.** A fixed timestep. The host says what time it is; the engine
 runs as many ticks of one fixed length as fit. A tick the host did not call
 for reads its inputs as they stood at its own time, and the tick it did
 call for reads what the host has in hand.
@@ -479,7 +480,7 @@ What this still leaves out:
 
 ## 7. States through a graph
 
-**Proposed.** A problem at this tick is never hidden. A problem in the
+**Accepted.** A problem at this tick is never hidden. A problem in the
 past is remembered for as long as a block says it remembers, and no longer.
 
 **Rule D.** A block's output is never better than `uncertain` on a tick
@@ -1788,7 +1789,7 @@ to write the stricter thing.
 
 ## 8. Reset, save, restore and gaps
 
-**Proposed.**
+**Accepted.**
 
 1. A graph can be reset to its initial state. After a reset the next call
    runs tick 0 again, at whatever `now` it is given. Nothing stands on any
@@ -1944,7 +1945,7 @@ still holds.
 
 ## 9. The graph file
 
-**Proposed.** The shape, not the final keys:
+**Accepted.** The shape, not the final keys:
 
 ```yaml
 period: 2.5s
@@ -2015,7 +2016,7 @@ blocks:
 
 ## 10. Units
 
-**Proposed.** As in 1.x, moved from signals to ports: an input or an output
+**Accepted.** As in 1.x, moved from signals to ports: an input or an output
 port may declare a unit, a connection between two declared units that differ
 is a compile error, and the strict policy requires every port to declare
 one. An external input declares its unit in `inputs`. 1.x also checks the
@@ -2032,7 +2033,7 @@ and what a declared unit has to say.
 
 ## 11. Conformance
 
-**Proposed.** The rules above are tested by vectors, not by reading.
+**Accepted.** The rules above are tested by vectors, not by reading.
 
 1. A test vector is a graph, the calls the host makes (each with its `now`
    and what it wrote first), and the expected state and value of every
@@ -2081,7 +2082,8 @@ checks that run them.
 
 ## 13. Order of work
 
-1. This document is argued to agreement, section by section.
+1. This document is argued to agreement, section by section. Done: it is
+   accepted as the target for 2.0.
 2. The core is rebuilt against the conformance vectors: store, compiler,
    engine, block and model interfaces.
 3. The existing models move across as models, each keeping its analytical
@@ -2090,7 +2092,7 @@ checks that run them.
 
 ## Appendix A. A first catalogue
 
-**Proposed.** Enough block types to test the rules above and to be useful.
+**Accepted.** Enough block types to test the rules above and to be useful.
 Names, ports and settings are placeholders for argument; the behaviour is
 what the vectors pin down.
 
