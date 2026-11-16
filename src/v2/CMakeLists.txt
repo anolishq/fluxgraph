@@ -32,5 +32,6 @@ if(MSVC)
     target_compile_options(fluxgraph_v2 PRIVATE /W4 /WX)
 else()
     # -Wshadow: MSVC's /W4 refuses a local that hides a member (C4458), and a build here should say so first.
-    target_compile_options(fluxgraph_v2 PRIVATE -Wall -Wextra -Wshadow -Werror -pedantic)
+    # -Wconversion: likewise its C4244, though not where the narrowing is inside a standard header.
+    target_compile_options(fluxgraph_v2 PRIVATE -Wall -Wextra -Wshadow -Wconversion -Werror -pedantic)
 endif()

@@ -422,7 +422,7 @@ public:
         }
         m.at = Place{};  // tick 0's
         std::fill(m.held.begin(), m.held.end(), 0.0);
-        std::fill(m.has.begin(), m.has.end(), 0);
+        std::fill(m.has.begin(), m.has.end(), char{0});
         std::fill(m.count_given.begin(), m.count_given.end(), 0);
         std::fill(m.ports.begin(), m.ports.end(), PortMemory{});
         std::fill(m.nis.begin(), m.nis.end(), 0.0);
