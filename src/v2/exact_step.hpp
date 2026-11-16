@@ -21,13 +21,16 @@ double stiffness(const std::vector<double> &a, std::size_t n, Time period);
 ///
 /// Worked in arithmetic of twice a double's digits and rounded once at the end, so that what is promised to one
 /// part in 10^9 is kept with room to spare up to the bound on stiffness and past it.
+///
+/// With `halvings`, the step is over the period halved that many times, which is exact: an estimator steps over
+/// 8, 4, 2 and 1 sixteenths of a period (rule 7.9.2).
 void exact_step(const std::vector<double> &a, std::size_t n, const std::vector<double> &b, std::size_t m, Time period,
-                std::vector<double> &ad, std::vector<double> &bd);
+                std::vector<double> &ad, std::vector<double> &bd, unsigned halvings = 0);
 
 /// What process noise has added by the end of one period (rule 7.9.2): the integral of exp(A s) Q exp(A' s) for s
 /// from zero to the period, n by n, where Q has `q`, a variance per second for each state, on its diagonal and
 /// nothing off it. Worked as exact_step() works its matrices, and on the same terms.
 void exact_noise(const std::vector<double> &a, std::size_t n, const std::vector<double> &q, Time period,
-                 std::vector<double> &noise);
+                 std::vector<double> &noise, unsigned halvings = 0);
 
 }  // namespace fluxgraph::v2::detail

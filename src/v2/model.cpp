@@ -145,6 +145,7 @@ void require(SettingsReader &settings, bool given, std::string_view key) {
 // is too fast for the period or grows past what a double holds.
 void finish_continuous(SettingsReader &settings, const std::vector<double> &b, Model &model) {
     model.continuous = true;
+    model.b = b;
     const double fast = stiffness(model.a, model.states, settings.period());
     if (!(fast <= kStiffest)) {
         settings.fail(std::format(

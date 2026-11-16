@@ -114,17 +114,18 @@ namespace {
 //   N <- N + E N E',   P <- (P + E P) / 2,   E <- E E
 // since what is added over two steps is what is added over one, and that again carried forward by E.
 struct Worked {
-    Wide length;  // the period, in seconds
+    Wide length;  // the length of time the step is over, in seconds
     Matrix e;
     Matrix p;
     Matrix noise;
 };
 
-Worked work(const std::vector<double> &a, std::size_t n, Time period, const std::vector<double> *q) {
+Worked work(const std::vector<double> &a, std::size_t n, Time period, unsigned part, const std::vector<double> *q) {
     Worked w;
-    w.length = seconds(period);
+    w.length = halved(seconds(period), static_cast<int>(part));  // the period halved `part` times, exactly
     int halvings = 0;
-    for (double size = stiffness(a, n, period); size > 0.5 && halvings < 1100; size /= 2.0) {
+    for (double size = std::ldexp(stiffness(a, n, period), -static_cast<int>(part)); size > 0.5 && halvings < 1100;
+         size /= 2.0) {
         ++halvings;  // a size that is not a number, or is past any double, stops at once or at the cap
     }
     Matrix x(n * n);
@@ -203,8 +204,8 @@ Worked work(const std::vector<double> &a, std::size_t n, Time period, const std:
 }  // namespace
 
 void exact_step(const std::vector<double> &a, std::size_t n, const std::vector<double> &b, std::size_t m, Time period,
-                std::vector<double> &ad, std::vector<double> &bd) {
-    const Worked w = work(a, n, period, nullptr);
+                std::vector<double> &ad, std::vector<double> &bd, unsigned halvings) {
+    const Worked w = work(a, n, period, halvings, nullptr);
     ad.assign(n * n, 0.0);
     for (std::size_t i = 0; i < n * n; ++i) {
         ad[i] = rounded(w.e[i]);
@@ -223,8 +224,8 @@ void exact_step(const std::vector<double> &a, std::size_t n, const std::vector<d
 }
 
 void exact_noise(const std::vector<double> &a, std::size_t n, const std::vector<double> &q, Time period,
-                 std::vector<double> &noise) {
-    const Worked w = work(a, n, period, &q);
+                 std::vector<double> &noise, unsigned halvings) {
+    const Worked w = work(a, n, period, halvings, &q);
     noise.assign(n * n, 0.0);
     for (std::size_t i = 0; i < n * n; ++i) {
         noise[i] = rounded(w.noise[i]);

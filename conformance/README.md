@@ -824,7 +824,7 @@ is in the vectors.
 
 ## The C++ core
 
-Eight slices of a version 2 core in C++ are in `include/fluxgraph/v2/` and
+Nine slices of a version 2 core in C++ are in `include/fluxgraph/v2/` and
 `src/v2/`, behind the CMake option `FLUXGRAPH_BUILD_V2`, which is off
 unless given. It was written from the proposal's text, without sight of
 either reading here. It has the engine, the compiler, the formula language,
@@ -843,10 +843,10 @@ against it as they do against the readings:
 cmake -S . -B build/v2 -G Ninja -DFLUXGRAPH_BUILD_V2=ON -DFLUXGRAPH_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
 cmake --build build/v2 --target fluxgraph_v2_driver
 export FLUXGRAPH_V2_DRIVER=$PWD/build/v2/tools/fluxgraph_v2_driver/fluxgraph_v2_driver
-python3 conformance/run.py --cpp        # 516 vectors: 516 agree, 0 skipped (block types not built)
+python3 conformance/run.py --cpp        # 524 vectors: 524 agree, 0 skipped (block types not built)
 python3 conformance/compare.py --cpp    # 260 graphs run, 0 skipped; 2637511 comparisons, 0 differences
 python3 conformance/contract.py --cpp   # 748648 sequences: ALL HOLD
-python3 conformance/cpp/edges.py        # 72516 checks: ALL HOLD
+python3 conformance/cpp/edges.py        # 72545 checks: ALL HOLD
 python3 conformance/steps.py --cpp      # 750 checks: ALL HOLD; the worst error of the step is 1.81e-13
 python3 conformance/cpp/filter.py       # 1000 runs of 40 ticks each: EVERY MEAN IS 1, AS FAR AS CHANCE ALLOWS
 ```
@@ -858,6 +858,11 @@ It sets the core against a statement of sections 6, 7.2 and 8 at periods
 from 1 ns to the largest that fits and at clocks at both ends of the
 range. Of twelve ways of getting that arithmetic wrong that were tried,
 the vectors noticed four, `compare.py` none, and `edges.py` all twelve.
+It also sets an estimator's places (rule 7.9.2) against a statement of
+them in whole numbers with no end: a tick numbered 2⁶³ - 1 is at place
+2⁶⁷, and a sample 2⁶⁴ ns old at a period of 1 ns is 2⁶⁸ sixteenths back.
+Of three ways of getting those wrong, the vectors and `compare.py`
+noticed none and `edges.py` all three.
 `steps.py --cpp` is for the exact step of rule 7.8.7, where two readings
 that agree may both be wrong: it works `Ad` and `Bd` in decimal arithmetic
 of 150 digits, checks that against closed forms, and sets the core

@@ -22,6 +22,9 @@ What is checked:
 7. A window's slope and a PID's derivative between samples further apart than a signed 64-bit difference holds.
 6. An estimator's `since_<port>`, further off than a signed 64-bit difference holds, and never below zero.
 5. Lengths that only scale a value (`per`, `tau`): the ratio and the rounding up are exact, at any period.
+8. An estimator's places (rule 7.9.2): a sample 2^64 ns before its tick is 2^68 sixteenths of a period before
+   it, a tick numbered 2^63 - 1 is at place 2^67, and a half of a sixteenth of the longest period is not a
+   whole number of nanoseconds: which sample is late, which is first, and where each is considered.
 
 Exits 1 on the first difference, and prints it. Stdlib only.
 """
@@ -550,10 +553,144 @@ def between_samples():
     return 2
 
 
+class Stands:
+    """Section 7.9 for the model x' = u, with u one constant, no process noise, `p0` of 1 and ports of `r` 1 on x,
+    in whole numbers and fractions with no end. A place is a whole number of sixteenths of a period from tick 0."""
+
+    def __init__(self, period, u, lag, ports):
+        self.p, self.u, self.lag, self.ports = period, Fraction(u), lag, ports
+        self.x, self.var, self.at, self.first, self.has_u = Fraction(0), Fraction(1), 0, True, False
+        self.seen = dict.fromkeys(ports)
+        self.late = dict.fromkeys(ports, 0)
+
+    def _to(self, place):
+        if place > self.at:
+            if self.has_u:  # 7.9.2: a model input that has never been usable leaves the state where it is
+                self.x += self.u * (place - self.at) * Fraction(self.p, 16 * 10**9)
+            self.at = place
+
+    def rebase(self, number):  # 7.9.9, before the tick `number` runs
+        self._to(16 * (number - 1))
+        self.var += 1
+        self.first, self.seen = True, dict.fromkeys(self.ports)
+
+    def tick(self, number, time, samples):
+        """`samples` is what each port reads, a value and its time. Gives x and its variance as given at the
+        tick, whether a measurement made the tick uncertain, the innovations, and the late counts."""
+        doubt, innovations, due = False, {}, []
+        self._to(16 * (number - self.lag))
+        for order, port in enumerate(self.ports):
+            if port in samples and (self.seen[port] is None or samples[port][1] > self.seen[port]):
+                value, at = samples[port]
+                # the tick's place less the time from the sample to it, to the nearest, a half to the later
+                place = 16 * number + math.floor(Fraction(16 * (at - time), self.p) + Fraction(1, 2))
+                due.append((place, order, port, Fraction(value), at))
+        for place, _, port, value, at in sorted(due):
+            self.seen[port] = at
+            first, self.first = self.first, False
+            if place < self.at:
+                doubt = True
+                if not first:
+                    self.late[port] += 1
+                    continue
+            else:
+                self._to(place)
+            innovations[port] = value - self.x
+            gain = self.var / (self.var + 1)
+            self.x += gain * innovations[port]
+            self.var *= 1 - gain
+        on = max(0, 16 * number - self.at) if self.has_u else 0
+        self.has_u = True  # the second phase: the constant is its value from here on
+        return self.x + self.u * on * Fraction(self.p, 16 * 10**9), self.var, doubt, innovations, dict(self.late)
+
+
+def places():
+    """8: an estimator's places at the ends of the range."""
+    checked = 0
+
+    def run(period, lag, ports, steps):
+        nonlocal checked
+        model = {"type": "linear", "A": [[0.0]], "B": [[1.0]], "C": [[1.0]]}
+        settings = {"model": model, "q": {"x0": 0.0}, "p0": {"x0": 1.0}, "consistency": "none"}
+        settings["measure"] = {port: {"of": "y", "r": 1.0} for port in ports}
+        if lag != 2:  # the default, and at the longest periods two of them is no length 64 bits can say
+            settings["lag"] = f"{lag * period}ns"
+        block = {"id": "k", "type": "estimator", "in": {"u": 1.0, **{port: port for port in ports}}}
+        block["settings"] = settings
+        block["out"] = {"x0": "x", "sigma_x0": "sigma"}
+        for port in ports:
+            block["out"].update({f"innovation_{port}": f"innovation_{port}", f"late_{port}": f"late_{port}"})
+        inputs = {port: {"max_age": "none"} for port in ports}
+        engine = adapter.Engine({"period": f"{period}ns", "inputs": inputs, "blocks": [block]})
+        text, reads = Stands(period, 1, lag, ports), {}
+        for now, writes in steps:
+            for port, (value, at) in writes.items():
+                engine.write(port, GOOD, value, at)
+                reads[port] = (value, at)
+            ran, out = engine.tick(now)
+            if ran != 1:
+                fail("an estimator's places: the call was to run one tick", ("period", period), ("now", now))
+            x, var, doubt, innovations, late = text.tick(engine.info["tick"], engine.info["time"], reads)
+            shown = [("period", period), ("lag", lag), ("now", now), ("writes", writes), ("gave", out)]
+            shown += [("the text", (float(x), math.sqrt(var), doubt, innovations, late))]
+            if not close(out["x"].v, float(x)) or not close(out["sigma"].v, math.sqrt(var)):
+                fail("an estimator's places: the state", *shown)
+            if doubt and out["x"].state != UNCERTAIN or not (doubt or engine.info["gap"] or out["x"].state == GOOD):
+                fail("an estimator's places: whether the tick is uncertain", *shown)
+            for port in ports:
+                gave, want = out[f"innovation_{port}"], innovations.get(port)
+                if (gave.v is None) != (want is None) or (want is not None and not close(gave.v, float(want))):
+                    fail(f"an estimator's places: the innovation of {port}", *shown)
+                if out[f"late_{port}"].v != late[port]:
+                    fail(f"an estimator's places: the late count of {port}", *shown)
+            checked += 1
+
+    # A period of 1 ns, and one call far enough on to be a stall: the tick is numbered 2^63 - 1, at place 2^67.
+    # A sample one period back is within a lag of 2 and is considered there; one three back is late.
+    run(1, 2, ["a"], [(0, {"a": (0.0, 0)}), (HIGH, {"a": (5e9, HIGH - 1)})])
+    run(1, 2, ["a"], [(0, {"a": (0.0, 0)}), (HIGH, {"a": (5e9, HIGH - 3)})])
+    run(1, 0, ["a"], [(0, {"a": (0.0, 0)}), (HIGH, {"a": (5e9, HIGH)})])
+    # The first measurement due is the one of the earliest place, and the other is late: here both are from
+    # before tick 0, 2^68 sixteenths back and 16 apart. A place that stopped at what 64 bits hold would have
+    # them at one place, and take the port declared first.
+    run(1, 2, ["a", "b"], [(0, {}), (HIGH, {"a": (1.0, LOW + 1), "b": (2.0, LOW)})])
+    run(1, 2, ["a", "b"], [(0, {}), (HIGH, {"a": (1.0, LOW), "b": (2.0, LOW + 1)})])
+    run(1, 2, ["a", "b"], [(HIGH - 1, {}), (HIGH, {"a": (1.0, LOW + 2**63), "b": (2.0, LOW)})])
+    # The longest period there is, from the earliest time: ticks at LOW, -1 and HIGH - 1. A thirty-second of it
+    # is not a whole number of nanoseconds, so a sample one side of the half is at the tick and one the other
+    # side a sixteenth back; and a sample from tick 0's time, seen at tick 2, is 2^64 - 2 ns old and late.
+    period = HIGH
+    half = period // 32
+    steps = [
+        (LOW, {"a": (0.0, LOW)}),
+        (-1, {"a": (3e8, -1 - half - 1), "b": (6e8, -1 - half)}),
+        (HIGH - 1, {"c": (1.0, LOW), "a": (2e10, HIGH - 1)}),
+    ]
+    run(period, 2, ["a", "b", "c"], steps)
+    # Three quarters of a sixteenth of that period before tick 1: the nearest place is one sixteenth back. Twice
+    # the time in sixteenths, and the half period added to round it, pass 2^64 between them.
+    run(period, 2, ["a"], [(LOW, {"a": (0.0, LOW)}), (-1, {"a": (3e8, -1 - 3 * 2**57)})])
+    # A period of 2^62 ns, whose thirty-second is whole: exactly a half goes to the later place, before the tick
+    # and after it. The last call comes a thirty-second of a period after its tick, with a sample of that time.
+    period = 2**62
+    half = period // 32
+    start = LOW
+    t1, t2, t3 = start + period, start + 2 * period, start + 3 * period
+    steps = [
+        (start, {"a": (0.0, start)}),
+        (t1, {"a": (4e9, t1 - half)}),
+        (t2, {"a": (9e9, t2 - half - 1), "b": (9e9, t2 - 2 * half)}),
+        (t3 + half, {"b": (1.3e10, t3 + half - 1), "a": (1.4e10, t3 + half)}),
+    ]
+    for lag in (0, 1, 2):
+        run(period, lag, ["a", "b"], steps)
+    return checked
+
+
 def main():
     adapter.start()
     rng = random.Random(20261113)
-    total = last_number() + needed(rng) + lengths() + limits() + ratios() + since() + between_samples()
+    total = last_number() + needed(rng) + lengths() + limits() + ratios() + since() + between_samples() + places()
     for period in (1, 2, 3, 7, 10**9, 2**61, 2**62, 2**62 + 1, 2**63 - 2, 2**63 - 1):
         tried = sequences(rng, period, runs=60, steps=120)
         total += tried

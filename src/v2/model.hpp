@@ -37,6 +37,8 @@ struct Model {
     /// from it (rule 7.9.2). Not so for `state_space`, which gives Ad and Bd themselves.
     bool continuous = false;
     std::vector<double> a;
+    /// And `b`, states by inputs, per second and by rows: an estimator steps over parts of a period (rule 7.9.2).
+    std::vector<double> b;
 
     /// A named model whose state decays has a `settle` of its own unless one is given (rule 7.8.6).
     bool has_settle = false;

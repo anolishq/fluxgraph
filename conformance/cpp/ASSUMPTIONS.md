@@ -9,8 +9,9 @@ and 8. A second slice, written the same way from the text as amended
 eight times, adds eight block types, a third the models and the loop
 rule, a fourth the estimator, a fifth the ninth amendment's commands, and
 a sixth the tenth's derivative and slope between samples, a seventh
-the eleventh's smaller faults, and an eighth the twelfth's `follow`; each
-has a section of its own.
+the eleventh's smaller faults, an eighth the twelfth's `follow`, and a
+ninth the thirteenth's estimator between samples; each has a section of
+its own.
 
 This lists each place where the text left a choice or could be read two
 ways, with the reading taken. A choice the second reading already
@@ -613,6 +614,85 @@ and so did `compare.py`.
      limit's count of unusable ticks is the count of entry 100, saved
      where it was. A saved state of either block is as long as it was
      and means what it did, but for that count.
+
+## The ninth slice: an estimator between samples
+
+109. **Rule 7.9.2, a place.** Held as the number of a tick and a count of
+     parts after it, sixteen to a period or one for a model in discrete
+     time, and never as one number of sixteenths: tick 2⁶³ - 1 is at
+     place 2⁶⁷. How far a sample's place is from its tick's is worked in
+     whole numbers of 128 bits, since a sample 2⁶⁴ ns old at a period of
+     1 ns is 2⁶⁸ sixteenths back. A place before tick 0 is before any
+     the state stands at; two such are still told apart, by how far
+     back each is, when the measurements due are put in order.
+110. **Rule 7.9.2, "to the nearest whole number; exactly a half goes to
+     the later place".** One rule either side of the tick: the place is
+     the whole part of sixteen times the time from the tick to the
+     sample, in periods, and a half. For a sample after its tick a half
+     goes on to the next place.
+111. **Rule 7.9.2, a model input at tick 0.** Model inputs are deferred,
+     so none has a value until tick 0's second phase, a constant among
+     them. A measurement considered at tick 0 at a place after the tick
+     is met by a state that did not step, with `N` added. Both readings
+     do the same.
+112. **Rule 7.9.2, "whose value is not the one it last had".** The
+     numbers are compared and the states are not. The value it last had
+     is the last it was given, whether or not that is in force yet.
+113. **Rule 7.9.2, two values from one place.** The later given stands
+     in place of the earlier, which is never in force.
+114. **Rule 7.9.2, how many values a model input holds.** One in force
+     where the state stands, and `lag` and one from later places: each
+     tick gives at most one, none is from after the tick that gave it by
+     more than a period, and the state is never more than `lag` behind.
+     A `lag` of more than 2²⁴ periods is refused, as a delay that long
+     is.
+115. **Rule 7.9.2, `lag`.** Written as a length, a whole number of
+     periods (rule 6.3). The state is carried to `lag` behind the tick
+     first, and then the measurements are taken, each judged late or not
+     against where the state stands when its turn comes.
+116. **Rule 7.9.2, a stretch with a model input that has no value.**
+     `N` is added for each step the stretch takes, whole or part.
+117. **Rule 7.9.2, "what is specified is the result".** Whole-period
+     steps over one stretch are made one by one up to 64 and past that
+     by doubling, which differs in rounding alone.
+118. **Rule 7.9.2, the parts of a period.** The period halved one to
+     four times, exactly, and each step and its `N` worked as the whole
+     period's are. A graph is refused where any of them holds more than
+     a double does.
+119. **Rule 7.9.3, the first measurement.** Whichever measurement is due
+     first ends it, late or not: one that is not late is considered at
+     its own place like any other, and the next late one is passed by.
+120. **Rule 7.9.3, a measurement passed by.** It is the one last seen on
+     its port: its sample time is kept, and it is not due again.
+121. **Rule 7.9.7, `sigma_max`.** Of the sigma given at the tick,
+     carried on from where the state stands, and not of the one that
+     stands. Both readings do the same.
+122. **Rule 7.9.9, a rebase with the state after the tick before.** A
+     state that stands after the place of the tick before the one that
+     runs, on a sample taken after its tick, stays where it stands:
+     nothing is carried back, and what is given at the next tick is
+     carried on from there. I first put it back at the tick before
+     without stepping; `compare.py` showed the reference leaves it, and
+     the second reading does too. Each model input then has the value it
+     was last given, in force where the state stands.
+123. **Rule 7.9.9, a gap that is not a rebase.** Nothing then. The
+     carry to `lag` behind at the gap's own tick takes the state over
+     the ticks passed over.
+124. **Rule 7.9.8, `since_<port>`.** From the sample's time to the
+     tick's, as before, though the state may stand after the tick.
+125. **What is saved.** A word that says the layout; the state, its
+     covariance and the kept normalised innovations squared; the place
+     the state stands at, as two words; for each model input a flag, the
+     value in force, a count, and that many values each with a place of
+     two words; for each port two flags and seven words, the late count
+     among them; and four flags, the last of them whether the next
+     measurement is the first. A restore is always followed by a rebase,
+     which sets that flag and puts each model input's last value in
+     force, so no output shows whether the flag was saved. A count more
+     than `lag` and one, or a part that is not of a period, is refused.
+     A state saved in the layout before this one is shorter for every
+     graph and is refused for ending early; the first word refuses it
+     before anything is read.
 
 ## Recorded already, and read the same way
 
