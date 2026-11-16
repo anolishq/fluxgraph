@@ -25,8 +25,8 @@ it should say.
 | `est_timing.py` | Measures an estimator with its model exactly right under a host off the period and under old samples. It draws noise, and is no check. |
 
 ```bash
-python3 conformance/run.py                 # 534 vectors: ALL AGREE
-python3 conformance/run.py --second        # 534 vectors: ALL AGREE
+python3 conformance/run.py                 # 536 vectors: ALL AGREE
+python3 conformance/run.py --second        # 536 vectors: ALL AGREE
 python3 conformance/mutate.py              # 782 breakages: 782 noticed; every vector failed by one
 python3 conformance/compare.py             # 2637511 comparisons, 0 differences
 python3 conformance/steps.py               # 750 checks: ALL HOLD; the worst error of the step is 1.81e-13
@@ -856,6 +856,29 @@ a limit, and a saved doubt, which the text said can never show. It
 shows after a restore and then a rebase that passes over no tick, and
 `restore-then-rebase-of-no-ticks-shows-a-saved-doubt` is new for it.
 
+## A third reading
+
+The fourth revision was then built once more from its text alone, by a
+reader who had seen no vector and neither implementation. Of the 534
+vectors there were then, it agreed with all: 529 outright, and 5
+refusals where only the message differed, which is not specified. Set
+against the reference by `compare.py`, 2,636,836 comparisons gave 170
+differences, all of one kind: after a restore of a state saved before
+any tick, it kept the count of writes thrown away, which rule 6.8 said
+a restore does not zero and rule 8.3 called a reset. It also refused an
+input with the name of a block and one of its input ports, where rule
+9.2 said "port". The text now says what the other three do in both
+places, and `restore-of-a-fresh-state-zeroes-the-count` and
+`input-named-as-an-input-port` are new for them.
+
+Its reader listed 66 places where the text left a choice. Wherever the
+vectors or the comparison go, its choice in the others was the one
+already made. Five more sentences
+were at odds with a rule beside them and are mended: what a PID's
+derivative is when it stops waiting, which blocks give counters, what
+a gap makes `uncertain`, the time a host writes with after a rebase,
+and which settings are written without a point.
+
 ## The C++ core
 
 Nine slices of a version 2 core in C++ are in `include/fluxgraph/v2/` and
@@ -877,7 +900,7 @@ against it as they do against the readings:
 cmake -S . -B build/v2 -G Ninja -DFLUXGRAPH_BUILD_V2=ON -DFLUXGRAPH_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
 cmake --build build/v2 --target fluxgraph_v2_driver
 export FLUXGRAPH_V2_DRIVER=$PWD/build/v2/tools/fluxgraph_v2_driver/fluxgraph_v2_driver
-python3 conformance/run.py --cpp        # 534 vectors: 534 agree, 0 skipped (block types not built)
+python3 conformance/run.py --cpp        # 536 vectors: 536 agree, 0 skipped (block types not built)
 python3 conformance/compare.py --cpp    # 260 graphs run, 0 skipped; 2637511 comparisons, 0 differences
 python3 conformance/contract.py --cpp   # 748648 sequences: ALL HOLD
 python3 conformance/cpp/edges.py        # 72545 checks: ALL HOLD

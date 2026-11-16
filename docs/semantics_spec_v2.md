@@ -297,7 +297,8 @@ call for reads what the host has in hand.
    A write is judged against what stands as it is made, and against
    nothing else. The count of writes thrown away (rule 10) is of these
    three ways and no other; a reset sets it to zero, and a restore or a
-   rebase does not.
+   rebase does not. A restore that is a reset (rule 8.3) sets it to zero
+   as any reset does.
 
    So:
    - a host a little early or a little late sees, at each call, the sample
@@ -507,8 +508,8 @@ how long that memory is.
   something doubtful, and no longer.
 - **Memory with no end**: which way a hysteresis last switched, whether a
   latch is set, a running total, how long a timer has run. The block takes
-  its state from what it reads now, and gives **counters** that a graph can
-  test: how long it has been going (`elapsed`), how much of that time its
+  its state from what it reads now, and where Appendix A lists them
+  gives **counters** that a graph can test: how long it has been going (`elapsed`), how much of that time its
   input was not `good` (`doubtful`), and how many gaps there were in it
   (`gaps`). `good` does not vouch for history older than a block's declared
   memory.
@@ -997,8 +998,8 @@ lacks.
     - **What it does then.** At the tick it stops waiting, if that is not
       the tick of a reset, and `track` is usable, the integral is set,
       before that tick's addition, to `track` less the first sum of rule
-      5: `kp·error` and the derivative, which is zero there but for a PID
-      that acts by the call. So its output before limiting is where the
+      5: `kp·error` and the derivative, as rule 7 gives it at that tick. So
+      its output before limiting is where the
       actuator is, with that tick's addition made to it, and not whatever
       the integral held when the input was lost. A reset says zero, and
       `track` does not gainsay it.
@@ -1565,8 +1566,10 @@ to write the stricter thing.
 
 **Gaps and loops.**
 
-- **A gap makes only a model with `settle`, an estimator on the gap's own
-  tick, and a total it takes past `max_missed`, `uncertain`.** Every other
+- **A gap makes only a model with `settle`, by itself or on a loop (rule
+  7.8.8), an estimator, and a total it takes past `max_missed`,
+  `uncertain`.** The estimator is so on the gap's own tick, and after a
+  gap of no known length until it uses a measurement (rule 7.9.7). Every other
   block does what the ticks nobody saw would have done to it. A window short
   of samples and a delay with nothing to give are `not_ready`, and the rest
   are `good` on the far side. A hysteresis, a latch, a total within
@@ -1843,7 +1846,7 @@ to write the stricter thing.
      usual, judged against nothing from the old clock. For rule 7.2.1 the
      graph has run since this tick. **After a rebase a host writes again
      every input that has no maximum age**, the ones it writes only on
-     change, **with the time of the rebase's call**: such a value is as
+     change, **with the time of the call that follows the rebase**: such a value is as
      true as when it was set. An input with a maximum age is written when
      it is next sampled, on the clock the host now passes, and has no
      value until then: an old sample written with a new time would be a
@@ -1981,15 +1984,17 @@ blocks:
    output ports to signal names, which are text; a port left out is not
    published, and any output, published or not, can be read by another block
    as `<block id>.<port>`. A block id is text. No input and no published
-   signal may have a name of the form `<block id>.<port>` for a block and
-   port of the graph.
+   signal may have a name of the form `<block id>.<port>` for a block of
+   the graph and one of its output ports. The name of a block and one of
+   its input ports is no such name: nothing is read by it.
 3. A length of time is written as a number and a unit with nothing between
    them: `ns`, `us`, `ms`, `s`, `m` or `h`. The number is digits, with an
    optional point and more digits. A number without a unit is refused. So
    is a length the engine keeps as a time (rule 6.2) that is not a whole
    number of nanoseconds.
-4. A setting that is a whole number is written without a point: `2`, not
-   `2.0`.
+4. A setting that takes a whole number, as `ticks` does, is written
+   without a point: `2`, not `2.0`. One that takes a number may be
+   written either way.
 5. These are compile errors: an unknown key, at the top of the graph or in
    a block or an input; an unknown block type; a block with no id, or with
    another block's id; an unknown port in `in`, `out` or `fallback`; a
