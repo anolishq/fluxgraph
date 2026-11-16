@@ -1,0 +1,22 @@
+# 7.9.2, 7.9.3, 7.9.7: with a `lag` of one period the state stands no more
+# than a period behind the tick. At tick 4 it is carried to tick 3, and a
+# sample taken at 2.5 s is before that: late. It is passed by and counted,
+# no innovation is given, and the tick is uncertain for it. It is the
+# sample last taken on its port all the same: standing at tick 5 it is not
+# counted again, and at tick 6 a later one is considered. The model is x' = u with no noise, so the variance is 1/2
+# after the first measurement and 1/3 after the second.
+rules: [7.9.2, 7.9.3, 7.9.7, 7.9.8]
+period: 1s
+inputs: {z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: 0, z: z}
+    settings: {model: {type: linear, A: [[0]], B: [[1]], C: [[1]]}, q: {x0: 0}, p0: {x0: 1}, measure: {z: {of: y, r: 1}}, consistency: none, lag: 1s}
+    out: {x0: x, sigma_x0: sigma, innovation_z: innovation, late_z: late}
+calls:
+  - {now: 0, z: 0, x: 0, sigma: 0.7071067811865476, innovation: 0, late: 0}
+  - {now: 3, ran: 3, x: 0, sigma: 0.7071067811865476, innovation: not_ready, late: 0}
+  - {now: 4, z: {v: 5, at: 2.5}, x: {u: 0}, sigma: {u: 0.7071067811865476}, innovation: not_ready, late: 1}
+  - {now: 5, x: 0, sigma: 0.7071067811865476, innovation: not_ready, late: 1}
+  - {now: 6, z: 0, x: 0, sigma: 0.5773502691896257, innovation: 0, late: 1}

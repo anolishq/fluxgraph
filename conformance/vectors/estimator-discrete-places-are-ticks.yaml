@@ -1,0 +1,17 @@
+# 7.9.2: for a model in discrete time a place is a tick. The model is
+# x' = x + u with u of 1. A sample taken at 0.4 s is nearer tick 0 than
+# tick 1, and the state stands at tick 0: it is considered there, against
+# an x of 0. With a variance of 1/2 and r of 1 an innovation of 3 gives 1,
+# and at tick 1 that is carried on a period: 2.
+rules: [7.9.2, 7.9.3]
+period: 1s
+inputs: {z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: 1, z: z}
+    settings: {model: {type: state_space, A: [[1]], B: [1], C: [1]}, q: {x0: 0}, p0: {x0: 1}, measure: {z: {of: y, r: 1}}, consistency: none}
+    out: {x0: x, sigma_x0: sigma, innovation_z: innovation, late_z: late}
+calls:
+  - {now: 0, z: 0, x: 0, sigma: 0.7071067811865476, innovation: 0}
+  - {now: 1, z: {v: 3, at: 0.4}, x: 2, sigma: 0.5773502691896257, innovation: 3, late: 0}

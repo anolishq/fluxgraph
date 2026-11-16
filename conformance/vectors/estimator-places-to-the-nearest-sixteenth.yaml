@@ -1,0 +1,24 @@
+# 7.9.2, 7.9.8: a sample's place is the nearest sixteenth of a period, and
+# exactly a half goes to the later. The model is x' = u with u of 16 and q
+# of 16 a second, so each sixteenth adds 1 to x and 1 to the variance.
+# Tick 1: a sample taken 1/32 s before the tick is at the tick, place 16.
+# Tick 2: one taken 0.07 s before it is nearer place 31 than 30; the state
+# stands there and is given carried one sixteenth on.
+rules: [7.9.2, 7.9.3, 7.9.8]
+period: 1s
+inputs: {z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: 16, z: z}
+    settings:
+      model: {type: linear, A: [[0]], B: [[1]], C: [[1]]}
+      q: {x0: 16}
+      p0: {x0: 1}
+      measure: {z: {of: y, r: 1}}
+      consistency: none
+    out: {x0: x, sigma_x0: sigma, innovation_z: innovation}
+calls:
+  - {now: 0, z: 0, x: 0, sigma: 0.7071067811865476, innovation: 0}
+  - {now: 1, z: {v: 20, at: 0.96875}, x: 19.771428571428572, sigma: 0.9710083124552245, innovation: 4.0}
+  - {now: 2, z: {v: 30, at: 1.93}, x: 31.281618887015178, sigma: 1.3931898928615831, innovation: -4.771428571428571}

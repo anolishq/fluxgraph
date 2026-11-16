@@ -889,6 +889,7 @@ def discretise(a, b, dt):
         return _narrow([row[:n] for row in e[:n]]), _narrow(matmul([row[n:] for row in e[:n]], _wide(b)))
 
 
+SIXTEEN = 16  # 7.9 rule 2: the places between two ticks
 STIFFEST = 100_000.0  # 7.8 rule 7: the most a row of A, summed, times the period, may be
 
 
@@ -986,7 +987,7 @@ class Model:
         if not all(math.isfinite(v) for row in (*self.ad, *self.bd) for v in row):
             raise CompileError("the model's step over this period is not finite: it grows too fast for the period")
         self.tau = self.slowest(a, made.get("det")) if self.continuous and self.default_settle else None
-        self.a, self.period = a, period
+        self.a, self.b, self.period = a, b, period
 
     def noise(self, q):
         """7.9 rule 2: what process noise of intensities q adds to the covariance over one period."""
@@ -1377,6 +1378,7 @@ class Estimator(Block):
         "gate": ("number", False, None),
         "max_refused": ("int", False, None),
         "sigma_max": ("map", False, None),
+        "lag": ("ticks", False, 2),
     }
 
     def __init__(self, *a):
@@ -1438,129 +1440,206 @@ class Estimator(Block):
         self.ports |= {port: (NUMBER, True, True) for port in self.meas}
         named = [*self.names, *(f"sigma_{name}" for name in self.names)]
         for port in self.meas:
-            named += [f"innovation_{port}", f"nis_{port}", f"refused_{port}", f"since_{port}"]
+            named += [f"innovation_{port}", f"nis_{port}", f"refused_{port}", f"since_{port}", f"late_{port}"]
         if len(set(named)) != len(named):  # rule 8
             twice = sorted({name for name in named if named.count(name) > 1})
             raise CompileError(f"two outputs would be named {twice[0]!r}")
         self.outputs = dict.fromkeys(named, NUMBER)
         self.x = self.model.initial()
         self.p = [[self.p0[i] if i == j else 0.0 for j in range(n)] for i in range(n)]
-        self.considered = dict.fromkeys(self.meas)  # the sample time last considered, per port
+        self.seen = dict.fromkeys(self.meas)  # the sample time last considered or passed by, per port
         self.used_at = dict.fromkeys(self.meas)  # the sample time last used, per port
         self.refused = dict.fromkeys(self.meas, 0)  # how many, in all
+        self.late = dict.fromkeys(self.meas, 0)  # how many were older than the state, in all
         self.run = dict.fromkeys(self.meas, 0)  # how many in a row
         self.recent = {
             port: collections.deque(maxlen=self.over) for port in self.meas
         }  # normalised innovations squared
-        self.last_u = {}  # each model input's last usable value
-        self.stepping = False  # the second phase of a tick has run: a step to the next is due
-        self.held = False  # that step is on a value that was held, or was uncertain, or is not taken
+        # Rule 2: places are counted in sixteenths of a period from tick 0. A step is of a whole period, or, for a
+        # model in continuous time, of 8, 4, 2 or 1 sixteenths: each worked out here, exactly, as the period's is.
+        self.period_ns = int(a[1] * NS)
+        self.steps = {SIXTEEN: (self.model.ad, self.model.bd, self.qd)}
+        self.unit = SIXTEEN  # the least step it has: a model in discrete time has no place between ticks
+        if self.model.continuous:
+            self.unit = 1
+            for size in (8, 4, 2, 1):
+                part = a[1] * size / SIXTEEN
+                ad, bd = discretise(self.model.a, self.model.b, part)
+                self.steps[size] = (
+                    ad,
+                    bd,
+                    discretise_noise(self.model.a, [float(q[name]) for name in self.names], part),
+                )
+        self.at = 0  # where the state stands
+        self.changes = {name: [] for name in self.model.inputs}  # each model input: (from which place, value)
+        self.fresh = True  # no measurement has been considered since the start, a reset or a rebase
+        self.now = None  # the time of the tick whose first phase has run
+        self.stepping = False  # the second phase of a tick has run
+        self.held = False  # a model input was held, or uncertain, or the tick is one a gap ran
         self.rebased = False
         self.lost = False  # a gap of no known length has gone by, and no measurement has been used since
 
-    def _advance(self, times):
-        """`times` steps on the model inputs it has (rule 2): the state if it has them all, and the covariance."""
+    def _place(self, k, t, at):
+        """The place of a sample taken at `at`, seen at tick k whose time is t: to the nearest step it has, and a
+        half goes on, to the later."""
+        if at is None:
+            return SIXTEEN * k
+        per = SIXTEEN // self.unit  # steps in a period
+        back = (2 * (t - at) * per + self.period_ns - 1) // (2 * self.period_ns)
+        return SIXTEEN * k - back * self.unit
+
+    def _span(self, x, p, length, u):
+        """`length` sixteenths on with the model inputs `u` held: whole periods first, then 8, 4, 2 and 1."""
         n = len(self.names)
-        if len(self.last_u) < len(self.model.inputs):  # some model input has never been usable: the state
-            self.p = [[self.p[i][j] + times * self.qd[i][j] for j in range(n)] for i in range(n)]  # stays, and
-            return  # its covariance is P + N for each step
-        f = [[float(i == j) for j in range(n)] for i in range(n)]
-        g = [[0.0] * len(self.model.inputs) for _ in range(n)]
-        noise = [[0.0] * n for _ in range(n)]
-        step = (self.model.ad, self.model.bd, self.qd)
-        while times:  # by doubling: after a long gap this is still few products
-            if times & 1:
-                f, g, noise = compose(step, (f, g, noise))
-            step = compose(step, step)
-            times >>= 1
-        u = [[self.last_u[name]] for name in self.model.inputs]
-        moved, pushed = matmul(f, [[v] for v in self.x]), matmul(g, u)
-        self.x = [moved[i][0] + pushed[i][0] for i in range(n)]
-        spread = matmul(matmul(f, self.p), transpose(f))
-        self.p = [[spread[i][j] + noise[i][j] for j in range(n)] for i in range(n)]
+        whole, rest = divmod(length, SIXTEEN)
+        for size, times in [(SIXTEEN, whole)] + [(size, 1) for size in (8, 4, 2, 1) if rest & size]:
+            if not times:
+                continue
+            step = self.steps[size]
+            if any(v is None for v in u):  # some model input has never been usable: the state stays, and its
+                p = [[p[i][j] + times * step[2][i][j] for j in range(n)] for i in range(n)]  # covariance is P + N
+                continue
+            f = [[float(i == j) for j in range(n)] for i in range(n)]
+            g = [[0.0] * len(self.model.inputs) for _ in range(n)]
+            noise = [[0.0] * n for _ in range(n)]
+            while times:  # by doubling: after a long gap this is still few products
+                if times & 1:
+                    f, g, noise = compose(step, (f, g, noise))
+                step = compose(step, step)
+                times >>= 1
+            moved, pushed = matmul(f, [[v] for v in x]), matmul(g, [[v] for v in u])
+            x = [moved[i][0] + pushed[i][0] for i in range(n)]
+            spread = matmul(matmul(f, p), transpose(f))
+            p = [[spread[i][j] + noise[i][j] for j in range(n)] for i in range(n)]
+        return x, p
+
+    def _carry(self, x, p, a, b):
+        """From place a to place b, each model input from the place its value is from (rule 2)."""
+        while a < b:
+            until = min([place for ch in self.changes.values() for place, _ in ch if a < place < b] + [b])
+            u = []
+            for name in self.model.inputs:
+                in_force = [value for place, value in self.changes[name] if place <= a]
+                u.append(in_force[-1] if in_force else None)
+            x, p = self._span(x, p, until - a, u)
+            a = until
+        return x, p
+
+    def _move(self, to):
+        if self.at < to:
+            self.x, self.p = self._carry(self.x, self.p, self.at, to)
+            self.at = to
 
     def output(self, k, t, ins):
         n = len(self.names)
+        self.now = t
         doubt = False
-        if self.stepping:  # rule 2: from the tick before to this one, on the inputs as they were then
-            self._advance(1)
+        if self.stepping:
             doubt, self.stepping, self.held = self.held, False, False
-        out = {}
-        for port, (row, r, wide) in self.meas.items():  # rules 3 and 4
+        here = SIXTEEN * k
+        self._move(here - SIXTEEN * self.s["lag"])  # rule 2: it stands no further back than `lag`
+        out, due = {}, []
+        for index, (port, (_, r, wide)) in enumerate(self.meas.items()):  # rule 3
             z = ins[port]
             out[f"innovation_{port}"] = out[f"nis_{port}"] = Val(NOT_READY)
             variance = r if z.state == GOOD else wide if z.state == UNCERTAIN else None
-            if (
-                variance is not None
-                and z.at is not None
-                and (self.considered[port] is None or z.at > self.considered[port])
-            ):
-                self.considered[port] = z.at
-                innovation = z.v - sum(c * xi for c, xi in zip(row, self.x, strict=True))
-                reach = [sum(self.p[i][j] * row[j] for j in range(n)) for i in range(n)]  # P times the row
-                s = sum(c * v for c, v in zip(row, reach, strict=True)) + variance
-                out[f"innovation_{port}"] = Val(GOOD, innovation)
-                out[f"nis_{port}"] = Val(GOOD, innovation * innovation / s)
-                self.recent[port].append(innovation * innovation / s)
-                take = True
-                if self.s["gate"] is not None and abs(innovation) > self.s["gate"] * math.sqrt(s):
-                    self.run[port] += 1
-                    if self.run[port] > self.s["max_refused"]:  # too many in a row to be outliers: widen, and take it
-                        for i in range(n):
-                            self.p[i][i] += self.p0[i]
-                        reach = [sum(self.p[i][j] * row[j] for j in range(n)) for i in range(n)]
-                        s = sum(c * v for c, v in zip(row, reach, strict=True)) + variance
-                        doubt = True  # it has given in to what it was refusing, and cannot tell why
-                    else:
-                        take, doubt = False, True
-                        self.refused[port] += 1
-                if take:
-                    self.run[port] = 0
-                    gain = [v / s for v in reach]
-                    self.x = [xi + gi * innovation for xi, gi in zip(self.x, gain, strict=True)]
-                    # rule 4: (1 - g c) P (1 - g c)' + g v g', which a wide p0 beside a small r cannot round to nothing
-                    keep = [[float(a == b) - gain[a] * row[b] for b in range(n)] for a in range(n)]
-                    kept = matmul(matmul(keep, self.p), transpose(keep))
-                    self.p = [[kept[a][b] + gain[a] * variance * gain[b] for b in range(n)] for a in range(n)]
-                    self.used_at[port] = z.at
-                    self.lost = False
-                    doubt = doubt or z.state == UNCERTAIN  # rule D
+            if variance is not None and z.at is not None and (self.seen[port] is None or z.at > self.seen[port]):
+                due.append((self._place(k, t, z.at), index, port, z, variance))
+        for place, _, port, z, variance in sorted(due, key=lambda one: one[:2]):  # by place, then as declared
+            row = self.meas[port][0]
+            self.seen[port] = z.at
+            if place < self.at:
+                if not self.fresh:
+                    self.late[port] += 1  # older than the state: passed by, and it says so
+                    doubt = True
+                    continue
+                place = self.at  # the first of all is taken where the state stands
+                doubt = True
+            self.fresh = False
+            self._move(place)
+            innovation = z.v - sum(c * xi for c, xi in zip(row, self.x, strict=True))
+            reach = [sum(self.p[i][j] * row[j] for j in range(n)) for i in range(n)]  # P times the row
+            s = sum(c * v for c, v in zip(row, reach, strict=True)) + variance
+            out[f"innovation_{port}"] = Val(GOOD, innovation)
+            out[f"nis_{port}"] = Val(GOOD, innovation * innovation / s)
+            self.recent[port].append(innovation * innovation / s)
+            take = True
+            if self.s["gate"] is not None and abs(innovation) > self.s["gate"] * math.sqrt(s):
+                self.run[port] += 1
+                if self.run[port] > self.s["max_refused"]:  # too many in a row to be outliers: widen, and take it
+                    for i in range(n):
+                        self.p[i][i] += self.p0[i]
+                    reach = [sum(self.p[i][j] * row[j] for j in range(n)) for i in range(n)]
+                    s = sum(c * v for c, v in zip(row, reach, strict=True)) + variance
+                    doubt = True  # it has given in to what it was refusing, and cannot tell why
+                else:
+                    take, doubt = False, True
+                    self.refused[port] += 1
+            if take:
+                self.run[port] = 0
+                gain = [v / s for v in reach]
+                self.x = [xi + gi * innovation for xi, gi in zip(self.x, gain, strict=True)]
+                # rule 4: (1 - g c) P (1 - g c)' + g v g', which a wide p0 beside a small r cannot round to nothing
+                keep = [[float(a == b) - gain[a] * row[b] for b in range(n)] for a in range(n)]
+                kept = matmul(matmul(keep, self.p), transpose(keep))
+                self.p = [[kept[a][b] + gain[a] * variance * gain[b] for b in range(n)] for a in range(n)]
+                self.used_at[port] = z.at
+                self.lost = False
+                doubt = doubt or z.state == UNCERTAIN  # rule D
+        for port in self.meas:
             out[f"refused_{port}"] = Val(GOOD, float(self.refused[port]))
+            out[f"late_{port}"] = Val(GOOD, float(self.late[port]))
             out[f"since_{port}"] = (
                 Val(NOT_READY) if self.used_at[port] is None else Val(GOOD, max(0, t - self.used_at[port]) / NS)
             )
             if self.over is not None and len(self.recent[port]) == self.over:  # rule 7
                 doubt = doubt or sum(self.recent[port]) / self.over > self.limit
-        for i, name in enumerate(self.names):  # rule 5
-            sigma = math.sqrt(max(self.p[i][i], 0.0))
+        x, p = self._carry(self.x, self.p, self.at, here)  # rule 8: what it gives is carried on to the tick
+        for i, name in enumerate(self.names):
+            sigma = math.sqrt(max(p[i][i], 0.0))
             wide = name in self.limits and sigma > self.limits[name]
             state = UNCERTAIN if doubt or wide or self.lost else GOOD
-            out[name], out[f"sigma_{name}"] = Val(state, self.x[i]), Val(state, sigma)
+            out[name], out[f"sigma_{name}"] = Val(state, x[i]), Val(state, sigma)
         return out
 
     def update(self, k, ins):
-        """Second phase: the model inputs of this tick, for the step to the next."""
+        """Second phase: the model inputs of this tick, each from the place its sample has."""
         self.stepping = True
         for name in self.model.inputs:
-            if usable(ins[name]):
-                self.last_u[name] = ins[name].v
-                self.held = self.held or ins[name].state == UNCERTAIN
-            else:
+            value, has = ins[name], self.changes[name]
+            if not usable(value):
                 self.held = True
+                continue
+            self.held = self.held or value.state == UNCERTAIN
+            place = max(self._place(k, self.now, value.at), self.at, has[-1][0] if has else self.at)
+            if not has or has[-1][1] != value.v:
+                if has and has[-1][0] == place:
+                    has[-1] = (place, value.v)
+                else:
+                    has.append((place, value.v))
+        self._forget()
+
+    def _forget(self):
+        """What a model input was before the place the state stands at is not wanted again."""
+        for name, has in self.changes.items():
+            behind = [one for one in has if one[0] <= self.at]
+            self.changes[name] = behind[-1:] + [one for one in has if one[0] > self.at]
 
     def gap(self, k, n):
-        if n:  # the ticks nobody saw: as many steps on what it last had
-            self._advance(n)
         if n is None or self.rebased:  # nobody knows how long, or it cannot tell an old sample from a new one
+            self._move(SIXTEEN * (k - 1))  # the ticks nobody saw, on what it last had
             for i in range(len(self.names)):
                 self.p[i][i] += self.p0[i]
+            for name, has in self.changes.items():  # no remembered place means anything now
+                self.changes[name] = [(self.at, has[-1][1])] if has else []
+            self.fresh = True
         if n != 0:
-            self.held = True  # the step to the tick that runs is on values nobody saw
+            self.held = True  # the tick that runs is one a gap ran
         self.lost = self.lost or n is None
         self.rebased = False
 
     def forget_times(self):
-        self.considered = dict.fromkeys(self.meas)
+        self.seen = dict.fromkeys(self.meas)
         self.used_at = dict.fromkeys(self.meas)
         self.rebased = True
 

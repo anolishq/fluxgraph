@@ -1,0 +1,15 @@
+# 7.9.3, 7.9.7: the first measurement due after the start is not late.
+# Taken half a second before tick 0, it is considered where the state
+# stands, and the tick is uncertain for it: with p0 and r of 1 an
+# innovation of 2 gives x of 1.
+rules: [7.9.3]
+period: 1s
+inputs: {z: {max_age: none}}
+blocks:
+  - id: k
+    type: estimator
+    in: {u: 0, z: z}
+    settings: {model: {type: linear, A: [[0]], B: [[1]], C: [[1]]}, q: {x0: 0}, p0: {x0: 1}, measure: {z: {of: y, r: 1}}, consistency: none}
+    out: {x0: x, innovation_z: innovation, late_z: late}
+calls:
+  - {now: 0, z: {v: 2, at: -0.5}, x: {u: 1}, innovation: 2, late: 0}

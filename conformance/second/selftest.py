@@ -6302,6 +6302,206 @@ def test_follow():
     check("follow pid by the call 3 y", o["y"], ("good", 8.0))
 
 
+def test_estimator_between_samples():
+    """Amendment 13: the state stands at the last measurement considered,
+    a measurement is met at its own sample's place, and what is given is
+    carried on to the tick. The model is dx/dt = u in continuous time with
+    q 1, p0 4 and r 1: carrying over n sixteenths of a 1 s period adds
+    n / 16 to the variance and u n / 16 to the state."""
+    walk = {"type": "linear", "A": [[0]], "B": [[1]], "C": [[1]]}
+    MS = 10**6
+
+    def var(o):
+        return o["sigma_x0"][1] ** 2
+
+    def near(label, got, want):
+        check(label, abs(got - want) <= 1e-9 * max(1.0, abs(want)), True)
+
+    # a sample taken at 1.5 s and seen at tick 2 has the place 24: the
+    # state is carried there (4 + 1.5), corrected (s 6.5), and what is
+    # given at tick 2 is carried on 8 sixteenths more
+    e = est_engine(model=walk)
+    e.tick(0)
+    e.tick(1 * S)
+    e.write("z", "good", 3.0, 1500 * MS)
+    o = e.tick(2 * S)[1]
+    check("bs est innovation", o["innovation_z"], ("good", 3.0))
+    check("bs est nis", o["nis_z"], ("good", 9 / 6.5))
+    check("bs est x", o["x0"], ("good", 5.5 / 6.5 * 3))
+    near("bs est variance", var(o), 5.5 / 6.5 + 0.5)
+    check("bs est since", o["since_z"], ("good", 0.5))
+    # the state stands at 24: at tick 3 it is given from there, 24 on
+    near("bs est variance, next", var(e.tick(3 * S)[1]), 5.5 / 6.5 + 1.5)
+
+    # the place of a sample: to the nearest sixteenth, exactly a half to
+    # the later place. A sixteenth is 62.5 ms; seen at tick 2:
+    #   31.25 ms before the tick: half a sixteenth: place 32
+    #   31.250001 ms before: place 31;  93.75 ms: place 31;  93.750001: 30
+    for back_ns, place in ((31250000, 32), (31250001, 31), (93750000, 31), (93750001, 30), (0, 32)):
+        e = est_engine(model=walk)
+        e.tick(0)
+        e.tick(1 * S)
+        e.write("z", "good", 0.0, 2 * S - back_ns)
+        o = e.tick(2 * S)[1]
+        at = 4 + place / 16
+        near("bs est place %d" % back_ns, var(o), at / (at + 1) + (32 - place) / 16)
+    # a sample stamped after the tick (seen by the last tick of its call)
+    # has a place after it; the state stands there and is given as it stands
+    e = est_engine(model=walk)
+    e.tick(0)
+    e.write("z", "good", 0.0, 1 * S + 250 * MS)
+    o = e.tick(1 * S + 250 * MS)[1]
+    near("bs est place after the tick", var(o), 5.25 / 6.25)
+    near("bs est place after the tick, next", var(e.tick(2 * S)[1]), 5.25 / 6.25 + 0.75)
+
+    # a model in discrete time: a place is a tick; half a period goes to
+    # the later tick
+    for back_ns, ticks_back in ((500 * MS, 0), (500 * MS + 1, 1), (1500 * MS, 1), (1500 * MS + 1, 2)):
+        e = est_engine()
+        e.tick(0)
+        e.tick(1 * S)
+        e.tick(2 * S)
+        e.write("z", "good", 0.0, 3 * S - back_ns)
+        o = e.tick(3 * S)[1]
+        at = 4 + 3 - ticks_back
+        near("bs est discrete place %d" % back_ns, var(o), at / (at + 1) + ticks_back)
+
+    # late: the state stands at tick 3's place after a measurement there;
+    # one sampled at 2.5 s, seen at tick 4, is before it: passed by,
+    # counted, the tick uncertain, and nothing else changes
+    e = est_engine(model=walk)
+    for k in range(3):
+        e.tick(k * S)
+    e.write("z", "good", 1.0, 3 * S)
+    o = e.tick(3 * S)[1]
+    v3 = 7 / 8
+    near("bs est late: before", var(o), v3)
+    check("bs est late: before, count", o["late_z"], ("good", 0.0))
+    # written with a later sample time than the one considered, but a
+    # place before the state: 3 s + 1 ns rounds to place 48, not before;
+    # use a second port instead: w, sampled at 2.5 s
+    two = {"measure": {"z": {"of": "y", "r": 1}, "w": {"of": "y", "r": 1}}}
+    e = est_engine(two, model=walk, ins={"u": 0, "z": "z", "w": "w"}, inputs=("z", "w"))
+    for k in range(3):
+        e.tick(k * S)
+    e.write("z", "good", 1.0, 3 * S)
+    e.tick(3 * S)
+    e.write("w", "good", 50.0, 2500 * MS)
+    o = e.tick(4 * S)[1]
+    check("bs est late x", o["x0"], ("uncertain", 7 / 8))
+    near("bs est late variance", var(o), v3 + 1)
+    check("bs est late count", o["late_w"], ("good", 1.0))
+    check("bs est late innovation", o["innovation_w"], ("not_ready", None))
+    check("bs est late since", o["since_w"], ("not_ready", None))
+    check("bs est late, next tick", e.tick(5 * S)[1]["x0"][0], "good")
+    # the one passed by is the one last passed by on its port: a sample
+    # with a time between it and the state is due, and late again
+    e.write("w", "good", 50.0, 2600 * MS)
+    check("bs est late again", e.tick(6 * S)[1]["late_w"], ("good", 2.0))
+    # two due at one tick are taken in the order of their places: w at
+    # 6.25 s and z at 6.5 s, both seen at tick 7: neither is late
+    e.write("z", "good", 1.0, 6500 * MS)
+    e.write("w", "good", 1.0, 6250 * MS)
+    o = e.tick(7 * S)[1]
+    check("bs est order of places", [o["late_w"], o["late_z"]], [("good", 2.0), ("good", 0.0)])
+    check("bs est order of places, both considered", [o["nis_w"][0], o["nis_z"][0]], ["good", "good"])
+
+    # lag (2 periods unless given): with no measurement the state is kept
+    # no further than lag behind the tick; the first measurement after
+    # the start is not late: before the state, it is considered where the
+    # state stands. Seen at tick 5 and sampled at 1 s: the state stands at
+    # tick 3's place (4 + 3), and is carried on two periods.
+    e = est_engine(model=walk)
+    for k in range(5):
+        e.tick(k * S)
+    e.write("z", "good", 0.0, 1 * S)
+    o = e.tick(5 * S)[1]
+    check("bs est first is not late", o["late_z"], ("good", 0.0))
+    # ... and its tick is uncertain for it: it was taken as newer than it is
+    check("bs est first, before the state: uncertain", o["x0"][0], "uncertain")
+    check("bs est first, before the state: nis given", o["nis_z"][0], "good")
+    near("bs est first, where the state stands", var(o), 7 / 8 + 2)
+    # a first one whose place is not before the state's leaves its tick good
+    e2 = est_engine(model=walk)
+    for k in range(5):
+        e2.tick(k * S)
+    e2.write("z", "good", 0.0, 3 * S)  # exactly where the state stands at tick 5
+    check("bs est first, at the state: good", e2.tick(5 * S)[1]["x0"][0], "good")
+    # the next such one is late
+    e.write("z", "good", 0.0, 2 * S)
+    check("bs est the second is late", e.tick(6 * S)[1]["late_z"], ("good", 1.0))
+    # a lag of zero: the state is carried to every tick before any
+    # measurement, so any sample from before the tick is late
+    e = est_engine({"lag": "0s"}, model=walk)
+    e.write("z", "good", 0.0, 0)
+    e.tick(0)
+    e.write("z", "good", 0.0, 1 * S - 500 * MS)
+    check("bs est lag 0", e.tick(1 * S)[1]["late_z"], ("good", 1.0))
+    e = est_engine({"lag": "3s"}, model=walk)
+    e.write("z", "good", 0.0, 0)
+    e.tick(0)
+    for k in range(1, 6):
+        e.tick(k * S)
+    e.write("z", "good", 0.0, 3 * S)  # the state stands at 2 s
+    check("bs est lag 3", e.tick(6 * S)[1]["late_z"], ("good", 0.0))
+    try:
+        est_engine({"lag": "1500ms"}, model=walk)
+        check("bs est lag not whole periods", "accepted", "refused")
+    except CompileError:
+        check("bs est lag not whole periods", True, True)
+
+    # a model input has its value from a place: u is 1, sampled at 0.5 s
+    # and seen at tick 1's second phase. From place 8 on the state moves
+    # at 1 a second: at tick 1 nothing yet (it was given after the tick
+    # gave its outputs); at tick 2 it has moved over 24 sixteenths. Before
+    # place 8 the input had no value: the state stays, and P takes N.
+    e = est_engine(model=walk, ins={"u": "u", "z": "z"}, inputs=("u", "z"))
+    e.tick(0)
+    e.write("u", "good", 1.0, 500 * MS)
+    o = e.tick(1 * S)[1]
+    check("bs est input 1", o["x0"], ("uncertain", 0.0))
+    o = e.tick(2 * S)[1]
+    check("bs est input 2", o["x0"], ("good", 1.5))
+    near("bs est input 2 variance", var(o), 6.0)
+    # a new value takes over from its own place: 3, sampled at 2.25 s and
+    # seen at tick 3: at tick 4: 0.5 to 2.25 s at 1, 2.25 to 4 s at 3
+    e.write("u", "good", 3.0, 2250 * MS)
+    e.tick(3 * S)
+    check("bs est input 4", e.tick(4 * S)[1]["x0"], ("good", 1.75 + 5.25))
+    # one whose sample is older than the place the state stands at has
+    # its value from where the state stands
+    e = est_engine(model=walk, ins={"u": "u", "z": "z"}, inputs=("u", "z"))
+    for k in range(4):
+        e.tick(k * S)  # the state stands at tick 1's place at tick 3 (lag 2)
+    e.write("u", "good", 1.0, 0)
+    e.tick(4 * S)  # tick 4: the state stands at 2 s; u from there
+    check("bs est input older than the state", e.tick(5 * S)[1]["x0"], ("good", 3.0))
+
+    # a stall does nothing then; the state is carried over the ticks
+    # passed over when the next tick asks: 1,000 ticks at u = 2
+    e = est_engine(model=walk, ins={"u": 2, "z": "z"}, max_catch_up=1)
+    e.tick(0)
+    o = e.tick(1000 * S)[1]
+    check("bs est stall x", o["x0"], ("uncertain", 2000.0))
+    near("bs est stall variance", var(o), 4 + 1000.0)
+    check("bs est stall next", e.tick(1001 * S)[1]["x0"], ("good", 2002.0))
+    # a rebase: the state is carried to the tick before the one that
+    # runs, then each variance grows by p0, and the next measurement due
+    # is the first. Ticks 0 to 3; away 4 s: tick 7 runs, three passed over.
+    e = est_engine(model=walk)
+    for k in range(4):
+        e.tick(k * S)
+    e.rebase(4 * S)
+    e.write("z", "good", 0.0, 100 * S - 2500 * MS)  # 2.5 periods before the tick
+    o = e.tick(100 * S)[1]
+    check("bs est rebase info", e.info, info(True, 7, 100 * S, skipped=3))
+    # the state stands at tick 6's place: 4 + 6, and p0: 14. The sample's
+    # place is before it, and it is the first: considered where it stands
+    check("bs est rebase late", o["late_z"], ("good", 0.0))
+    near("bs est rebase variance", var(o), 14 / 15 + 1)
+    check("bs est rebase state", o["x0"][0], "uncertain")
+
+
 def test_estimator():
     g = {
         "period": "1s",
