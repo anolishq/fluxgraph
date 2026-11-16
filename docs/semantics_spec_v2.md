@@ -20,8 +20,8 @@ for it, is in [semantics_v2_history.md](semantics_v2_history.md).
 - **A derivative of a low-pass's output is over ticks** (rule 7.4.5). A
   low-pass gives a new value at every tick, on samples that came when the
   host's calls did, and the PID's derivative of it is off as the tenth
-  amendment found the derivative of the samples to be. The PID's own `filter` is
-  over sample times, and is the filter to use.
+  amendment found the derivative of the samples to be. The PID's own
+  `filter` is over sample times, and is the filter to use.
 - **A value does not say why it is `uncertain` or `bad`.** Room is kept
   for it (rule 3.8), and no block fills it.
 - **An input written true for one call can be missed** by a host whose
@@ -232,16 +232,16 @@ call for reads what the host has in hand.
    whole number of periods, and a graph where one is not is refused. Inside
    a block, time is counted in ticks. Where a rule rounds a number of ticks
    or of samples up to a whole number, the number is worked exactly from
-   what the graph file gives, and there is no tolerance: a `min_good` of
-   0.7 over ten ticks needs seven, and one of 0.7000000001 needs eight. A
-   decimal is read as a double and then taken as the shortest decimal
-   that reads back as that double, so one written with more digits than a
-   double keeps is the nearest it does keep. A named model's
-   `settle` is the one number that is not exact, and rule 7.8.6 says how
-   it is rounded. An input's maximum age is not counted, and may
-   be any whole number of nanoseconds. A setting that only scales a value
-   (`tau`, `per`) is not a time the engine keeps: it is written as a length
-   and may be any length at all.
+   what the graph file gives, and there is no tolerance: a `min_good` of 0.7
+   over ten ticks needs seven, and one of 0.7000000001 needs eight. A
+   decimal is read as a double and then taken as the shortest decimal that
+   reads back as that double, so one written with more digits than a double
+   keeps is the nearest it does keep. A named model's `settle` is the one
+   number that is not exact, and rule 7.8.6 says how it is rounded. An
+   input's maximum age is not counted, and may be any whole number of
+   nanoseconds. A setting that only scales a value (`tau`, `per`) is not a
+   time the engine keeps: it is written as a length and may be any length at
+   all.
 4. The host passes the time to every call: `tick(now)`. The clock is the
    host's, and it does not go backwards. It should be one that does not
    step: the engine cannot tell a step from a stall. `now` is read after
@@ -311,12 +311,11 @@ call for reads what the host has in hand.
    later time displaces a failed read. A write with the same time as what
    stands and a different value stands in its place; a block that compares
    sample times (rule 3.7) does not take it for a new sample.
-9. A graph has a setting, `max_catch_up`, 100 unless given and at least
-   1. When a call
-   would run more ticks than that, it is a **gap** (section 8): the last
-   of them runs, and the rest are passed over. Catching up is for a host
-   that is late by a tick or two. It runs each tick on what stood at that
-   tick's time, judged by its age, and an input's maximum age is what
+9. A graph has a setting, `max_catch_up`, 100 unless given and at least 1.
+   When a call would run more ticks than that, it is a **gap** (section 8):
+   the last of them runs, and the rest are passed over. Catching up is for a
+   host that is late by a tick or two. It runs each tick on what stood at
+   that tick's time, judged by its age, and an input's maximum age is what
    keeps a long pause from being run on old values.
 10. A call that ran a tick gives: the number of ticks it ran; whether it
     was a gap, and if so how many ticks it passed over, or that nobody
@@ -352,33 +351,35 @@ call for reads what the host has in hand.
     - **A command is held.** At a catch-up tick a command is, for every
       block that reads it and in both phases, what it was at the latest
       tick that was the last of its call: its value, its state and its
-      sample time, a value a fallback gave among them. For rule 7.8.8 it
-      is not usable at a catch-up tick where it was not usable then,
-      before any fallback, and usable where it was, whatever its block
-      works out at the catch-up tick. There is always such a tick: tick 0 is the
-      last of its call, and so is the tick a gap runs.
+      sample time, a value a fallback gave among them. There is always
+      such a tick: tick 0 is the last of its call, and so is the tick a
+      gap runs. For rule 7.8.8 it is not usable at a catch-up tick where
+      it was not usable then, before any fallback, and usable where it
+      was, whatever its block works out at the catch-up tick.
     - **A `pid` or a `rate_limit` that feeds a command acts by the
       call.** A block **feeds** a command when it gives it, or when a
       block that feeds the command reads one of its outputs, on any port,
-      direct or deferred. A `pid` that feeds a command acts by the call.
-      A `rate_limit` does where it feeds one along a chain of such reads
-      on which no block is a `pid`. A `pid` that gives the command is on
-      the chain, so a rate limit it reads does not act by the call: one
-      that only shapes what a
-      controller reads, a ramp on its setpoint say, keeps time and not an
-      actuator, and runs at every tick. The `y` of a block that acts by
+      direct or deferred.
+      - A `pid` that feeds a command acts by the call.
+      - A `rate_limit` does where it feeds one along a chain of such
+        reads on which no block is a `pid`. A `pid` that gives the
+        command is on the chain, so a rate limit it reads does not act
+        by the call: one that only shapes what a controller reads, a
+        ramp on its setpoint say, keeps time and not an actuator, and
+        runs at every tick.
+    - **What acting by the call is.** The `y` of a block that acts by
       the call is held as a command is. At a catch-up tick such a block
       does not act: a `pid` adds nothing to its integral (rule 7.7.13),
-      and a `rate_limit` does not move (rule 7.4.12). At the last tick of
-      a call it acts for `m` periods: `m` is the number of ticks the call
-      ran, or `act_for` if that is less.
-    - `act_for` is a setting of the graph, 3 unless given and at least
-      1. A host that is late by a tick or two acts for the time it was
-      away, and one away for longer does not act for all of it.
+      and a `rate_limit` does not move (rule 7.4.12). At the last tick
+      of a call it acts for `m` periods: `m` is the number of ticks the
+      call ran, or `act_for` if that is less.
+    - **`act_for`** is a setting of the graph, 3 unless given and at
+      least 1. A host that is late by a tick or two acts for the time it
+      was away, and one away for longer does not act for all of it.
 
-    Every other block runs at every tick as it did, whatever reads it,
-    and so does every output that is not held. A graph that lists no
-    command is as it was without this rule.
+    Every other block runs at every tick, whatever reads it, and so does
+    every output that is not held: the rule changes nothing else. A graph
+    that lists no command is as it would be without this rule.
 
 So a host whose loop is a little slow or a little fast runs, now and then,
 two ticks in a call or none. The extra tick reads what had been sampled by
@@ -488,16 +489,15 @@ past is remembered for as long as a block says it remembers, and no longer.
 **Rule D.** A block's output is never better than `uncertain` on a tick
 where a value the block used to give that output at that tick is
 `uncertain`. Each block's rule says what it uses. A formula does not use an
-operand that did not decide, an `uncertain` operand beside a `good` one
-that decides by itself, or a branch it did not take (rules 7.1.2 and
-7.1.3); a latch that is set does not use `set`; `all_good`, a window's
-`count` and the counters read states and not values, and are always `good`.
-A value a block took in at an earlier tick is not one it uses at this
-tick: what the block remembers of it is the block's own rule. There is
-one exception to what the next paragraph says of memory, named where it is
-made: a delay, window or
-low-pass on a loop that holds a model block, once the loop has settled
-(rule 7.8.8).
+operand that did not decide, an `uncertain` operand beside a `good` one that
+decides by itself, or a branch it did not take (rules 7.1.2 and 7.1.3); a
+latch that is set does not use `set`; `all_good`, a window's `count` and the
+counters read states and not values, and are always `good`. A value a block
+took in at an earlier tick is not one it uses at this tick: what the block
+remembers of it is the block's own rule. There is one exception to what the
+next paragraph says of memory, named where it is made: a delay, window or
+low-pass on a loop that holds a model block, once the loop has settled (rule
+7.8.8).
 
 **Memory.** A block that keeps something from one tick to the next says
 how long that memory is.
@@ -506,12 +506,12 @@ how long that memory is.
   `settle`. The block is `uncertain` for that long after it took in
   something doubtful, and no longer.
 - **Memory with no end**: which way a hysteresis last switched, whether a
-  latch is set, a running total, how long a timer has run. The block
-  takes its state from what it reads now, and gives
-  **counters** that a graph can test: how long it has been going
-  (`elapsed`), how much of that time its input was not `good`
-  (`doubtful`), and how many gaps there were in it (`gaps`). `good` does
-  not vouch for history older than a block's declared memory.
+  latch is set, a running total, how long a timer has run. The block takes
+  its state from what it reads now, and gives **counters** that a graph can
+  test: how long it has been going (`elapsed`), how much of that time its
+  input was not `good` (`doubtful`), and how many gaps there were in it
+  (`gaps`). `good` does not vouch for history older than a block's declared
+  memory.
 - **A tolerance** the graph's author declared (a window's `min_good`, a
   total's `max_missed`) is the author's statement of what is acceptable.
   Within it an output is `good`. A `ride_through` is not one: a block
@@ -524,19 +524,20 @@ tick `d`, it is so on the `settle` ticks after `d`: ticks `d + 1` to
 block's own rule.
 
 **Counters.** `elapsed` and `doubtful` are numbers, in seconds, and always
-`good`. `elapsed` counts whole ticks, the present one among them, since
-the event the block names, and `doubtful` counts those of them that the block's own rule names: for
-most, the ticks on which its input was not `good`. So `doubtful` is never more than
-`elapsed`, and the first tick counted gives an `elapsed` of one period. A
-tick a gap passed over (section 8) is a tick, and one on which no input
-was `good`: `elapsed` counts it, and `doubtful` does wherever it would
-have counted a tick with its input unusable. A gap of no known length has
-no ticks to count.
+`good`. `elapsed` counts whole ticks, the present one among them, since the
+event the block names, and `doubtful` counts those of them that the block's
+own rule names: for most, the ticks on which its input was not `good`. So
+`doubtful` is never more than `elapsed`, and the first tick counted gives an
+`elapsed` of one period. A tick a gap passed over (section 8) is a tick, and
+one on which no input was `good`: `elapsed` counts it, and `doubtful` does
+wherever it would have counted a tick with its input unusable. A gap of no
+known length has no ticks to count.
+
 `gaps` is a number, a count, and always `good`: the gaps (section 8) whose
 tick is the one `elapsed` counts from, or a later one. Every block that
-gives `elapsed` gives `gaps`, and where `elapsed` is zero because nothing
-is being counted, as for a `held_for` whose timer is not running, `gaps`
-is zero too.
+gives `elapsed` gives `gaps`, and where `elapsed` is zero because nothing is
+being counted, as for a `held_for` whose timer is not running, `gaps` is
+zero too.
 
 ### 7.1 Formulas
 
@@ -619,29 +620,33 @@ its doubt with it.
 5. With as many `good` samples as are needed, its outputs are `good`, and
    its statistics are of its `good` samples alone. An `uncertain` sample
    within the tolerance is left out, as a missing one is.
-6. A slope needs two samples. Where the window holds fewer than two `good`
-   samples and at least two usable ones, its slope is of its usable
-   samples and is `uncertain`, whatever rule 5 says of the rest. With one
-   usable sample the slope is `bad`, and so it is where every sample it
-   would be of has one time: a sample seen again at a later tick is the
-   same point again, counted once for each tick it stands at, and not a
-   point at a second time. That is judged on the times, and not on a
-   sum of squares that rounding may leave a little over nothing. A window whose slope is read is longer than
-   the time between samples, and a slope of a value written only when
-   it changes wants a fallback. Where the slope is of the `good`
-   samples and they have one time, it is `bad`, whatever an `uncertain`
-   sample at another time would have added. The other statistics are as rules 4
-   and 5 say. Rule 3 comes first: with fewer usable samples than are
-   needed the slope takes the state the other statistics take.
+6. A slope needs two samples. Rule 3 comes first: with fewer usable
+   samples than are needed the slope takes the state the other statistics
+   take. Otherwise:
+   - Where the window holds fewer than two `good` samples and at least two
+     usable ones, its slope is of its usable samples and is `uncertain`,
+     whatever rule 5 says of the rest.
+   - With one usable sample the slope is `bad`.
+   - Where every sample it would be of has one time, the slope is `bad`: a
+     sample seen again at a later tick is the same point again, counted
+     once for each tick it stands at, and not a point at a second time.
+     That is judged on the times, and not on a sum of squares that
+     rounding may leave a little over nothing. Where the slope is of the
+     `good` samples and they have one time, it is `bad`, whatever an
+     `uncertain` sample at another time would have added.
+
+   The other statistics are as rules 4 and 5 say. A window whose slope is
+   read is longer than the time between samples, and a slope of a value
+   written only when it changes wants a fallback.
 7. `count`, the number of usable samples the window holds, is always `good`.
 8. With `only_new: true` a tick holds a sample only if the input is usable
    and its sample time is later than that of the last sample the window
    took. A value still standing from an earlier tick is not another sample,
    and neither is one with no sample time. A tick that holds none for that
-   reason counts as `not_ready` in rule 3; a tick whose input is not
-   usable counts as that input's state, as in any window. `min_good` has to be given: a
-   tick the host did not call for holds no new sample, and at 1 that one
-   hole would spoil the window for its whole length.
+   reason counts as `not_ready` in rule 3; a tick whose input is not usable
+   counts as that input's state, as in any window. `min_good` has to be
+   given: a tick the host did not call for holds no new sample, and at 1
+   that one hole would spoil the window for its whole length.
 
 A window fed a value that has stopped being written reports no spread, as
 `good`, until the input's maximum age ends it, and once it holds that one
@@ -689,14 +694,15 @@ other statistics must not go on as `good` either.
 9. The first usable input is taken as it is. After that, on a usable
    input, its output moves from the value it holds towards the input: by
    at most `up` times the period where the input is above it, and by at
-   most `down` times the period where it is below. An input within that
-   reach is taken as it is: the input less the value held, either way
-   round, is compared with the reach, exactly. `up` and `down`
-   are per second, and `down` is `up` unless given. The reach is of one
-   period whatever went before: after riding through, the output still
-   moves by no more than one period's worth in a tick. With `initial`
-   given, the block holds that value from the start, and its first input
-   is limited from it like any other.
+   most `down` times the period where it is below. `up` and `down` are
+   per second, and `down` is `up` unless given.
+   - An input within that reach is taken as it is: the input less the
+     value held, either way round, is compared with the reach, exactly.
+   - The reach is of one period whatever went before: after riding
+     through, the output still moves by no more than one period's worth
+     in a tick.
+   - With `initial` given, the block holds that value from the start, and
+     its first input is limited from it like any other.
 10. With a usable input its output takes the state of the input at this
     tick, as a deadband's does (rule 2). `limited` is a boolean with that
     state: true when the output is not the input.
@@ -706,56 +712,61 @@ other statistics must not go on as `good` either.
     one, and otherwise takes its next usable input as it is, however far
     that is from where it was. Holding `initial` and nothing else it does
     not ride through: its output takes the input's state.
-12. **By the call.** A rate limit that acts by the call (rule 6.13)
-    does nothing at a catch-up tick, whatever its input: it takes
-    nothing, moves nothing and forgets nothing, and what it holds is as
-    it was, `initial` or nothing among them. Nothing was handed on at
-    that tick, and an input too old at a tick the host was late for is
-    not an outage. Where it holds a value it took from an input, a
-    catch-up tick is one with a usable input for rules 3 and 4, whatever
-    it read: it ends a run of unusable ticks, and the next unusable tick
-    is the first of a new one. `limited` has the input's state, and with a usable input is
-    true when the block holds a value, `initial` alone among them, and
-    the input is not that value.
-    Its `y` at such a tick is held (rule 6.13). At the last tick of a call its reach is that of `m`
-    periods: `up` times the period, and that times `m`, and `down`
-    likewise.
+12. **By the call.** For a rate limit that acts by the call (rule 6.13):
+    - **At a catch-up tick** it does nothing, whatever its input: it
+      takes nothing, moves nothing and forgets nothing, and what it holds
+      is as it was, `initial` or nothing among them. Nothing was handed
+      on at that tick, and an input too old at a tick the host was late
+      for is not an outage. Where it holds a value it took from an input,
+      a catch-up tick is one with a usable input for rules 3 and 4,
+      whatever it read: it ends a run of unusable ticks, and the next
+      unusable tick is the first of a new one. `limited` has the input's
+      state, and with a usable input is true when the block holds a
+      value, `initial` alone among them, and the input is not that value.
+      Its `y` at such a tick is held (rule 6.13).
+    - **At the last tick of a call** its reach is that of `m` periods:
+      `up` times the period, and that times `m`, and `down` likewise.
 13. **Where the actuator is.** It has an input `track`, a number, that
     need not be connected: the value the actuator has, read back from it.
-    On a tick with a usable input, where the block holds no value it took
-    from an input, at the start and after it has forgotten, and `track`
-    is usable, it holds the value of `track` in place of `initial` or of
-    nothing, and its input is limited from that like any other. A rate
-    limit that acts by the call does so at the last tick of a call and
-    not at a catch-up tick. An `uncertain` `track` is used as a `good`
-    one is, and the output's state is the input's all the same. A `track`
-    that is not usable is not used, and rules 9 and 11 are as written.
-    `track` is a direct input, and a readback from outside the graph. A delay of the block's
-    own output is not one: for as long as the output has no value the
-    delay has none either.
+    `track` is a direct input, and a readback from outside the graph. A
+    delay of the block's own output is not one: for as long as the output
+    has no value the delay has none either.
+    - On a tick with a usable input, where the block holds no value it
+      took from an input, at the start and after it has forgotten, and
+      `track` is usable, it holds the value of `track` in place of
+      `initial` or of nothing, and its input is limited from that like
+      any other. A rate limit that acts by the call does so at the last
+      tick of a call and not at a catch-up tick.
+    - An `uncertain` `track` is used as a `good` one is, and the output's
+      state is the input's all the same.
+    - A `track` that is not usable is not used, and rules 9 and 11 are as
+      written.
 14. **Not acting.** It has an input `follow`, a boolean, that need not be
     connected, and is given only where `track` is: the graph is refused
-    otherwise. It is what a host says while nothing acts on the output: a
-    machine in manual, a fault, an actuator switched to local. The block
-    **follows** at a tick where `follow` is true, and at one where
-    `follow` is not usable: a block that is not told it acts does not.
-    At a catch-up tick a rate limit that acts by the call does nothing,
-    as rule 12 says, and `follow` is not looked at. A block that follows
-    limits nothing and does not look at its input. With `track` usable,
-    `y` is the value of `track` and `limited` is false, each with the
-    state of `track`, or `uncertain` in place of `good` where `follow`
-    is not usable; and the block holds that value as one it took from an
-    input at that tick. With `track` not usable, `y` and `limited` have
-    no value and the state of `track`, and the block holds what it held:
-    it forgets nothing at such a tick, however many there are. The tick
-    counts towards `ride_through`, which is counted from the last tick
-    the block took a value at, when the block next has an input it
-    cannot use and does not follow. A catch-up tick of rule 12 ends that
-    count as it ends a run of unusable ticks, and a gap adds its ticks to
-    it as section 8 says. A host writes `follow` as often as its maximum
-    age asks: one written once and left goes too old, and the block
-    follows.
-    `follow` is a direct input.
+    otherwise. `follow` is a direct input. It is what a host says while
+    nothing acts on the output: a machine in manual, a fault, an actuator
+    switched to local. A host writes `follow` as often as its maximum age
+    asks: one written once and left goes too old, and the block follows.
+    - **When it follows.** The block **follows** at a tick where `follow`
+      is true, and at one where `follow` is not usable: a block that is
+      not told it acts does not. At a catch-up tick a rate limit that
+      acts by the call does nothing, as rule 12 says, and `follow` is not
+      looked at.
+    - **What following is.** A block that follows limits nothing and does
+      not look at its input.
+    - **Following with `track` usable**, `y` is the value of `track` and
+      `limited` is false, each with the state of `track`, or `uncertain` in place
+      of `good` where `follow` is not usable; and the block holds that
+      value as one it took from an input at that tick.
+    - **Following with `track` not usable**, `y` and `limited` have no
+      value and the state of `track`, and the block holds what it held: it
+      forgets
+      nothing at such a tick, however many there are. The tick counts
+      towards `ride_through`, which is counted from the last tick the
+      block took a value at, when the block next has an input it cannot
+      use and does not follow. A catch-up tick of rule 12 ends that count
+      as it ends a run of unusable ticks, and a gap adds its ticks to it
+      as section 8 says.
 <!-- markdownlint-enable MD029 -->
 
 ### 7.5 Hysteresis
@@ -836,16 +847,18 @@ lacks.
 1. An integrator adds its input, times the period, on every tick where the
    input is usable. The value at a tick includes that tick's addition, so a
    constant 1 from tick 0 gives `k + 1` periods at tick `k`.
-2. The total always has a value. It is `uncertain` once `missed` is more
-   than `max_missed`, if that is given, until a reset, and likewise after
-   a gap of no known length (rule 8.6), which is more than any
-   `max_missed`, though `missed` cannot say so and only `gaps` shows it; a
-   reset at the gap's own tick ends that as any reset does. It is
-   `uncertain` too on a tick where its input is `uncertain`, or where
-   `reset` is `uncertain` and true. Otherwise it is `good`. On a tick
-   where its input is unusable and it is within `max_missed` the total is
-   `good`: it has a value, and `missed` says what it lacks. Past
-   `max_missed` it goes on adding as before.
+2. The total always has a value. It is `uncertain`:
+   - once `missed` is more than `max_missed`, if that is given, until a
+     reset. Past `max_missed` it goes on adding as it did within it;
+   - likewise, where `max_missed` is given, after a gap of no known
+     length (rule 8.6), which is more than any `max_missed`, though `missed` cannot say so and only `gaps`
+     shows it; a reset at the gap's own tick ends that as any reset does;
+   - on a tick where its input is `uncertain`, or where `reset` is
+     `uncertain` and true.
+
+   Otherwise it is `good`. On a tick where its input is unusable and it
+   is within `max_missed` the total is `good`: it has a value, and
+   `missed` says what it lacks.
 3. It gives four counts, each a number and always `good`:
    - `missed`: the time it has not integrated, the period added up over
      every tick where the input was unusable;
@@ -864,49 +877,49 @@ lacks.
 
 <!-- markdownlint-disable MD029 -- the rules of 7.7 keep one numbering -->
 5. A `pid` reads `setpoint` and `measurement`, and its **error** is the
-   first less the second. On a tick where both are usable, its output
-   before limiting is `kp·error + integral + derivative`, and its output
-   `y` is that held within `min` and `max`, where they are given. The sum
-   is worked in one order, since another differs in the last place and
-   can fall on the other side of a limit: `kp·error` and the derivative
+   first less the second. On a tick where both are usable, its output before
+   limiting is `kp·error + integral + derivative`, and its output `y` is
+   that held within `min` and `max`, where they are given.
+
+   The sum is worked in one order, since another differs in the last place
+   and can fall on the other side of a limit: `kp·error` and the derivative
    are added first, and to that the integral with this tick's addition
-   already made. The test of rule 6 is of that same sum. Where an
-   addition is cut short at `max`, the integral becomes `max` less the
-   first of those two, and `y` is `max` itself.
-6. **The integral** starts at zero. On a tick where both inputs are
-   usable, `ki·error·period` is added to it, `ki` being per second, and
-   the value at a tick includes that tick's addition, as a total's does
-   (rule 1). **An addition that would put the output before limiting
-   above `max` is cut short**: where the addition is more than zero and,
-   with it made, that output would be above `max`, the integral becomes
-   what puts that output at `max`, or stays as it is if that is less than
-   it has, and `y` is `max`. Likewise below `min`, for an addition less
-   than zero. So the
-   integral stops going into a limit, takes the output to the limit and
-   not short of it, and still comes out of one: an addition towards the
-   other limit is made whole.
+   already made. The test of rule 6 is of that same sum. Where an addition
+   is cut short at `max`, the integral becomes `max` less the first of those
+   two, and `y` is `max` itself.
+6. **The integral** starts at zero. On a tick where both inputs are usable,
+   `ki·error·period` is added to it, `ki` being per second, and the value at
+   a tick includes that tick's addition, as a total's does (rule 1). **An
+   addition that would put the output before limiting above `max` is cut
+   short**: where the addition is more than zero and, with it made, that
+   output would be above `max`, the integral becomes what puts that output
+   at `max`, or stays as it is if that is less than it has, and `y` is
+   `max`. Likewise below `min`, for an addition less than zero. So the
+   integral stops going into a limit, takes the output to the limit and not
+   short of it, and still comes out of one: an addition towards the other
+   limit is made whole.
 7. **The derivative** is of the measurement and not of the error, so that
    a step of the setpoint gives none, and it is **between samples**. A
    measurement's **time** is its sample time (rule 3.7), or the tick's
    where it carries none. The block remembers the measurement it last
-   took and its time. On a tick where both inputs are usable:
+   took and its time. Nothing is remembered at the first tick where both
+   inputs are usable, at the first such tick after one where they were
+   not, after a reset, and after a gap of either kind, a rebase that
+   passed over no tick among them, since a rebase forgets every sample
+   time (rule 8.5). On a tick where both inputs are usable:
    - with none remembered, `f` is zero, and the measurement is taken;
-   - with a measurement whose time is later than the one remembered, `s`
-     is the measurement less the one remembered, over `dt`, the time
-     between the two in seconds: the difference of the two times, in
-     nanoseconds, divided by 10⁹. The block keeps
-     `f = a·f + (1 - a)·s`, with `a = exp(-dt / filter)` and `1 - a`
-     worked as one less that `a`, and the measurement is taken;
+   - with a measurement whose time is later than the one remembered, `s` is
+     the measurement less the one remembered, over `dt`, the time between
+     the two in seconds: the difference of the two times, in nanoseconds,
+     divided by 10⁹. The block keeps `f = a·f + (1 - a)·s`, with
+     `a = exp(-dt / filter)` and `1 - a` worked as one less that `a`, and
+     the measurement is taken;
    - otherwise, with the sample that was last taken standing still, or a
      value written with its time or an earlier one, nothing is taken and
      `f` stands.
 
    The derivative is `-kd·f`. `filter` is written as a length, and is
-   given when `kd` is not zero and only then. Nothing is remembered at
-   the first tick where both inputs are usable, at the first such tick
-   after one where they were not, after a reset, and after a gap of
-   either kind, a rebase that passed over no tick among them, since a
-   rebase forgets every sample time (rule 8.5). A measurement that is a
+   given when `kd` is not zero and only then. A measurement that is a
    block's output with the tick's time, a low-pass's or a formula's of
    two signals, is a new one at every tick, a period after the last.
 8. With both inputs usable, `y` takes the worse of their two states, and
@@ -917,12 +930,11 @@ lacks.
    block after it that rides through, a `rate_limit` or a `deadband` with
    a `step` of zero, holds its last output for that long. The integral is
    kept, and nothing is added to it.
-9. `limited` is a boolean with the state of `y`: true when the output
-   before limiting was above `max` or below `min`, or the addition was
-   cut short. `integral` is the
-   integral, a number: `uncertain` on a tick where `y` is, or where
-   `reset` is `uncertain` and true, and otherwise `good`, on a tick with
-   an unusable input too, as a total is (rule 2).
+9. `limited` is a boolean with the state of `y`: true when the output before
+   limiting was above `max` or below `min`, or the addition was cut short.
+   `integral` is the integral, a number: `uncertain` on a tick where `y` is,
+   or where `reset` is `uncertain` and true, and otherwise `good`, on a tick
+   with an unusable input too, as a total is (rule 2).
 10. It has an input `reset` that need not be connected. A usable, true
     `reset` returns the integral and the counts to zero and the derivative
     to its start, before that tick's addition. An unusable `reset`, or one
@@ -935,92 +947,102 @@ lacks.
     that need not be connected: the value that reached the actuator, from
     whatever follows the PID. Rule 6 sees the PID's own `min` and `max`
     and no limit after it, and against a rate limit that follows it the
-    integral winds up. Where `applied` is usable at a tick whose addition
-    was made, whole or cut short, and is less than `y` by more than
-    `applied_within` with the addition more than zero, or more than `y` by
-    more than `applied_within` with the addition less than zero, **the
-    addition is taken back**: from the next tick the integral is what it
-    was before this tick's addition, which on the tick of a reset is
-    zero. What this tick gave is not changed. An `applied`
-    that is `uncertain` is used as a `good` one is, and one that is not
-    usable is not used. `applied_within` is zero unless given, and the
-    comparison is exact, of `y` less `applied`, or the other way round,
-    with `applied_within`. A PID whose `applied` is not connected may be
-    given one, which does nothing. At zero, `applied` is for the output
-    of a block
-    that gives `y` on unchanged when it is not limiting, wired straight
-    in. **A readback that is off by anything, a formula's rounding
-    included, needs an `applied_within` larger than it is off by.**
-    Without one, a readback that is always a little low takes every
-    rising addition back, and the integral never grows; one a little high
-    takes back every falling one. A rate limit read back this way still
-    takes the PID's first output whole unless it has an `initial` (rule
-    7.4.9) or a `track` (rule 7.4.13).
-    `limited` says nothing of an addition taken back: a graph that has to
-    know compares `y` with what was applied.
-13. **By the call.** A PID that feeds a command (rule 6.13) adds nothing
-    to its integral at a catch-up tick: the addition of rule 6 is zero
-    there, so nothing is cut short and nothing is taken back. All else is
-    as at any tick: the derivative takes a new sample where there is
-    one (rule 7), the counts count, a
-    `reset` is taken, rule 8 holds, and `integral` and `limited` are
-    given. Its `y` at such a tick is held (rule 6.13). At the last tick
-    of a call the addition is `ki·error·period`, and that times `m`.
-    Rules 6 and 12 are of that addition, whole.
+    integral winds up.
+    - Where `applied` is usable at a tick whose addition was made, whole
+      or cut short, and is less than `y` by more than `applied_within`
+      with the addition more than zero, or more than `y` by more than
+      `applied_within` with the addition less than zero, **the addition
+      is taken back**: from the next tick the integral is what it was
+      before this tick's addition, which on the tick of a reset is zero.
+      What this tick gave is not changed.
+    - An `applied` that is `uncertain` is used as a `good` one is, and
+      one that is not usable is not used.
+    - `applied_within` is zero unless given, and the comparison is exact,
+      of `y` less `applied`, or the other way round, with
+      `applied_within`. A PID whose `applied` is not connected may be
+      given one, which does nothing. At zero, `applied` is for the output
+      of a block that gives `y` on unchanged when it is not limiting,
+      wired straight in. **A readback that is off by anything, a
+      formula's rounding included, needs an `applied_within` larger than
+      it is off by.** Without one, a readback that is always a little low
+      takes every rising addition back, and the integral never grows; one
+      a little high takes back every falling one.
+    - A rate limit read back this way still takes the PID's first output
+      whole unless it has an `initial` (rule 7.4.9) or a `track` (rule
+      7.4.13).
+    - `limited` says nothing of an addition taken back: a graph that has
+      to know compares `y` with what was applied.
+13. **By the call.** For a PID that feeds a command (rule 6.13):
+    - **At a catch-up tick** it adds nothing to its integral: the
+      addition of rule 6 is zero there, so nothing is cut short and
+      nothing is taken back. All else is as at any tick: the derivative
+      takes a new sample where there is one (rule 7), the counts count, a
+      `reset` is taken, rule 8 holds, and `integral` and `limited` are
+      given. Its `y` at such a tick is held (rule 6.13).
+    - **At the last tick of a call** the addition is `ki·error·period`,
+      and that times `m`. Rules 6 and 12 are of that addition, whole.
 14. **Where the actuator is.** It has an input `track`, a number, that
     need not be connected: the value the actuator has, read back from it.
-    The PID **waits to track** from the start, from a tick where either
-    input is not usable, and from a gap that passed over a tick or whose
-    length nobody knows (rule 8.6). It stops waiting at a tick where both inputs are usable;
-    one that acts by the call, at such a tick that is the last of its
-    call, and not at a catch-up tick. It stops waiting at the tick of a
-    reset too, a catch-up tick among them, and whatever that tick reads:
-    on a tick with a reset and an input that is not usable, the reset
-    wins, and the PID is not waiting after it.
-    At the tick it stops waiting, if
-    that is not the tick of a reset, and `track` is usable, the integral
-    is set, before that tick's addition, to `track` less the first sum of
-    rule 5: `kp·error` and the derivative, which is zero there but for a
-    PID that acts by the call. So its output before limiting is where the
-    actuator is, with that tick's addition made to it, and not whatever
-    the integral held when the input was lost. An `uncertain`
-    `track` is used as a `good` one is, and one that is not usable is not
-    used. A reset says zero, and `track` does not gainsay it.
+    - **When it waits.** The PID **waits to track** from the start, from
+      a tick where either input is not usable, and from a gap that passed
+      over a tick or whose length nobody knows (rule 8.6).
+    - **When it stops waiting.** It stops waiting at a tick where both
+      inputs are usable; one that acts by the call, at such a tick that
+      is the last of its call, and not at a catch-up tick. It stops
+      waiting at the tick of a reset too, a catch-up tick among them, and
+      whatever that tick reads: on a tick with a reset and an input that
+      is not usable, the reset wins, and the PID is not waiting after it.
+    - **What it does then.** At the tick it stops waiting, if that is not
+      the tick of a reset, and `track` is usable, the integral is set,
+      before that tick's addition, to `track` less the first sum of rule
+      5: `kp·error` and the derivative, which is zero there but for a PID
+      that acts by the call. So its output before limiting is where the
+      actuator is, with that tick's addition made to it, and not whatever
+      the integral held when the input was lost. A reset says zero, and
+      `track` does not gainsay it.
+    - An `uncertain` `track` is used as a `good` one is, and one that is
+      not usable is not used.
 15. **Not acting.** It has an input `follow`, a boolean, that need not be
     connected, and is given only where `track` is: the graph is refused
-    otherwise. It means what rule 7.4.14 says. The PID **follows** at a
-    tick where `follow` is true, and at one where `follow` is not
-    usable, a catch-up tick among them. A PID that follows adds nothing
-    to its integral. At a tick where it follows, a catch-up tick among
-    them, both its inputs and `track` are usable, and there is no reset,
-    its integral is set to `track` less the first sum of rule 5, as rule
-    14 sets it; at any other tick where it follows the integral stays as
-    it is, but for a reset. A reset while it follows makes the integral
-    zero at that tick and no longer: the next tick it follows sets it
-    again. It waits to track (rule 14) from every tick where it follows,
-    a tick of a reset among them. So when it follows no longer it starts
-    from where the actuator is, or with no `track` at that tick from
-    where it last was. With
-    `track` usable, `y` is the value of `track`, not held within `min`
-    and `max`, and `limited` is false, each with the state of `track`,
-    or `uncertain` in place of `good` where `follow` is not usable. With
-    `track` not usable they have no value and the state of `track`. It
-    gives these whatever its setpoint and its measurement are: it needs
-    neither to follow. Its derivative goes on as rule 7 says, and starts
-    again at a tick where either is not usable. The counts are as at
-    any other tick. `integral` always has its value, and its state is
-    what rule 9 gives it at a tick where the PID does not follow: by the
-    setpoint, the measurement and a reset, and not by `track`, `follow`
-    or the state of `y`. Rule 12 has nothing to judge at a tick where it
-    follows. Where a PID that acts by the call follows at a catch-up
-    tick, its `y` is the one held (rule 6.13) and its other outputs are
-    that tick's own. `follow` is a direct input.
+    otherwise. It means what rule 7.4.14 says. `follow` is a direct
+    input.
+    - **When it follows.** The PID **follows** at a tick where `follow`
+      is true, and at one where `follow` is not usable, a catch-up tick
+      among them.
+    - **Its integral.** A PID that follows adds nothing to its integral.
+      At a tick where it follows, a catch-up tick among them, both its
+      inputs and `track` are usable, and there is no reset, its integral
+      is set to `track` less the first sum of rule 5, as rule 14 sets it;
+      at any other tick where it follows the integral stays as it is, but
+      for a reset. A reset while it follows makes the integral zero at
+      that tick and no longer: the next tick it follows sets it again.
+      Rule 12 has nothing to judge at a tick where it follows.
+    - **Waiting to track.** It waits to track (rule 14) from
+      every tick where it follows, a tick of a reset among them. So when
+      it follows no longer it starts from where the actuator is, or with
+      no `track` at that tick from where it last was.
+    - **What it gives.** With `track` usable, `y` is the value of
+      `track`, not held within `min` and `max`, and `limited` is false,
+      each with the state of `track`, or `uncertain` in place of `good`
+      where `follow` is not usable. With `track` not usable they have no
+      value and the state of `track`. It gives these whatever its
+      setpoint and its measurement are: it needs neither to follow. Its
+      derivative goes on as rule 7 says, and starts again at a tick where
+      either is not usable. The counts are as at any other tick.
+    - **`integral`** always has its value, and its state is what rule 9
+      gives it at a tick where the PID does not follow: by the setpoint,
+      the measurement and a reset, and not by `track`, `follow` or the
+      state of `y`.
+    - **At a catch-up tick.** Where a PID that acts by the call follows
+      at a catch-up tick, its `y` is the one held (rule 6.13) and its
+      other outputs are that tick's own.
 <!-- markdownlint-enable MD029 -->
 
 A PID with a limit and an error that stays one way sits at the limit with
-its integral where it was when it got there, and comes off the limit as
-soon as the error has turned far enough to bring the output inside it. One with no `max` and no `min` has nothing to stop
-its integral, and `limited` is false.
+its integral where it was when it got there, and comes off the limit as soon
+as the error has turned far enough to bring the output inside it. One with
+no `max` and no `min` has nothing to stop its integral, and `limited` is
+false.
 
 ### 7.8 Models
 
@@ -1057,26 +1079,28 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    unlike a low-pass, riding through is a doubt: the held value has gone
    into its state. A doubt from the second phase of tick `k` is tick `k`.
    - With `settle`, its outputs are `uncertain` for `settle` after its
-     doubt, and otherwise `good`. For a named model in continuous time
-     `settle` is three of its slowest time constant, rounded up to whole
-     ticks, unless given. This number is worked in double arithmetic and
-     is not exact (rule 6.3): with `r` three of the constant over the
-     period, it is the least whole number not less than `r - 10⁻⁹`. Where
-     rounding could put `r` on either side of that, a graph may be taken
-     either way, and its author writes `settle`. That constant is one over the least rate at
-     which its state decays: minus one over the largest real part among
-     all the eigenvalues of its `A`. For a model that swings as it decays
-     that is the constant of the envelope. A named model has one state or
-     two. For two, with `h` half the sum of `A`'s diagonal and `d` its
-     determinant: where `h²` is no more than `d` the largest real part is
-     `h`; otherwise, with `h` less than zero, it is `d / (h - √(h² - d))`.
-     Both are worked so that a slow rate beside a fast one is not lost in
-     a subtraction, and `d` is taken from the model's settings, as its
+     doubt, and otherwise `good`.
+   - For a named model in continuous time `settle` is three of its
+     slowest time constant, rounded up to whole ticks, unless given. This
+     number is worked in double arithmetic and is not exact (rule 6.3):
+     with `r` three of the constant over the period, it is the least
+     whole number not less than `r - 10⁻⁹`. Where rounding could put `r`
+     on either side of that, a graph may be taken either way, and its
+     author writes `settle`.
+   - That constant is one over the least rate at which its state decays:
+     minus one over the largest real part among all the eigenvalues of
+     its `A`. For a model that swings as it decays that is the constant
+     of the envelope. A named model has one state or two. For two, with
+     `h` half the sum of `A`'s diagonal and `d` its determinant: where
+     `h²` is no more than `d` the largest real part is `h`; otherwise,
+     with `h` less than zero, it is `d / (h - √(h² - d))`. Both are
+     worked so that a slow rate beside a fast one is not lost in a
+     subtraction, and `d` is taken from the model's settings, as its
      entry in Appendix A gives it, and not from `A`'s entries. Where the
      two rates are many orders apart the last ticks of a `settle` of
      millions still depend on rounding.
-   - A named model with any state that does not decay, where that
-     largest real part is zero or more, such as a mass on a spring with no
+   - A named model with any state that does not decay, where that largest
+     real part is zero or more, such as a mass on a spring with no
      damping, has no such constant. Neither `linear` nor `state_space` is
      given one, and in that alone a named model differs from the `linear`
      that spells it out. With no `settle` given, such a model's outputs
@@ -1088,54 +1112,57 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    second phase, so at tick `k` `doubtful` counts the steps of the ticks
    before `k`, one tick behind `elapsed`. A tick a gap passed over is a
    step on a held value or a step not taken (rule 8.6), and is counted.
-7. **Every model is linear, and is stepped exactly.** A model in
-   continuous time is `dx/dt = A·x + B·u`, with outputs `y = C·x + D·u`,
-   where `x` is its states, `u` its inputs and `y` its outputs. Its step
-   over one period is the solution of that equation with every input held
-   at its value for the whole period:
-   `x' = Ad·x + Bd·u`, where `Ad = exp(A·period)` and `Bd` is the integral
-   of `exp(A·s)·B` for `s` from zero to the period. `Ad` and `Bd` depend on
-   the model and the period and on nothing else, so the engine works them
-   out when the graph is compiled. How it does so is its own affair: what
-   is specified is the result, to within rounding, and the vectors compare
-   to one part in 10⁹ (rule 11.5). The period is the period as the graph
-   writes it, and not the double nearest it in seconds: at the bound below
-   that difference alone is a part in 10¹². **Ordinary double arithmetic
-   does not keep this at the bound.** Scaling and squaring in doubles is
-   out by a few parts in 10⁹ in a `Bd` of a lightly damped rotation there;
-   the same in arithmetic of twice the digits, two doubles to a number,
-   is within a part in 10¹⁶ everywhere up to the bound. That is a promise of `Ad` and of `Bd`,
-   which is of one step: over many ticks a state that does not decay
-   carries each step's rounding forward, and two engines that agree on
-   every step drift apart in an oscillator with no damping by about one
-   part in 10⁹ in a few hundred ticks at the bound below, and far more
-   slowly well inside it. The promise does not depend on the size of `B`:
-   `Bd` is the integral of `exp(A·s)` over the period, times `B`. **It is
-   promised up to a bound on how fast the model is against the period,
-   and a graph past it is refused.**
-   The bound is on the largest sum of the absolute values along a row of
-   `A`, times the period, which may be 100,000 at most. In ordinary
-   double arithmetic the exponential of a matrix loses accuracy in
-   proportion to that number, and past the bound an engine cannot keep the
-   promise without arithmetic of more digits. A model refused for it has a
-   state far faster than the period, which is not a state at that period
-   and is left out; or has entries that are large for the units its states
-   are in, since the sum depends on them, and is rescaled. A named model's
-   units are fixed, so one that is refused for them is written as `linear`.
-   For the two named models of the second order the row holds the square
-   of the rate (`omega_n²`, or `stiffness / mass`), so the bound falls on
-   that: a resonance of 50 Hz with little damping is within it at a period
-   of 1 s and past it at 2.5 s. The sum is of
-   `A` alone, in double arithmetic, and a graph within rounding of the
-   bound, or of what a double holds, may be taken either way. So a model's answer does not depend on the period
-   beyond what holding its inputs costs, no step is unstable, and there are no sub-steps: a step is too long
-   only for the arithmetic, at the bound above. A model that grows so
-   fast that an entry of `Ad` or `Bd` at the graph's period is more than a
-   double holds is refused. One that is accepted and grows can still pass
+7. **Every model is linear, and is stepped exactly.** A model in continuous
+   time is `dx/dt = A·x + B·u`, with outputs `y = C·x + D·u`, where `x` is
+   its states, `u` its inputs and `y` its outputs. Its step over one period
+   is the solution of that equation with every input held at its value for
+   the whole period: `x' = Ad·x + Bd·u`, where `Ad = exp(A·period)` and `Bd`
+   is the integral of `exp(A·s)·B` for `s` from zero to the period. `Ad` and
+   `Bd` depend on the model and the period and on nothing else, so the
+   engine works them out when the graph is compiled.
+
+   How it does so is its own affair: what is specified is the result, to
+   within rounding, and the vectors compare to one part in 10⁹ (rule 11.5).
+   The period is the period as the graph writes it, and not the double
+   nearest it in seconds: at the bound below that difference alone is a part
+   in 10¹². **Ordinary double arithmetic does not keep this at the bound.**
+   Scaling and squaring in doubles is out by a few parts in 10⁹ in a `Bd` of
+   a lightly damped rotation there; the same in arithmetic of twice the
+   digits, two doubles to a number, is within a part in 10¹⁶ everywhere up
+   to the bound. That is a promise of `Ad` and of `Bd`, which is of one
+   step: over many ticks a state that does not decay carries each step's
+   rounding forward, and two engines that agree on every step drift apart in
+   an oscillator with no damping by about one part in 10⁹ in a few hundred
+   ticks at the bound below, and far more slowly well inside it. The promise
+   does not depend on the size of `B`: `Bd` is the integral of `exp(A·s)`
+   over the period, times `B`.
+
+   **It is promised up to a bound on how fast the model is against the
+   period, and a graph past it is refused.** The bound is on the largest sum
+   of the absolute values along a row of `A`, times the period, which may be
+   100,000 at most. In ordinary double arithmetic the exponential of a
+   matrix loses accuracy in proportion to that number, and past the bound an
+   engine cannot keep the promise without arithmetic of more digits. A model
+   refused for it has a state far faster than the period, which is not a
+   state at that period and is left out; or has entries that are large for
+   the units its states are in, since the sum depends on them, and is
+   rescaled. A named model's units are fixed, so one that is refused for
+   them is written as `linear`. For the two named models of the second order
+   the row holds the square of the rate (`omega_n²`, or `stiffness / mass`),
+   so the bound falls on that: a resonance of 50 Hz with little damping is
+   within it at a period of 1 s and past it at 2.5 s. The sum is of `A`
+   alone, in double arithmetic, and a graph within rounding of the bound, or
+   of what a double holds, may be taken either way.
+
+   So a model's answer does not depend on the period beyond what holding its
+   inputs costs, no step is unstable, and there are no sub-steps: a step is
+   too long only for the arithmetic, at the bound above. A model that grows
+   so fast that an entry of `Ad` or `Bd` at the graph's period is more than
+   a double holds is refused. One that is accepted and grows can still pass
    that some ticks on, and its outputs are then `bad` (rule 3.6).
-   A model in discrete time (`state_space`) gives `Ad` and `Bd`
-   themselves, and they mean what they mean at whatever period the graph
-   has.
+
+   A model in discrete time (`state_space`) gives `Ad` and `Bd` themselves,
+   and they mean what they mean at whatever period the graph has.
 8. **A loop.** The blocks of a graph that can each reach every other
    through inputs, direct or deferred, are a **loop**. A block that reads
    its own output is one by itself. A loop that holds a model block is
@@ -1143,29 +1170,33 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
    statement of how long that memory is, along every path in it:
    - no model blocks in it are joined in a ring directly or through
      formulas alone: no two each take the other's output so, and no three
-     or more each take the next's and the last the first's. One that
-     takes its own output, directly or through formulas, is no ring. One
-     block takes another's output through
-     formulas alone where it reads an output of a formula that reads the
-     other's, or that reads a formula's that does, and so on; an input
-     counts whether it is direct or deferred. Such a ring is one physical
-     network cut in pieces: each is a tick behind the one it reads, and a
-     network that is sound can be unstable so split, however exactly each
-     is stepped. The graph is refused, and the error names them and says
-     to write them as one model: `linear` takes any number of states. A
-     ring with any other block on the way at one place, a controller or a
-     rate limit, is accepted. A controller written as a formula is
-     not told from a coupling, and is written as a `pid`. This is a check
-     for one mistake and not for stability (section 7.11);
+     or more each take the next's and the last the first's. Such a ring
+     is one physical network cut in pieces: each is a tick behind the one
+     it reads, and a network that is sound can be unstable so split,
+     however exactly each is stepped. The graph is refused, and the error
+     names them and says to write them as one model: `linear` takes any
+     number of states.
+     - One block takes another's output through formulas alone where it
+       reads an output of a formula that reads the other's, or that reads
+       a formula's that does, and so on; an input counts whether it is
+       direct or deferred.
+     - One that takes its own output, directly or through formulas, is no
+       ring.
+     - A ring with any other block on the way at one place, a controller
+       or a rate limit, is accepted. A controller written as a formula is
+       not told from a coupling, and is written as a `pid`.
+
+     This is a check for one mistake and not for stability (section
+     7.11);
    - every model block in it has `settle` written in the graph, and the
      same `settle`. A model's own time constant is not the loop's, and a
      loop has one. The graph is refused otherwise;
    - what else remembers in it is held against that `settle`: the graph is
      refused if the `ticks` of its delays, the lengths of its windows and
      the `settle`s of its low-passes, written or not, all in ticks, add up
-     to more than it. An estimator hosts a model but is not a model block, and a loop
-     that holds a model block and an estimator is refused (section 7.9,
-     Open);
+     to more than it;
+   - an estimator hosts a model but is not a model block, and a loop that
+     holds a model block and an estimator is refused (section 7.9, Open);
    - the loop's **doubt** is the latest tick at which a block in it used a
      value that was not `good`, read from outside the loop, or gave an
      output that was not usable on a port that a block of the loop is
@@ -1184,14 +1215,14 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
      doubt, in place of its own in rule 6, and otherwise as rule 5 says.
      Its counters are its own;
    - at a tick where the loop is not within `settle` of its doubt, before
-     any block gives its outputs, and at a tick before any doubt too, what a
-     delay, a window or a low-pass in it took in as `uncertain` at an
+     any block gives its outputs, and at a tick before any doubt too, what
+     a delay, a window or a low-pass in it took in as `uncertain` at an
      earlier tick becomes `good`, and stays so: a later doubt of the loop
      does not turn it back. That is every such value the block holds, and
-     not only the one it gives at that tick. A delay gives such a value as `good`; a window
-     holds such a sample as a `good` one from then on; a low-pass's doubt
-     is cleared. What each takes in at the tick itself is as its own rule
-     says. This is so for a reader outside the loop too;
+     not only the one it gives at that tick. A delay gives such a value as
+     `good`; a window holds such a sample as a `good` one from then on; a
+     low-pass's doubt is cleared. What each takes in at the tick itself is
+     as its own rule says. This is so for a reader outside the loop too;
    - a window on the loop that needs more than one sample gives
      `not_ready` while it has fewer, which is an output that is not usable.
      If a block of the loop is connected to it, the loop is in doubt from
@@ -1199,16 +1230,15 @@ A model block hosts a model (rule 4.9). Its memory is the model's state.
      after the last tick on which it was short;
    - the other blocks in it follow their own rules.
 
-So two thermal masses that each take the other's temperature are refused
-as two blocks, and are one `thermal_rc2` or one `linear` block. Take two
-of 10 J/K losing 1 W/K each, with formulas that give each a power of 3 W
-for each degree the other is above it, at a period of 5 s. The pair's
-difference is multiplied by about -1.75 a tick, however exactly each is
-stepped, and within eighty ticks they pass 10¹⁹ and say `good`; the one
-block gives the true answer at any period. A plant driven
-through a controller by a setpoint that is `uncertain` on every tick is
-`uncertain` on every tick after the first: what it gives at a tick is its
-state from the tick before.
+So two thermal masses that each take the other's temperature are refused as
+two blocks, and are one `thermal_rc2` or one `linear` block. Take two of 10
+J/K losing 1 W/K each, with formulas that give each a power of 3 W for each
+degree the other is above it, at a period of 5 s. The pair's difference is
+multiplied by about -1.75 a tick, however exactly each is stepped, and
+within eighty ticks they pass 10¹⁹ and say `good`; the one block gives the
+true answer at any period. A plant driven through a controller by a setpoint
+that is `uncertain` on every tick is `uncertain` on every tick after the
+first: what it gives at a tick is its state from the tick before.
 
 Two plants in cascade under one controller are two blocks: the first
 takes the controller's output, the second the first's, and the
@@ -1225,10 +1255,9 @@ are one `linear` block.
   none. One whose equation is not linear has no exact step, and would
   bring back a rule for how it is stepped and how far that can be
   trusted. Settled by: the first model that needs it.
-- **Model blocks that take each other's outputs and are sound.**
-  Refused now, and could be allowed where the compiler can show the ring
-  stable. Settled by: the first graph that needs one and cannot be one
-  block.
+- **Model blocks that take each other's outputs and are sound.** They are
+  refused, and could be allowed where the compiler can show the ring stable.
+  Settled by: the first graph that needs one and cannot be one block.
 - **A model and a controller together.** A loop of one model and a
   formula is a sampled controller, and can be unstable as a real one can.
   That is the graph's behaviour and not a fault of the step, and nothing
@@ -1244,15 +1273,16 @@ each measurement reads one output of the model.
    gives each state and no covariance between states, and gives outputs
    from tick 0.
 2. **Places, and what is carried between them.** A time has a **place**: a
-   whole number of sixteenths of a period, counted from tick 0, so that
-   tick `k` is at `16·k`. The place of a sample seen at a tick is the
-   tick's place less the time from the sample to the tick, in sixteenths
-   of a period, to the nearest whole number; exactly a half goes to the
-   later place. A value with no sample time has the place of the tick it
-   is seen at. The last tick of a call may see a sample taken after its
-   own time (rule 6.8), and that sample's place is after the tick's. For a model in discrete time (`state_space`) a place is a
-   tick: the time from the sample to the tick is taken to the nearest
-   whole period, a half going to the later tick.
+   whole number of sixteenths of a period, counted from tick 0, so that tick
+   `k` is at `16·k`. The place of a sample seen at a tick is the tick's
+   place less the time from the sample to the tick, in sixteenths of a
+   period, to the nearest whole number; exactly a half goes to the later
+   place. A value with no sample time has the place of the tick it is seen
+   at. The last tick of a call may see a sample taken after its own time
+   (rule 6.8), and that sample's place is after the tick's. For a model in
+   discrete time (`state_space`) a place is a tick: the time from the sample
+   to the tick is taken to the nearest whole period, a half going to the
+   later tick.
 
    The estimator has the model's step, and what process noise adds over
    it, `N`, for a whole period, and for a model in continuous time for 8,
@@ -1290,12 +1320,11 @@ each measurement reads one output of the model.
    constant among them. What was in force before the place the state
    stands at is not kept.
 
-   **Lag.** `lag` is a whole number of periods, 2 unless given, and may
-   be zero. At each tick, before any measurement, a state that stands
-   more than `lag`
-   behind the tick is carried to `lag` behind it: so it never stands
-   further back than that, and a measurement older than that is late
-   (rule 3).
+   **Lag.** `lag` is a whole number of periods, 2 unless given, and may be
+   zero. At each tick, before any measurement, a state that stands more than
+   `lag` behind the tick is carried to `lag` behind it: so it never stands
+   further back than that, and a measurement older than that is late (rule
+   3).
 3. **Correct.** Then, on every tick, tick 0 among them: a measurement is
    **due** if its sample time is later than the sample time last
    considered or passed by on that port, and it is either `good`, or
@@ -1306,14 +1335,14 @@ each measurement reads one output of the model.
    then. The measurements due at a tick are taken in the order of their
    places, and those of one place in the order they are declared.
 
-   One whose place is before the place the state stands at is **late**.
-   It is **passed by**: counted, and not considered. But the first
-   measurement due after the start, a reset or a rebase, on any port, is
-   not late: if its place is before the state's, it is considered where
-   the state stands, and its tick is `uncertain` for it (rule 7). Every other one due is **considered**: the state is
-   carried to its place and stands there, and rule 4 follows. Its
-   variance is the port's `r` if it is `good` and `r_uncertain` if it is
-   `uncertain`.
+   One whose place is before the place the state stands at is **late**. It
+   is **passed by**: counted, and not considered. But the first measurement
+   due after the start, a reset or a rebase, on any port, is not late: if
+   its place is before the state's, it is considered where the state stands,
+   and its tick is `uncertain` for it (rule 7). Every other one due is
+   **considered**: the state is carried to its place and stands there, and
+   rule 4 follows. Its variance is the port's `r` if it is `good` and
+   `r_uncertain` if it is `uncertain`.
 
    **A measurement carries the time of a sample**: its port is connected
    to an input, or to a delay or a formula that takes its sample time,
@@ -1326,32 +1355,34 @@ each measurement reads one output of the model.
 4. A considered measurement `z` of the output whose row of the model's
    `C` is `c`, with variance `v`, has the innovation `z - c·x`, the spread
    `s = c·P·cᵀ + v`, and the **normalised innovation squared**, the
-   innovation squared over `s`. With no gate it is **used**: with
-   `g = P·cᵀ / s`, `x = x + g·(z - c·x)` and
-   `P = (1 - g·c)·P·(1 - g·c)ᵀ + g·v·gᵀ`. That is `P - g·(c·P)`, worked in
-   the form that rounding cannot bring to nothing: with a `p0` of 10¹⁶
-   beside an `r` of 1 the short form leaves a variance of exactly zero
-   after one measurement, and the estimator never moves again. The form
-   keeps `P` symmetric and positive at any ratio. It is not exact at an
-   extreme one: with a `p0` more than about 10¹² times an `r`, the
-   variances of the first few measurements are out by more than the
-   vectors' tolerance, and come right as more are used. A
-   measurement may be of an output that reads no input directly; one that
-   does is refused when the graph is compiled.
+   innovation squared over `s`. A measurement may be of an output that
+   reads no input directly; one that does is refused when the graph is
+   compiled.
+
+   With no gate it is **used**: with `g = P·cᵀ / s`, `x = x + g·(z - c·x)`
+   and `P = (1 - g·c)·P·(1 - g·c)ᵀ + g·v·gᵀ`. That is `P - g·(c·P)`, worked
+   in the form that rounding cannot bring to nothing: with a `p0` of 10¹⁶
+   beside an `r` of 1 the short form leaves a variance of exactly zero after
+   one measurement, and the estimator never moves again. The form keeps `P`
+   symmetric and positive at any ratio. It is not exact at an extreme one:
+   with a `p0` more than about 10¹² times an `r`, the variances of the first
+   few measurements are out by more than the vectors' tolerance, and come
+   right as more are used.
 5. **The gate.** If `gate` is given and the innovation is more than `gate`
    times the square root of `s` either way, the measurement is **over the
    gate**, and is **refused**: counted, and the state and the covariance
    do not change. It is still the measurement last considered on its
-   port, and its normalised innovation squared is kept (rule 6). A run is
-   of measurements considered on one port: a tick with none, a gap, and
-   what another port does leave it as it was, and a measurement that is
-   used ends it. `max_refused` is required with `gate`, and is the most a
-   port refuses in a row: a measurement over the gate that would be one
-   more is not refused. It has disagreed for too long to be an outlier:
-   each state's variance grows by its `p0`, `s` is worked again, and the
-   measurement is used. Its normalised innovation squared is the one
-   worked before the variance grew. With `max_refused` of 1 a port
-   refuses one and takes the next; with 0 it refuses none.
+   port, and its normalised innovation squared is kept (rule 6).
+   - **A run** is of measurements considered on one port: a tick with
+     none, a gap, and what another port does leave it as it was, and a
+     measurement that is used ends it.
+   - **`max_refused`** is required with `gate`, and is the most a port
+     refuses in a row: a measurement over the gate that would be one more
+     is not refused. It has disagreed for too long to be an outlier: each
+     state's variance grows by its `p0`, `s` is worked again, and the
+     measurement is used. Its normalised innovation squared is the one
+     worked before the variance grew. With `max_refused` of 1 a port
+     refuses one and takes the next; with 0 it refuses none.
 6. **Consistency.** `consistency` is required: either `none`, or `over`, a
    whole number of measurements, and `limit`. With `over` and `limit`,
    each port keeps the normalised innovation squared of its last `over`
@@ -1405,19 +1436,22 @@ each measurement reads one output of the model.
 
    Each output has a name of its own. A graph where two would have one
    name, as with states named `x` and `sigma_x`, is refused.
-9. **At a gap** (rule 8.6). Told that `n` ticks were passed over, it
-   does nothing then: the state stands where it stood, and rule 2
-   carries it over them when the next tick asks, on the model inputs it
-   last had. At a rebase, whether or not anybody knows its length, the
-   state is carried to the place of the tick before the one that runs,
-   and one that stands after that place stays where it stands; then each
-   state's variance grows by its `p0`, once in all; and no
-   remembered place means anything any more: each model input has the
-   value it last had from the place the state stands at, and the next
-   measurement due is the first (rule 3). It compares sample times, and
-   cannot tell a measurement from before the rebase from the same one
-   written again (rule 8.5). A graph whose `N` holds more than a double
-   does is refused, as for `Ad` (rule 7.8.7).
+9. **At a gap** (rule 8.6).
+   - Told that `n` ticks were passed over, it does nothing then: the
+     state stands where it stood, and rule 2 carries it over them when
+     the next tick asks, on the model inputs it last had.
+   - At a rebase, whether or not anybody knows its length, the state is
+     carried to the place of the tick before the one that runs, and one
+     that stands after that place stays where it stands; then each
+     state's variance grows by its `p0`, once in all; and no remembered
+     place means anything any more: each model input has the value it
+     last had from the place the state stands at, and the next
+     measurement due is the first (rule 3). It compares sample times, and
+     cannot tell a measurement from before the rebase from the same one
+     written again (rule 8.5).
+
+   A graph whose `N` holds more than a double does is refused, as for
+   `Ad` (rule 7.8.7).
 
 An estimator with a stable model and little process noise stays confident
 through a long stretch without measurements, and is right to if the model
@@ -1430,13 +1464,12 @@ each second with noise of 0.2, and an estimator of it with `q` of 0.001,
 `r` of 0.04 and `p0` of 1, whose model has the heat loss a fifth too low.
 Over an hour, with a gate of three sigmas and nothing to end a run of
 refusals, it refuses about 3,500 of 3,600 measurements and ends more
-than 3 degrees out; under the third revision's rule it said `good`
-throughout, and under rule 7 it is `uncertain` on every tick it refuses.
-With `max_refused` of 5 it is never more than 1.6 out; it is then `good`
-and more than three of its own sigmas out on about a third of its ticks,
-because a sigma knows only the noise it was told of. With `consistency`
-over 20 and a limit of 2 that falls to between a thirtieth and a
-fiftieth, and with the model right the test costs twenty ticks or
+than 3 degrees out, and under rule 7 it is `uncertain` on every tick it
+refuses. With `max_refused` of 5 it is never more than 1.6 out; it is
+then `good` and more than three of its own sigmas out on about a third
+of its ticks, because a sigma knows only the noise it was told of. With
+`consistency` over 20 and a limit of 2 that falls to between a thirtieth
+and a fiftieth, and with the model right the test costs twenty ticks or
 fewer. The counts move with the noise drawn.
 
 **Open.**
@@ -1470,6 +1503,12 @@ Each of these is a value called `good` that rests on something the block
 no longer remembers. Each is deliberate, and most have a counter, or a way
 to write the stricter thing.
 
+**Formulas, latches and timers.**
+
+- **A formula's logic and its choices are `good` beside an operand that is
+  not.** `a or b` with `a` true and `good` is `good` whatever `b` is, and
+  `when(ok, x, 20)` is a `good` 20: the problem is not in what the formula
+  used, and a graph that has to see it reads `all_good`.
 - **A latch set by an `uncertain` true is `good` and true from the next
   tick.** To set only on a `good` true, give the latch `b and ok`, where
   `ok` is an `all_good` of `b`. That latch says `good` and false while `b`
@@ -1478,100 +1517,55 @@ to write the stricter thing.
 - **An `uncertain` true on `reset` clears a latch**, which is `good` and
   false from the next tick, with nothing to say so. For a latch that holds
   a trip, give it `r and ok` likewise.
-- **A hysteresis that sat through an hour without its input** is `good`
-  when the input comes back between the thresholds. `doubtful` says an
-  hour.
-- **A total is `good` on a tick where its input is `bad`**, a little low.
-  `missed` says by how much time.
-- **A deadband holding a sample that was `uncertain` when taken** is `good`
-  once its input is.
+- **A latch that is set is `good` and true while `set` is `bad`**, and its
+  `doubtful` does not count those ticks: it counts only while the latch is
+  not set.
 - **`held_for` with `on_bad: reset`** never fires on an input that drops
   out now and then, and says `good` and false.
 - **`held_for` with `on_bad: hold`** is `good` and true on the first tick
   its input is back, though the time ran out while it held. `doubtful`
   says how much of the run it did not see.
-- **A model with no `settle`, or a `settle` of zero**, is `good` on a
-  state it stepped to on an `uncertain` value one tick before. `doubtful`
-  counts those steps.
-- **A good window's statistics are of its `good` samples alone**, so they
-  can move when the count of `good` samples crosses what `min_good` asks.
+
+**Memory and doubt.**
+
 - **A block with no fading memory is `good` on the tick after it took in
   an `uncertain` value**, with that value in it: a total with an
   `uncertain` thousand added, a timer started or a clock set by an
   `uncertain` true, a hysteresis switched by an `uncertain` input.
   `doubtful` counts the tick. A low-pass with a `settle` of zero is the
   same, and has no counter.
-- **A model block with no `settle` is `good` while it rides through**, on
-  steps taken from a held value. `doubtful` counts them.
-- **A latch that is set is `good` and true while `set` is `bad`**, and its
-  `doubtful` does not count those ticks: it counts only while the latch is
-  not set.
+- **A hysteresis that sat through an hour without its input** is `good`
+  when the input comes back between the thresholds. `doubtful` says an
+  hour.
+- **A total is `good` on a tick where its input is `bad`**, a little low.
+  `missed` says by how much time.
+- **A total past `max_missed` is still a number.** It is `uncertain`,
+  and a reader that takes an `uncertain` value goes on using it. A graph
+  that has to stop there tests `missed` and `gaps`.
 - **An `uncertain` true on a total's `reset` sets it and its counts to
   zero.** The total is `uncertain` on that tick and `good` from the next,
   with nothing to say it was reset on doubt. Give it `r and ok`, as for a
   latch. A PID's `reset` is the same.
-- **An estimator places a sample to the nearest sixteenth of a period**,
-  and one over a model in discrete time to the nearest tick. With a
-  period of 1 s a sample is placed up to 31 ms from where it was taken.
-- **A sample older than an estimator's state is thrown away.** The tick
-  is `uncertain` for it and `late_<port>` counts it. With `lag` shorter
-  than a sensor's delay that is every sample, and the estimator runs on
-  its model alone, `uncertain` on every tick.
-- **A model input sampled before the place an estimator's state stands
-  at is in force from there**, and not from when it was sampled: what is
-  past is not worked again.
-- **What an estimator gives at the last tick of a call may be of a time
-  after the tick's.** A sample taken after that tick's time is
-  considered at its own place, and the state is given as it stands
-  there: the estimate is of when the newest sample was taken, up to a
-  period after the time the tick is said to have.
-- **A second sensor slower than the first is not used.** Its samples are
-  older than the state whenever the faster one has been considered
-  since: each is late, and its tick is `uncertain` (section 7.9, Open).
-- **An `uncertain` measurement on a port with no `r_uncertain` is left
-  alone**, and the estimator stays `good`. `since_<port>` shows how long it
-  has gone without one.
-- **A formula's logic and its choices are `good` beside an operand that is
-  not.** `a or b` with `a` true and `good` is `good` whatever `b` is, and
-  `when(ok, x, 20)` is a `good` 20: the problem is not in what the formula
-  used, and a graph that has to see it reads `all_good`.
-- **A controller stops when the word that it acts is lost.** A `follow`
-  that is not usable is taken as true, so a `pid` or a `rate_limit` whose
-  host stops writing it gives the actuator back what it has, as
-  `uncertain`, until it is written again.
-- **A rate limit that followed with no `track` trusts an old value or
-  none.** After any number of such ticks it limits a usable input from
-  the value it last held, however old; given an input it cannot use, it
-  has forgotten once `ride_through` is past, and takes the next whole.
-  A gap of two ticks past `ride_through` forgets what an hour of
-  following with no `track` kept.
-- **With `kd` not zero the `integral` of a PID that follows moves with
-  its measurement**, since it is `track` less a sum that holds the
-  derivative. Only its value at the release is used.
-- **A host that loses `follow` and `track` together has no command.**
-  The block follows, and has nothing to give: `y` is `bad`. A fallback
-  (section 7.10) or the host's own safe value stands in.
-- **What a block gives while it follows is the readback as it is**: not
-  held within `min` and `max`, and `limited` is false. There is no input
-  for a value an operator sets by hand; a host that has one writes it to
-  the actuator, and `track` reads it back.
-- **A total past `max_missed` is still a number.** It is `uncertain`,
-  and a reader that takes an `uncertain` value goes on using it. A graph
-  that has to stop there tests `missed` and `gaps`.
-- **Model blocks on one loop are checked for one mistake.** A pair that
-  take each other's outputs through a delay, or through a rate limit that
-  never limits or a deadband of no width, is as far apart as a pair
-  through formulas, can be as unstable, and is accepted. So is any loop of a model and a controller
-  (section 7.8, Open).
-- **A gap makes only a model with `settle`, an estimator on the gap's
-  own tick, and a total it takes past `max_missed`, `uncertain`.** Every
-  other
-  block does what the ticks nobody saw would have done to it. A window
-  short of samples and a delay with nothing to give are `not_ready`, and
-  the rest are `good` on the far
-  side. A hysteresis, a latch, a total within `max_missed` and a model
-  with no `settle` are `good` across an hour's stall; `doubtful`, `missed`
-  and `gaps` say an hour and one gap.
+- **A deadband holding a sample that was `uncertain` when taken** is `good`
+  once its input is.
+- **A rate limit holding a value it moved to on an `uncertain` input** is
+  `good` once its input is, as a deadband is.
+- **A good window's statistics are of its `good` samples alone**, so they
+  can move when the count of `good` samples crosses what `min_good` asks.
+- **Only a window has a tolerance for doubtful samples.** One `uncertain`
+  sample in every `settle` ticks keeps a low-pass, and any low-pass or
+  model after it, `uncertain` for good. That includes the value another
+  low-pass gives while it rides through.
+
+**Gaps and loops.**
+
+- **A gap makes only a model with `settle`, an estimator on the gap's own
+  tick, and a total it takes past `max_missed`, `uncertain`.** Every other
+  block does what the ticks nobody saw would have done to it. A window short
+  of samples and a delay with nothing to give are `not_ready`, and the rest
+  are `good` on the far side. A hysteresis, a latch, a total within
+  `max_missed` and a model with no `settle` are `good` across an hour's
+  stall; `doubtful`, `missed` and `gaps` say an hour and one gap.
 - **`since_true` is `good` and true after a long gap**, with either
   `on_bad`: nobody saw its input, and a tick nobody saw does not set its
   clock. An alarm on "nothing for ten minutes" fires after a ten-minute
@@ -1593,6 +1587,67 @@ to write the stricter thing.
   a gap, goes round for good unless a block of the loop has a fallback or
   rides through. A model block on the cycle ends both, since its outputs
   are always usable.
+
+**Samples and their times.**
+
+- **A derivative and a slope are as true as the times the host writes.**
+  Samples stamped with the time they arrived, and not the time they were
+  taken, give the rate of arrival.
+- **A value corrected under the time it was first written with** stands
+  on the input and is not a new sample: the derivative does not take it,
+  and takes the whole correction with the sample after.
+- **A sample taken before a value that had no sample time is not taken
+  by the derivative.** A fallback's value, or an input's `initial`, has
+  its tick's time, and the first real sample after it, stamped earlier
+  than that tick, is passed by: `f` stands at the rate the fallback
+  gave, and the next sample carries the whole return.
+- **A plain window reads a little off for its own length after a
+  rebase**, by as much as its samples were taken before their ticks.
+- **A window's slope is `bad` while it holds one sample seen again and
+  again**, a window shorter than the time between samples on some ticks
+  and not on others, and of a value that is written only when it
+  changes it is the change over the time since the write before, and
+  not a step.
+- **A derivative of a low-pass's output is over ticks**, as every
+  block's output with the tick's time is. The PID's `filter` is over
+  sample times.
+
+**Models.**
+
+- **A model with no `settle`, or a `settle` of zero**, is `good` on a
+  state it stepped to on an `uncertain` value one tick before. `doubtful`
+  counts those steps.
+- **A model block with no `settle` is `good` while it rides through**, on
+  steps taken from a held value. `doubtful` counts them.
+- **Model blocks on one loop are checked for one mistake.** A pair that take
+  each other's outputs through a delay, or through a rate limit that never
+  limits or a deadband of no width, is as far apart as a pair through
+  formulas, can be as unstable, and is accepted. So is any loop of a model
+  and a controller (section 7.8, Open).
+
+**Estimators.**
+
+- **An estimator places a sample to the nearest sixteenth of a period**,
+  and one over a model in discrete time to the nearest tick. With a
+  period of 1 s a sample is placed up to 31 ms from where it was taken.
+- **A sample older than an estimator's state is thrown away.** The tick
+  is `uncertain` for it and `late_<port>` counts it. With `lag` shorter
+  than a sensor's delay that is every sample, and the estimator runs on
+  its model alone, `uncertain` on every tick.
+- **A model input sampled before the place an estimator's state stands
+  at is in force from there**, and not from when it was sampled: what is
+  past is not worked again.
+- **What an estimator gives at the last tick of a call may be of a time
+  after the tick's.** A sample taken after that tick's time is
+  considered at its own place, and the state is given as it stands
+  there: the estimate is of when the newest sample was taken, up to a
+  period after the time the tick is said to have.
+- **A second sensor slower than the first is not used.** Its samples are
+  older than the state whenever the faster one has been considered
+  since: each is late, and its tick is `uncertain` (section 7.9, Open).
+- **An `uncertain` measurement on a port with no `r_uncertain` is left
+  alone**, and the estimator stays `good`. `since_<port>` shows how long it
+  has gone without one.
 - **The estimator takes a measurement written again after a rebase as a
   new one**: where its variance had already grown well past `p0`, the one
   sample sharpens it twice.
@@ -1632,12 +1687,33 @@ to write the stricter thing.
   where a model block stops after `ride_through`. A tick after a stall of
   a thousand ticks it is `good` on a thousand steps of an input nobody
   saw, with a sigma that has grown by its process noise alone.
+
+**Controllers.**
+
 - **A PID keeps its integral across a gap of any length**, a restore
   among them, and is `good` on the far side with whatever it had wound to.
   `gaps` says there was one.
 - **A PID is `good` on the tick after an `uncertain` error went into its
   integral.** `doubtful` counts the tick. Its derivative's filter fades,
   and is treated as the integral is and not as a low-pass.
+- **A PID's derivative is zero on the tick an input comes back**, and its
+  output steps by what the derivative was giving. With `kd` of zero there
+  is no step. It is zero after every rebase too.
+- **A PID's derivative stands while its measurement does.** A sensor that
+  stops being sampled leaves the last rate in the output until the
+  input's maximum age ends it, or a new sample comes. On an input with
+  no maximum age it stands for good.
+- **A limit after a PID that `applied` is not connected to is not seen by
+  it.** Its integral winds up against it, and `limited` is false.
+- **A PID whose `applied` reads low by more than `applied_within` never
+  integrates upwards**, and is `good` with a standing error; one that
+  reads high never integrates downwards. A shortfall inside
+  `applied_within` is not seen, and the integral winds up by that much.
+- **An `uncertain` `applied` decides what the integral keeps**, and the
+  integral is `good` on the next tick.
+- **A PID reset while its input is lost does not track when it comes
+  back.** It starts from the zero the reset left, wherever the actuator
+  is: a `reset` wired to a fault and a `track` do not go together.
 - **A rate limit with no `initial` and no usable `track` does not limit
   its first move**, or its first after it has forgotten: past
   `ride_through`, or after a gap that long, its next usable input is
@@ -1651,9 +1727,29 @@ to write the stricter thing.
   `uncertain`, sets where a rate limit or an integral starts from, and
   no output of the block is `uncertain` for it. On a loop that holds a
   model it is an input like any other for rule 7.8.8, at every tick.
-- **A PID reset while its input is lost does not track when it comes
-  back.** It starts from the zero the reset left, wherever the actuator
-  is: a `reset` wired to a fault and a `track` do not go together.
+- **A controller stops when the word that it acts is lost.** A `follow`
+  that is not usable is taken as true, so a `pid` or a `rate_limit` whose
+  host stops writing it gives the actuator back what it has, as
+  `uncertain`, until it is written again.
+- **A rate limit that followed with no `track` trusts an old value or
+  none.** After any number of such ticks it limits a usable input from
+  the value it last held, however old; given an input it cannot use, it
+  has forgotten once `ride_through` is past, and takes the next whole.
+  A gap of two ticks past `ride_through` forgets what an hour of
+  following with no `track` kept.
+- **With `kd` not zero the `integral` of a PID that follows moves with
+  its measurement**, since it is `track` less a sum that holds the
+  derivative. Only its value at the release is used.
+- **A host that loses `follow` and `track` together has no command.**
+  The block follows, and has nothing to give: `y` is `bad`. A fallback
+  (section 7.10) or the host's own safe value stands in.
+- **What a block gives while it follows is the readback as it is**: not
+  held within `min` and `max`, and `limited` is false. There is no input
+  for a value an operator sets by hand; a host that has one writes it to
+  the actuator, and `track` reads it back.
+
+**Commands.**
+
 - **Only `y` is held.** At a catch-up tick the `integral` and `limited`
   of a block that acts by the call are of that tick, beside a `y` from
   the call before. A graph that gates on `limited` reads it so.
@@ -1664,7 +1760,7 @@ to write the stricter thing.
   whether it did.
 - **Only a `pid` and a `rate_limit` act by the call.** A total kept by an
   `integrate`, or by a formula and a delay, that feeds a command adds at
-  every catch-up tick as it did. A hysteresis or a latch that feeds one
+  every catch-up tick. A hysteresis or a latch that feeds one
   switches at the tick its input says, and the command shows it at the
   last tick of the call.
 - **Every `pid` that feeds a command acts by the call**, the outer one
@@ -1676,48 +1772,6 @@ to write the stricter thing.
   them.
 - **At a gap a block that acts by the call acts for one period**, however
   long the gap.
-- **A limit after a PID that `applied` is not connected to is not seen by
-  it.** Its integral winds up against it, and `limited` is false.
-- **A PID whose `applied` reads low by more than `applied_within` never
-  integrates upwards**, and is `good` with a standing error; one that
-  reads high never integrates downwards. A shortfall inside
-  `applied_within` is not seen, and the integral winds up by that much.
-- **An `uncertain` `applied` decides what the integral keeps**, and the
-  integral is `good` on the next tick.
-- **A PID's derivative is zero on the tick an input comes back**, and its
-  output steps by what the derivative was giving. With `kd` of zero there
-  is no step. It is zero after every rebase too.
-- **A PID's derivative stands while its measurement does.** A sensor that
-  stops being sampled leaves the last rate in the output until the
-  input's maximum age ends it, or a new sample comes. On an input with
-  no maximum age it stands for good.
-- **A derivative and a slope are as true as the times the host writes.**
-  Samples stamped with the time they arrived, and not the time they were
-  taken, give the rate of arrival.
-- **A value corrected under the time it was first written with** stands
-  on the input and is not a new sample: the derivative does not take it,
-  and takes the whole correction with the sample after.
-- **A sample taken before a value that had no sample time is not taken
-  by the derivative.** A fallback's value, or an input's `initial`, has
-  its tick's time, and the first real sample after it, stamped earlier
-  than that tick, is passed by: `f` stands at the rate the fallback
-  gave, and the next sample carries the whole return.
-- **A plain window reads a little off for its own length after a
-  rebase**, by as much as its samples were taken before their ticks.
-- **A window's slope is `bad` while it holds one sample seen again and
-  again**, a window shorter than the time between samples on some ticks
-  and not on others, and of a value that is written only when it
-  changes it is the change over the time since the write before, and
-  not a step.
-- **A derivative of a low-pass's output is over ticks**, as every
-  block's output with the tick's time is. The PID's `filter` is over
-  sample times.
-- **A rate limit holding a value it moved to on an `uncertain` input** is
-  `good` once its input is, as a deadband is.
-- **Only a window has a tolerance for doubtful samples.** One `uncertain`
-  sample in every `settle` ticks keeps a low-pass, and any low-pass or
-  model after it, `uncertain` for good. That includes the value another
-  low-pass gives while it rides through.
 
 **Open.**
 
@@ -1734,17 +1788,17 @@ to write the stricter thing.
    input, and every write still waiting is done with.
 2. A graph can write its state out and take it back, so that a host can
    save a running graph and restore it. A state saved from one graph is
-   refused by a graph that is not the same. A saved state holds what the
-   blocks remember, their counters, each loop's doubt and the number of
-   the next tick. It does not hold what stands on an input, the writes
-   waiting, the clock, a `rebase` not yet followed by its call, or the
-   count of writes thrown away, which stays the engine's own. A loop's
-   doubt, and a model block's, are held and can never show: a restore is
-   a gap, and the gap sets a doubt later than any that was saved. What a
-   held output (rule 6.13) was last given as is not part of it: the tick
-   after a restore is the last of its call. Nor is whether a PID waits
-   to track (rule 7.7.14): a restore is a gap, and after it the PID
-   waits.
+   refused by a graph that is not the same.
+   - **A saved state holds** what the blocks remember, their counters,
+     each loop's doubt and the number of the next tick. A loop's doubt,
+     and a model block's, are held and can never show: a restore is a
+     gap, and the gap sets a doubt later than any that was saved.
+   - **It does not hold** what stands on an input, the writes waiting,
+     the clock, a `rebase` not yet followed by its call, or the count of
+     writes thrown away, which stays the engine's own. What a held output
+     (rule 6.13) was last given as is not part of it: the tick after a
+     restore is the last of its call. Nor is whether a PID waits to track
+     (rule 7.7.14): a restore is a gap, and after it the PID waits.
 3. A **gap** is ticks nobody saw: they were due, and were not run. One
    tick runs at a gap, and the ticks before it are **passed over**. There
    are two kinds.
@@ -1761,27 +1815,31 @@ to write the stricter thing.
    what such a tick may (rule 6.8). What stood goes on standing, as old as
    it is.
 5. At a rebase, one tick runs, at the call's `now`, and later ticks are at
-   whole periods from it. **The host may say how long the graph was
-   away**: `rebase` takes a length, counted from the time of the last tick
-   run. The ticks that would have been due in that time, by rule 6.6, are
-   that length divided by the period and rounded to the nearest whole
-   number, a half rounding up. The last of them is the tick that runs, and
-   the rest are passed over; if none would have been due, none is passed
-   over and the next tick runs. With no length, nobody knows how many were
-   passed over, and the tick that runs is numbered one more than the last
-   tick run. A length of zero is a length. A restore puts back "nobody
-   knows", whatever `rebase` said before it. Before it runs:
+   whole periods from it.
+
+   **The host may say how long the graph was away**: `rebase` takes a
+   length, counted from the time of the last tick run. The ticks that
+   would have been due in that time, by rule 6.6, are that length divided
+   by the period and rounded to the nearest whole number, a half rounding
+   up. The last of them is the tick that runs, and the rest are passed
+   over; if none would have been due, none is passed over and the next
+   tick runs. With no length, nobody knows how many were passed over, and
+   the tick that runs is numbered one more than the last tick run. A
+   length of zero is a length. A restore puts back "nobody knows",
+   whatever `rebase` said before it.
+
+   Before the tick runs:
    - nothing stands on any input, and that is so from the moment the state
      was restored or the host said its clock had stepped: every write then
      waiting was done with, and what the host writes after that waits as
-     usual, judged against nothing from the old clock. For rule 7.2.1 the graph has
-     run since this tick. **After a rebase a host writes again every input
-     that has no maximum age**, the ones it writes only on change, **with
-     the time of the rebase's call**: such a value is as true as when it
-     was set. An input with a maximum age is written when it is next
-     sampled, on the clock the host now passes, and has no value until
-     then: an old sample written with a new time would be a new one. An
-     input's `initial` does not come back (rule 7.2.1);
+     usual, judged against nothing from the old clock. For rule 7.2.1 the
+     graph has run since this tick. **After a rebase a host writes again
+     every input that has no maximum age**, the ones it writes only on
+     change, **with the time of the rebase's call**: such a value is as
+     true as when it was set. An input with a maximum age is written when
+     it is next sampled, on the clock the host now passes, and has no
+     value until then: an old sample written with a new time would be a
+     new one. An input's `initial` does not come back (rule 7.2.1);
    - every sample time a block remembers or holds is forgotten. A window
      with `only_new` takes the next usable sample, and an estimator
      considers the next measurement, as if they had seen none; an estimator
@@ -1789,38 +1847,42 @@ to write the stricter thing.
      delay holds at that moment lose their sample times; a PID's
      derivative starts again (rule 7.7.7); and the samples a window holds
      are from then on at their ticks' times, a tick's time being whole
-     periods before the tick that runs. A block that
-     compares sample times cannot tell a sample from before the rebase
-     from the same one written again after it, whatever length the host
-     gave. So a window with `only_new` keeps no sample from before a
-     rebase, and an estimator's variance grows (rule 7.9.9) at every rebase.
-     That growth is a stand-in and not a bound: a value written again
-     after a rebase is taken as a new measurement all the same.
+     periods before the tick that runs. A block that compares sample times
+     cannot tell a sample from before the rebase from the same one written
+     again after it, whatever length the host gave. So a window with
+     `only_new` keeps no sample from before a rebase, and an estimator's
+     variance grows (rule 7.9.9) at every rebase. That growth is a
+     stand-in and not a bound: a value written again after a rebase is
+     taken as a new measurement all the same.
 
-   `rebase` before any tick has run, since the engine was made or last
-   reset, does away with the writes waiting, and nothing else: the next
-   call runs tick 0 and is not a gap. Restoring a state saved before any
-   tick had run is a reset (rule 3). A `rebase` whose length would give the tick
-   it runs a number past 64 bits is accepted, and every call after it is
-   refused (rule 6.11) until the host calls `rebase` again with a length
-   that does not. A second `rebase` before the call does away
-   with what was written since the first, and its length, or its having
-   none, is the one that counts. A reset after a `rebase` is a
-   reset, and the next call is not a gap. A state saved between a `rebase`
-   and the call that follows it is as one saved before the `rebase`.
+   More of what a `rebase` is:
+   - `rebase` before any tick has run, since the engine was made or last
+     reset, does away with the writes waiting, and nothing else: the next
+     call runs tick 0 and is not a gap. Restoring a state saved before any
+     tick had run is a reset (rule 3).
+   - A `rebase` whose length would give the tick it runs a number past 64
+     bits is accepted, and every call after it is refused (rule 6.11)
+     until the host calls `rebase` again with a length that does not.
+   - A second `rebase` before the call does away with what was written
+     since the first, and its length, or its having none, is the one that
+     counts.
+   - A reset after a `rebase` is a reset, and the next call is not a gap.
+   - A state saved between a `rebase` and the call that follows it is as
+     one saved before the `rebase`.
 6. At either kind, before the tick runs, every block is told how many
    ticks were passed over, or that nobody knows. **Each block does to what
    it remembers what that many ticks would have done, had each been run
    with nothing usable on any of its inputs.** The ticks are not run: no
    output is given for them, and a block does this from the number alone.
-   Where nobody knows the number, it is more than anything the block
-   counts, and nothing is added to a count but one to `gaps`. Where the
-   number is zero, as after a rebase whose length is under a period and a
-   half, a block does nothing but add one to `gaps`, whatever the table
-   says: no timer stops and no model has a doubt. What rule 5 says of a
-   rebase holds all the same: nothing stands, every sample time is
-   forgotten, a PID's derivative starts again, a window with `only_new`
-   is emptied and an estimator's variance grows. The call says it was a gap, and how many (rule 6.10).
+   The call says it was a gap, and how many (rule 6.10).
+   - Where nobody knows the number, it is more than anything the block
+     counts, and nothing is added to a count but one to `gaps`.
+   - Where the number is zero, as after a rebase whose length is under a
+     period and a half, a block does nothing but add one to `gaps`,
+     whatever the table says: no timer stops and no model has a doubt.
+     What rule 5 says of a rebase holds all the same: nothing stands,
+     every sample time is forgotten, a PID's derivative starts again, a
+     window with `only_new` is emptied and an estimator's variance grows.
 
 | Block | Told that `n` ticks were passed over | Told that nobody knows |
 | --- | --- | --- |
@@ -1851,12 +1913,12 @@ This is each block's own reckoning and not a run of the graph. A latch
 fed by a formula that would have been true on a tick nobody saw is not
 set by it, and a fallback gives nothing for one.
 
-Nothing else changes at a gap. An estimator keeps its state and its
-counts, and a model keeps the last usable value of each input for rule
-7.8.5. At a stall, which is on one clock, a block other than a PID, whose
-derivative starts again at any gap, keeps the sample times
-it remembers. At a rebase with a length a delay both moves on and loses
-the sample times of what it still holds.
+Nothing else changes at a gap. An estimator keeps its state and its counts,
+and a model keeps the last usable value of each input for rule 7.8.5. At a
+stall, which is on one clock, a block other than a PID, whose derivative
+starts again at any gap, keeps the sample times it remembers. At a rebase
+with a length a delay both moves on and loses the sample times of what it
+still holds.
 
 **Open.**
 
@@ -1902,17 +1964,17 @@ blocks:
 
 1. `inputs` lists every signal written from outside, with its type, its
    maximum age and, where it has them, its unit, initial value and
-   `max_ahead`. A type left out is `number`. A graph that reads a signal which is
-   neither an input nor a block's output is refused.
-2. A block id, and a name a block's settings give to a port, a state or
-   an output, is not empty and holds no dot. The name of an input and a
-   published name are not empty. A block's `in` maps each
-   input port to a signal, named as text and not empty, or to a
-   constant. Its `out` maps output ports to signal names, which are text; a
-   port left out is not published, and any output, published or not, can be
-   read by another block as `<block id>.<port>`. A block id is text. No
-   input and no published signal may have a name of the form
-   `<block id>.<port>` for a block and port of the graph.
+   `max_ahead`. A type left out is `number`. A graph that reads a signal
+   which is neither an input nor a block's output is refused.
+2. A block id, and a name a block's settings give to a port, a state or an
+   output, is not empty and holds no dot. The name of an input and a
+   published name are not empty. A block's `in` maps each input port to a
+   signal, named as text and not empty, or to a constant. Its `out` maps
+   output ports to signal names, which are text; a port left out is not
+   published, and any output, published or not, can be read by another block
+   as `<block id>.<port>`. A block id is text. No input and no published
+   signal may have a name of the form `<block id>.<port>` for a block and
+   port of the graph.
 3. A length of time is written as a number and a unit with nothing between
    them: `ns`, `us`, `ms`, `s`, `m` or `h`. The number is digits, with an
    optional point and more digits. A number without a unit is refused. So
@@ -1972,9 +2034,9 @@ and what a declared unit has to say.
    test.
 4. A second implementation, written from this document as it stands and
    nothing else, passes the same vectors.
-5. Values are compared to within one part in 10⁹ of the value, or of 1
-   where the value is smaller than 1. Where a rule turns on
-   exact equality, a vector uses values that are exact in binary.
+5. Values are compared to within one part in 10⁹ of the value, or of 1 where
+   the value is smaller than 1. Where a rule turns on exact equality, a
+   vector uses values that are exact in binary.
 6. The two implementations are also run side by side on random inputs and
    call times, at clock values small and large, with stalls, saves,
    restores, rebases and resets among the calls.
@@ -2046,38 +2108,34 @@ what the vectors pin down.
 | `state_space` | `u` | `A`, `B`, `C`, `D` (0), `initial` (zeros), and the model settings | `y`; and the model outputs |
 | `estimator` | the model's inputs, deferred, and one per measurement | `model`, `q`, `p0`, `measure`, `consistency`, `gate` (none), `max_refused`, `sigma_max` (none), `lag` (2 periods) | see 7.9.8 |
 
-A setting with a value in brackets may be left out and takes that value.
-One with none is required, unless its entry below says what it is when
-left out: a `thermal_mass` has to give `initial`, and a `thermal_rc2`
-`initial_a` and `initial_b`, where the other models start from zero.
-`settle` is written as a length of time, like any other counted length. An
-input is required and direct unless the table or the block's rule says
-otherwise. An output is a number unless the table says otherwise. `formula`
-and `all_good` take one or more inputs, `all_good` under any names and
-`formula` under names its grammar allows. The **model
-settings** are `ride_through` (0) and `settle` (rule 7.8.6), and the
-**model outputs** are `elapsed`, `doubtful` and `gaps`. A model block's
-input is a number, and is deferred unless the model's outputs read it
-(rule 7.8.2).
+A setting with a value in brackets may be left out and takes that value. One
+with none is required, unless its entry below says what it is when left out:
+a `thermal_mass` has to give `initial`, and a `thermal_rc2` `initial_a` and
+`initial_b`, where the other models start from zero. `settle` is written as
+a length of time, like any other counted length. An input is required and
+direct unless the table or the block's rule says otherwise. An output is a
+number unless the table says otherwise. `formula` and `all_good` take one or
+more inputs, `all_good` under any names and `formula` under names its
+grammar allows. The **model settings** are `ride_through` (0) and `settle`
+(rule 7.8.6), and the **model outputs** are `elapsed`, `doubtful` and
+`gaps`. A model block's input is a number, and is deferred unless the
+model's outputs read it (rule 7.8.2).
 
 Ranges, outside which a graph is refused: `ticks` a whole number, at least
 1; `window` at least one period; `min_good` more than 0 and at most 1;
 `step`, `ride_through`, `settle`, `time`, `hold_limit`, `max_missed`, `q`,
 `gate` and a state's `sigma_max` not negative; `ticks`, `over`,
 `max_refused`, `max_catch_up`, `max_waiting` and `act_for` at most
-2,147,483,647,
-which is a width and not a size: an engine may refuse a graph it has not
-the memory for, a long window among them, and a count it works out, a
-low-pass's `settle` say, that does not fit in 64 bits;
-`measure` at least one port; `up`, `down` and `applied_within` not
-negative; `per`, `tau`,
-`filter`, `p0` and `r` more than zero; `min` less than `max` where both
-are given; a
-model's settings as its entry below says; `rise` more
-than `fall`; every number, `initial` and fallback finite; `on_bad` one of
-the choices its block gives. `filter` is required with a `kd` that is not
-zero and refused without one. `hold_limit` is required with `on_bad: hold`
-and refused without it. `min_good` is required with `only_new: true`.
+2,147,483,647, which is a width and not a size: an engine may refuse a graph
+it has not the memory for, a long window among them, and a count it works
+out, a low-pass's `settle` say, that does not fit in 64 bits; `measure` at
+least one port; `up`, `down` and `applied_within` not negative; `per`,
+`tau`, `filter`, `p0` and `r` more than zero; `min` less than `max` where
+both are given; a model's settings as its entry below says; `rise` more than
+`fall`; every number, `initial` and fallback finite; `on_bad` one of the
+choices its block gives. `filter` is required with a `kd` that is not zero
+and refused without one. `hold_limit` is required with `on_bad: hold` and
+refused without it. `min_good` is required with `only_new: true`.
 
 - **`formula`.** Section 7.1 governs states.
   - **Numbers:** digits, an optional point and more digits, an optional
@@ -2126,30 +2184,29 @@ and refused without it. `min_good` is required with `only_new: true`.
 - **`all_good`.** True when every input is `good`, else false. Always
   `good`.
 - **`delay`.** At tick `k` its output is its input at tick `k - ticks`:
-  value, state and sample time, as a reader of that input saw them then
-  (but see rule 7.8.8 for a delay in a loop that holds a model). For a
-  tick a gap passed over it is `not_ready` (rule 8.6). Before tick 0, its output is `initial` and `good`, with
-  no sample time, or `not_ready` if no initial value is given. Its type is
-  its input's, and an initial value of the other type is refused. On a
-  loop, where its input's type waits on its own, its type is its initial
-  value's, which rule 5.4 sees that it has. An
-  initial value is `good` because it is the author's statement of where a
-  loop starts, where an input's initial value stands in for a measurement.
+  value, state and sample time, as a reader of that input saw them then (but
+  see rule 7.8.8 for a delay in a loop that holds a model). For a tick a gap
+  passed over it is `not_ready` (rule 8.6). Before tick 0, its output is
+  `initial` and `good`, with no sample time, or `not_ready` if no initial
+  value is given. Its type is its input's, and an initial value of the other
+  type is refused. On a loop, where its input's type waits on its own, its
+  type is its initial value's, which rule 5.4 sees that it has. An initial
+  value is `good` because it is the author's statement of where a loop
+  starts, where an input's initial value stands in for a measurement.
 - **`window`.** Rule 7.8.8 has more for one in a loop that holds a model
-  block. `window` is `n` periods. At a tick the window is that tick
-  and the `n - 1` before it. `median` of an even number of samples is the
-  mean of the middle two. `spread` is `max - min`. `slope` is the
-  least-squares slope of value against time, per second. The time of a
-  sample is its sample time (rule 3.7), or its tick's where it carries
-  none or a rebase has forgotten it (rule 8.5); it is taken in seconds
-  from the time of the earliest tick's sample among those the slope is
-  of, whether or not that is the earliest time, as a difference in
-  nanoseconds divided by 10⁹. A tick's time is worked at each tick, as
-  whole periods before that tick's. With `t̄` and `v̄` the means of the
-  times and of the values, each a sum from the earliest tick's sample to
-  the latest, divided by their number, the slope is the sum of
-  `(t - t̄)·(v - v̄)` over the sum of `(t - t̄)²`, each summed in that
-  order. Section 7.3 governs states.
+  block. `window` is `n` periods. At a tick the window is that tick and the
+  `n - 1` before it. `median` of an even number of samples is the mean of
+  the middle two. `spread` is `max - min`. `slope` is the least-squares
+  slope of value against time, per second. The time of a sample is its
+  sample time (rule 3.7), or its tick's where it carries none or a rebase
+  has forgotten it (rule 8.5); it is taken in seconds from the time of the
+  earliest tick's sample among those the slope is of, whether or not that is
+  the earliest time, as a difference in nanoseconds divided by 10⁹. A tick's
+  time is worked at each tick, as whole periods before that tick's. With
+  `t̄` and `v̄` the means of the times and of the values, each a sum from
+  the earliest tick's sample to the latest, divided by their number, the
+  slope is the sum of `(t - t̄)·(v - v̄)` over the sum of `(t - t̄)²`, each
+  summed in that order. Section 7.3 governs states.
 - **`deadband`.** The comparison with `step` is exact. Section 7.4.
 - **`lowpass`.** Section 7.4, and rule 7.8.8 for one in a loop that holds
   a model block.
@@ -2163,22 +2220,22 @@ and refused without it. `min_good` is required with `only_new: true`.
   ratio of the period to `per`. The ratio is worked once, exactly, and
   then taken as a double, so that at a period of 100 ms and a `per` of
   300 ms an input of 3 adds exactly 1. `missed` is in seconds.
-- **`rate_limit`.** Section 7.4 rules 9 to 13.
-- **`pid`.** Section 7.7 rules 5 to 14. `kp`, `ki` and `kd` are any finite
+- **`rate_limit`.** Section 7.4 rules 9 to 14.
+- **`pid`.** Section 7.7 rules 5 to 15. `kp`, `ki` and `kd` are any finite
   numbers: `ki` per second, `kd` in seconds.
 - **`linear`.** Any linear model in continuous time (rule 7.8.7):
   `dx/dt = A·x + B·u`, `y = C·x + D·u`. `A` is a list of `n` rows of `n`
-  numbers; `B` a list of `n` rows, one number per input; `C` a list of
-  rows, one per output, of `n` numbers; `D`, if given, a row per output of
-  one number per input. `initial` is a number per state. `inputs`,
-  `states` and `outputs` are lists of names; left out, a single one is
-  `u`, `x0` or `y`, and several are `u0`, `u1`, `x0`, `x1`, `y0`, `y1` and
-  so on. There is at least one state, one input and one output. The
-  names in each list are distinct, the three lists do not have to differ
-  from each other, and an output is not named
-  as a model output is. An input is direct if any output reads it, which
-  is where its column of `D` is not all zero. The matrices are in the
-  units of seconds. A graph is refused where the sizes do not agree.
+  numbers; `B` a list of `n` rows, one number per input; `C` a list of rows,
+  one per output, of `n` numbers; `D`, if given, a row per output of one
+  number per input. `initial` is a number per state. `inputs`, `states` and
+  `outputs` are lists of names; left out, a single one is `u`, `x0` or `y`,
+  and several are `u0`, `u1`, `x0`, `x1`, `y0`, `y1` and so on. There is at
+  least one state, one input and one output. The names in each list are
+  distinct, the three lists do not have to differ from each other, and an
+  output is not named as a model output is. An input is direct if any output
+  reads it, which is where its column of `D` is not all zero. The matrices
+  are in the units of seconds. A graph is refused where the sizes do not
+  agree.
 - **The named models** are each `linear` with its matrices written out
   from a few physical settings. Each lists its states in the order of
   `A`'s rows and its inputs in the order of `B`'s columns. An output is a
@@ -2216,7 +2273,8 @@ and refused without it. `min_good` is required with `only_new: true`.
     Outputs `speed`, `current`, and `torque`, which is
     `torque_constant·current`. `inductance` and `inertia` more than zero;
     `resistance`, `friction`, `back_emf` and `torque_constant` not
-    negative, so that nothing in the determinant is subtracted. `A`'s determinant is
+    negative, so that nothing in the determinant is subtracted. `A`'s
+    determinant is
     `(resistance·friction + back_emf·torque_constant) / (inductance·inertia)`.
 - **`state_space`.** Discrete, one input and one output, as 1.x has it. `A`
   is a list of `n` rows of `n` numbers, `B` and `C` lists of `n`. Its step
@@ -2246,8 +2304,7 @@ that port's type (section 7.10).
 derivative, an edge detector, an off-delay, a moving sum, a lookup, a
 selector, a difference of a device's counter and a second-order section.
 None can be put together from the blocks above without a loop through a
-delay, and a formula cannot read the period. A clamp can, and is a
-formula: `min(max(x, lo), hi)`. Each
-is a block with scalar settings, and none needs a rule this document does
-not have. Settled by: writing them, each with its
+delay, and a formula cannot read the period. A clamp can, and is a formula:
+`min(max(x, lo), hi)`. Each is a block with scalar settings, and none needs
+a rule this document does not have. Settled by: writing them, each with its
 vectors.
