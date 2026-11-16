@@ -302,11 +302,15 @@ where I could not tell from the text which was meant.
     holds a model block, at a stall and at a rebase alike, unless the gap
     passed over no tick.
 54. **Rule 8.2, "each loop's doubt" in a saved state.** It is saved and
-    put back. It cannot show: a restore is a gap of no known length, and
-    that gap makes the tick before the one that runs the loop's doubt,
-    which is later than any that was saved. The same is so of a model
-    block's own doubt. Only a state saved before any tick is restored
-    without a gap, and it has no doubt.
+    put back. It shows in one case: a restore is a gap of no known length,
+    and that gap makes the tick before the one that runs the loop's doubt,
+    which is later than any that was saved; but a `rebase` with a length
+    after the restore is the one that counts (rule 8.5), and where it
+    passes over no tick the gap sets no doubt (rule 8.6) and the saved one
+    decides. The same is so of a model block's own doubt. This entry said
+    it could not show, as rule 8.2 did, until the text was read whole for
+    the fourth revision. A state saved before any tick is restored without
+    a gap, and it has no doubt.
 55. **Rule 7.8.8, the sum held against `settle`.** A delay's `ticks`, a
     window's length in periods, and a low-pass's `settle` in ticks,
     written or its default of three time constants rounded up.
