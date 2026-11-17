@@ -74,8 +74,9 @@ private:
 ///
 /// Memory. `tick` allocates nothing. A write that is accepted allocates nothing while no more than 1,024 writes
 /// wait on its input, or the graph's `max_waiting` where that is less: room for that many is taken when the graph
-/// is compiled. `compile`, `save` and the message of anything refused allocate. Where memory cannot be had the
-/// core does nothing about it: `std::bad_alloc` is thrown, or the process ends where exceptions are off.
+/// is compiled. `compile`, `save`, `restore`, `reset` and the message of anything refused allocate. Where memory
+/// cannot be had the core does nothing about it: `std::bad_alloc` is thrown, or the process ends where exceptions
+/// are off.
 class Engine {
 public:
     /// Compiles a graph: a map in the shape of section 9 of the specification.
