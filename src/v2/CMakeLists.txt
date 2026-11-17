@@ -2,6 +2,7 @@
 # library and sharing nothing with it. Zero dependencies, as the 1.x core has.
 add_library(fluxgraph_v2 STATIC
     block_delay.cpp
+    block_estimator.cpp
     block_formula.cpp
     block_hold.cpp
     block_integrate.cpp
