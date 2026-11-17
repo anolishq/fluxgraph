@@ -103,6 +103,11 @@ def spoiled(state, parts):
         with_u32(first_at, first_length + 1)[: second_at - 3] + with_u32(second_at, second_length - 1)[second_at - 3 :],
     )
     yield "a block's part longer than the state", with_u32(first_at, len(state))
+    # The first block is the delay, and its part begins with the place of the value it gives next.
+    yield (
+        "a delay's place past the values it holds",
+        state[: first_at + 4] + struct.pack("<Q", 99) + state[first_at + 12 :],
+    )
     # One block's part alone is wrong, and every part after it is where its length says.
     end = first_at + 4 + first_length
     yield (

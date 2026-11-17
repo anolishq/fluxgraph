@@ -6,12 +6,19 @@
 #include <optional>
 
 #include "blocks.hpp"
+#include "remembers.hpp"
 
 namespace fluxgraph::v2::detail {
 
 namespace {
 
-class DelayBlock : public Block {
+// The last `ticks` inputs. The oldest, which is what the block gives next, is at `next`.
+struct Memory {
+    std::vector<Value> held;
+    std::size_t next = 0;
+};
+
+class DelayBlock : public InPlace<Memory> {
 public:
     Status configure(const BlockSetup &setup) {
         SettingsReader settings(setup);
@@ -28,7 +35,7 @@ public:
         }
         id_ = setup.id;
         outputs_[0].type = has_initial_ ? std::optional<Type>(initial_.type) : std::nullopt;
-        held_.assign(static_cast<std::size_t>(ticks), Value{});
+        ticks_ = static_cast<std::size_t>(ticks);
         reset();
         return {};
     }
@@ -57,68 +64,54 @@ public:
         return {};
     }
 
-    LoopRole loop_role() const override { return LoopRole{LoopRole::Kind::remembers, held_.size(), false}; }
+    LoopRole loop_role() const override { return LoopRole{LoopRole::Kind::remembers, ticks_, false}; }
 
-    void loop_settled() override {
-        for (Value &value : held_) {  // rule 7.8.8: every such value it holds, and not only the one it gives next
+protected:
+    void settle(Memory &memory) const override {
+        for (Value &value : memory.held) {  // rule 7.8.8: every such value it holds, and not only the one it gives next
             if (value.state == State::uncertain) {
                 value.state = State::good;
             }
         }
     }
 
-    void give(const Tick & /*tick*/, std::span<const Value> /*in*/, std::span<Value> out) override {
-        out[0] = held_[next_];
+    void look(const Tick & /*tick*/, std::span<const Value> /*in*/, std::span<Value> out, const Memory &memory,
+              NoWork & /*work*/) const override {
+        out[0] = memory.held[memory.next];
     }
 
-    void update(const Tick & /*tick*/, std::span<const Value> in) override {
-        held_[next_] = in[0];
-        next_ = (next_ + 1) % held_.size();
+    void take(const Tick & /*tick*/, std::span<const Value> in, Memory &memory,
+              const NoWork & /*work*/) const override {
+        memory.held[memory.next] = in[0];
+        memory.next = (memory.next + 1) % memory.held.size();
     }
 
-    void gap(const Gap &gap) override {
+    void pass_over(const Gap &gap, Memory &memory) const override {
         if (!gap.known) {
-            std::fill(held_.begin(), held_.end(), Value{});  // everything it holds is not_ready
+            std::fill(memory.held.begin(), memory.held.end(), Value{});  // everything it holds is not_ready
         } else {
             // It moves on that many places, taking in not_ready for each; past its length that is all of it.
-            const std::size_t places = static_cast<std::size_t>(std::min<std::uint64_t>(gap.ticks, held_.size()));
+            const std::size_t places = static_cast<std::size_t>(std::min<std::uint64_t>(gap.ticks, memory.held.size()));
             for (std::size_t i = 0; i < places; ++i) {
-                held_[next_] = Value{};
-                next_ = (next_ + 1) % held_.size();
+                memory.held[memory.next] = Value{};
+                memory.next = (memory.next + 1) % memory.held.size();
             }
         }
         if (gap.rebase) {  // rule 8.5: the values it holds lose their sample times
-            for (Value &value : held_) {
+            for (Value &value : memory.held) {
                 value.timed = false;
             }
         }
     }
 
-    void reset() override {
-        // Before tick 0 its output is `initial` and good, with no sample time, or not_ready.
-        std::fill(held_.begin(), held_.end(), has_initial_ ? initial_ : Value{});
-        next_ = 0;
-    }
+    // Before tick 0 its output is `initial` and good, with no sample time, or not_ready.
+    Memory start() const override { return Memory{std::vector<Value>(ticks_, has_initial_ ? initial_ : Value{}), 0}; }
 
-    void save(StateWriter &writer) const override {
-        writer.u64(next_);
-        for (const Value &value : held_) {
-            writer.value(value);
+    void describe(Fields &fields, Memory &memory) const override {
+        fields.index(memory.next, memory.held.size());
+        for (Value &value : memory.held) {
+            fields(value);
         }
-    }
-
-    bool restore(StateReader &reader) override {
-        std::uint64_t next = 0;
-        if (!reader.u64(next) || next >= held_.size()) {
-            return false;
-        }
-        next_ = static_cast<std::size_t>(next);
-        for (Value &value : held_) {
-            if (!reader.value(value)) {
-                return false;
-            }
-        }
-        return true;
     }
 
 private:
@@ -127,8 +120,7 @@ private:
     std::string id_;
     bool has_initial_ = false;
     Value initial_;
-    std::vector<Value> held_;  // the last `ticks` inputs; the oldest, which is what it gives next, is at next_
-    std::size_t next_ = 0;
+    std::size_t ticks_ = 1;
 };
 
 }  // namespace
