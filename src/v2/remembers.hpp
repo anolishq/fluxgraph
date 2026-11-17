@@ -83,6 +83,10 @@ public:
         }
     }
 
+    /// Whether fields are being read back, and not saved.
+    bool reading() const { return reader_ != nullptr; }
+    /// What was read back cannot be what a block saved.
+    void fail() { ok_ = false; }
     /// False once a field could not be read back.
     bool ok() const { return ok_; }
 
@@ -112,7 +116,11 @@ public:
 
     void gap(const Gap &gap) final { pass_over(gap, now_); }
     void loop_settled() final { settle(now_); }
-    void reset() final { now_ = start(); }
+    /// Both copies are made, so that a memory that holds vectors has room for them before any tick.
+    void reset() final {
+        now_ = start();
+        next_ = now_;
+    }
 
     void save(StateWriter &writer) const final {
         Memory held = now_;
@@ -159,8 +167,8 @@ struct NoWork {};
 /// tick, as a delay's or a window's is.
 ///
 /// `look` is the first phase, and is given what the block remembers read-only. `take` is the second, and may
-/// change it. `Work` is room for the first phase to work in, and to leave for the second what it found: it is
-/// not part of what the block remembers, and no saved state holds it.
+/// change it. `Work` is room to work in, at either phase and at a gap, and for the first phase to leave for the
+/// second what it found: it is not part of what the block remembers, and no saved state holds it.
 template <typename Memory, typename Work = NoWork>
 class InPlace : public Block {
 public:
@@ -170,7 +178,7 @@ public:
 
     void update(const Tick &tick, std::span<const Value> in) final { take(tick, in, memory_, work_); }
 
-    void gap(const Gap &gap) final { pass_over(gap, memory_); }
+    void gap(const Gap &gap) final { pass_over(gap, memory_, work_); }
     void loop_settled() final { settle(memory_); }
 
     /// Also makes the room to work in: a block is reset once it is configured, before any tick.
@@ -201,9 +209,9 @@ protected:
     virtual void look(const Tick &tick, std::span<const Value> in, std::span<Value> out, const Memory &memory,
                       Work &work) const = 0;
     /// The second phase (see Block::update).
-    virtual void take(const Tick &tick, std::span<const Value> in, Memory &memory, const Work &work) const = 0;
+    virtual void take(const Tick &tick, std::span<const Value> in, Memory &memory, Work &work) const = 0;
     /// Before the tick a gap runs (see Block::gap).
-    virtual void pass_over(const Gap &gap, Memory &memory) const = 0;
+    virtual void pass_over(const Gap &gap, Memory &memory, Work &work) const = 0;
     /// See Block::loop_settled.
     virtual void settle(Memory & /*memory*/) const {}
     /// What the block remembers as it is made, and after a reset.

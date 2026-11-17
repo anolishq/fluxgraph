@@ -55,6 +55,35 @@ OTHER = {
 }
 
 
+# An estimator of one state and one port, with no test of consistency: what it saves begins with the state, its
+# variance, and the place the state stands at.
+ESTIMATOR = {
+    "period": "1s",
+    "inputs": {"u": {"max_age": "none"}, "z": {"max_age": "none"}},
+    "blocks": [
+        {
+            "id": "k",
+            "type": "estimator",
+            "in": {"u": "u", "z": "z"},
+            "settings": {
+                "model": {"type": "linear", "A": [[0]], "B": [[1]], "C": [[1]]},
+                "q": {"x0": 1},
+                "p0": {"x0": 1},
+                "measure": {"z": {"of": "y", "r": 1}},
+                "consistency": "none",
+            },
+            "out": {"x0": "x"},
+        }
+    ],
+}
+
+
+def estimate(engine, k):
+    engine.write("u", "good", 2.0, k * SECOND)
+    engine.write("z", "good", 0.5 * k, k * SECOND)
+    return engine.tick(k * SECOND)
+
+
 def step(engine, k):
     engine.write("x", "good", 1.5 * k + 1, k * SECOND)
     return engine.tick(k * SECOND)
@@ -164,7 +193,50 @@ def main():
     taken = step(second, 4) == step(third, 4)
     ok = ok and taken
     print(f"{'the state as saved':52s} {'taken' if taken else 'TAKEN, AND THE ENGINES PART'}")
-    print(f"{len(cases)} spoiled states: " + ("EVERY ONE REFUSED, AND NOTHING CHANGED" if ok else "NOT AS SAID"))
+
+    # An estimator judges more of what it reads back than any other block: a place within a period, how many
+    # values a model input has from later places, and how many innovations a port keeps.
+    one, two = adapter.Engine(ESTIMATOR), adapter.Engine(ESTIMATOR)
+    for j in range(3):
+        assert estimate(one, j) == estimate(two, j)
+    saved = bytes.fromhex(one.save())
+    ((at, length),) = layout(saved, 1)
+    part = at + 4 + 8 + 8 + 8  # past the state, its variance and the tick of its place
+    count = part + 8 + 1 + 8  # past the part, and a model input's flag and value in force
+    kept = at + 4 + length - 4 - 8 - 8  # before a port's place among its innovations, and the four flags
+    # One value more than a `lag` of two periods has room for, each written out in full, and the block's length
+    # made to fit: all that is wrong with the state is how many there are.
+    (had,) = struct.unpack_from("<Q", saved, count)
+    values = b"".join(struct.pack("<dQQ", 0.0, 0, 0) for _ in range(4))
+    longer = length - 24 * had + len(values)
+    too_many = (
+        saved[:at]
+        + struct.pack("<I", longer)
+        + saved[at + 4 : count]
+        + struct.pack("<Q", 4)
+        + values
+        + saved[count + 8 + 24 * had :]
+    )
+    estimator_cases = [
+        ("an estimator's place past the parts of a period", saved[:part] + struct.pack("<Q", 16) + saved[part + 8 :]),
+        ("more values from later places than it has room for", too_many),
+        ("more innovations kept than it keeps", saved[:kept] + struct.pack("<Q", 1) + saved[kept + 8 :]),
+    ]
+    j = 3
+    for name, bad in estimator_cases:
+        try:
+            two.restore(bad.hex())
+        except adapter.Refused as refusal:
+            shown, refused = f"refused: {refusal}", True
+        else:
+            shown, refused = "TAKEN", False
+        same = estimate(one, j) == estimate(two, j)
+        j += 1
+        ok = ok and refused and same
+        print(f"{name:52s} {shown}{'' if same else '; AND THE ENGINE WAS CHANGED'}")
+
+    total = len(cases) + len(estimator_cases)
+    print(f"{total} spoiled states: " + ("EVERY ONE REFUSED, AND NOTHING CHANGED" if ok else "NOT AS SAID"))
     sys.exit(0 if ok else 1)
 
 

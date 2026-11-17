@@ -9,6 +9,7 @@
 #include "exact.hpp"
 #include "exact_step.hpp"
 #include "model.hpp"
+#include "remembers.hpp"
 
 namespace fluxgraph::v2::detail {
 
@@ -110,7 +111,29 @@ struct Step {
 
 enum PortOut : std::size_t { kInnovation, kNis, kRefused, kLate, kSince, kPortOuts };
 
-class EstimatorBlock : public Block {
+// What the estimator remembers. It is copied at every tick, each vector into one of its own size, so that
+// nothing is allocated: the first phase does the estimator's work, and works on the copy (rule 4.4).
+struct Memory {
+    std::vector<double> x;  // the estimate, where it stands
+    std::vector<double> p;  // its covariance, by rows
+    Place at;               // the place they stand at
+    // Each model input: the value in force at the place the state stands at, if it has had one, and after
+    // it the values it has from later places, oldest first, in a ring of the block's `room_`.
+    std::vector<double> held;
+    std::vector<char> has;
+    std::vector<Given> given;
+    std::vector<std::size_t> first_given;
+    std::vector<std::size_t> count_given;
+    std::vector<PortMemory> ports;
+    std::vector<double> nis;       // `over` for each port
+    bool started = false;          // a tick has run
+    bool inputs_in_doubt = false;  // a model input was uncertain or unusable at the tick before
+    bool lost = false;             // a gap of no known length, and no measurement used since
+    bool gap_in_doubt = false;     // the next tick is one a gap ran, having passed over a tick or nobody knows
+    bool first = true;             // no measurement has been due since the start, a reset or a rebase
+};
+
+class EstimatorBlock : public Committing<Memory> {
 public:
     Status configure(const BlockSetup &setup) {
         SettingsReader settings(setup);
@@ -169,15 +192,6 @@ public:
         // A model input has at most one value from each tick's second phase, and those from before the place the
         // state stands at are not kept: with the state no more than `lag` behind, that is `lag` and one.
         room_ = static_cast<std::size_t>(lag_) + 1;
-        m_.x.assign(n, 0.0);
-        m_.p.assign(n * n, 0.0);
-        m_.held.assign(model_.inputs, 0.0);
-        m_.has.assign(model_.inputs, 0);
-        m_.given.assign(model_.inputs * room_, Given{});
-        m_.first_given.assign(model_.inputs, 0);
-        m_.count_given.assign(model_.inputs, 0);
-        m_.ports.assign(ports_.size(), PortMemory{});
-        m_.nis.assign(ports_.size() * over_, 0.0);
         reset();
         for (std::vector<double> *room : {&a_, &b_, &c_, &d_, &e_, &f_, &carried_p_}) {
             room->assign(n * n, 0.0);
@@ -198,11 +212,13 @@ public:
     Status bind(std::span<const std::optional<Type>> /*input_types*/) override { return {}; }
     LoopRole loop_role() const override { return LoopRole{LoopRole::Kind::estimator, 0, false}; }
 
-    // A tick's two phases always come as a pair, so what is remembered is changed where it stands: nothing is
-    // copied, and what a model input was given is held in one place.
-    void give(const Tick &tick, std::span<const Value> in, std::span<Value> out) override {
+protected:
+    // The first phase does the estimator's work: it carries the state on, and corrects it by the measurements due.
+    // All of it is done to `next`, the copy of what is remembered, and none of it reads `now`.
+    void step(const Tick &tick, std::span<const Value> in, std::span<Value> out, const Memory & /*now*/,
+              Memory &next) const override {
         const std::size_t n = model_.states;
-        Memory &m = m_;
+        Memory &m = next;
         const std::uint64_t number = static_cast<std::uint64_t>(tick.number);  // a tick's number is not negative
         const Place here{number, 0};
         // Rule 7.9.7: a model input was uncertain or not usable at the tick before, or this tick is the one a
@@ -335,8 +351,8 @@ public:
         }
     }
 
-    void update(const Tick &tick, std::span<const Value> in) override {
-        Memory &m = m_;
+    void take(const Tick &tick, std::span<const Value> in, const Memory & /*now*/, Memory &next) const override {
+        Memory &m = next;
         m.inputs_in_doubt = false;
         const std::uint64_t number = static_cast<std::uint64_t>(tick.number);
         for (std::size_t i = 0; i < model_.inputs; ++i) {
@@ -376,8 +392,8 @@ public:
         }
     }
 
-    void gap(const Gap &gap) override {
-        Memory &m = m_;
+    void pass_over(const Gap &gap, Memory &now) const override {
+        Memory &m = now;
         // Rule 7.9.9: told that ticks were passed over it does nothing then; rule 7.9.2 carries the state over
         // them when the next tick asks.
         if (!gap.known) {
@@ -408,141 +424,89 @@ public:
         m.gap_in_doubt = !gap.known || gap.ticks > 0;
     }
 
-    void reset() override {
+    // Rule 7.9.1: the model's initial state, p0 on each state and nothing between, at tick 0's place.
+    Memory start() const override {
         const std::size_t n = model_.states;
-        Memory &m = m_;
-        m.x = model_.initial;  // rule 7.9.1: the model's initial state, p0 on each state and nothing between
-        std::fill(m.p.begin(), m.p.end(), 0.0);
+        Memory m;
+        m.x = model_.initial;
+        m.p.assign(n * n, 0.0);
         for (std::size_t i = 0; i < n; ++i) {
             m.p[i * n + i] = p0_[i];
         }
-        m.at = Place{};  // tick 0's
-        std::fill(m.held.begin(), m.held.end(), 0.0);
-        std::fill(m.has.begin(), m.has.end(), char{0});
-        std::fill(m.count_given.begin(), m.count_given.end(), 0);
-        std::fill(m.ports.begin(), m.ports.end(), PortMemory{});
-        std::fill(m.nis.begin(), m.nis.end(), 0.0);
-        m.started = m.inputs_in_doubt = m.lost = m.gap_in_doubt = false;
-        m.first = true;
+        m.held.assign(model_.inputs, 0.0);
+        m.has.assign(model_.inputs, 0);
+        m.given.assign(model_.inputs * room_, Given{});
+        m.first_given.assign(model_.inputs, 0);
+        m.count_given.assign(model_.inputs, 0);
+        m.ports.assign(ports_.size(), PortMemory{});
+        m.nis.assign(ports_.size() * over_, 0.0);
+        return m;
     }
 
-    // What is saved, in order: the state, its covariance and each port's kept
-    // normalised innovations squared; the place the state stands at; for each model input whether it has a
-    // value in force, that value, how many it has from later places, and each of those with its place; for each
-    // port what PortMemory holds; and four flags. Its length is fixed but for the values from later places, of
-    // which a model input has `lag` and one at most.
-    void save(StateWriter &writer) const override {
-        const Memory &m = m_;
-        for (const std::vector<double> *values : {&m.x, &m.p, &m.nis}) {
-            for (double value : *values) {
-                writer.f64(value);
-            }
-        }
-        writer.u64(m.at.tick);
-        writer.u64(m.at.part);
-        for (std::size_t i = 0; i < model_.inputs; ++i) {
-            writer.flag(m.has[i] != 0);
-            writer.f64(m.held[i]);
-            writer.u64(m.count_given[i]);
-            for (std::size_t j = 0; j < m.count_given[i]; ++j) {
-                const Given &one = given(m, i, j);
-                writer.f64(one.value);
-                writer.u64(one.from.tick);
-                writer.u64(one.from.part);
-            }
-        }
-        for (const PortMemory &memory : m.ports) {
-            writer.flag(memory.seen);
-            writer.u64(static_cast<std::uint64_t>(memory.seen_at));
-            writer.flag(memory.used);
-            writer.u64(static_cast<std::uint64_t>(memory.used_at));
-            writer.u64(memory.refused);
-            writer.u64(memory.late);
-            writer.u64(memory.run);
-            writer.u64(memory.kept);
-            writer.u64(memory.oldest);
-        }
-        writer.flag(m.started);
-        writer.flag(m.inputs_in_doubt);
-        writer.flag(m.lost);
-        writer.flag(m.first);
-    }
-
-    bool restore(StateReader &reader) override {
-        Memory &m = m_;
+    // What is saved, in order: the state, its covariance and each port's kept normalised innovations squared; the
+    // place the state stands at; for each model input whether it has a value in force, that value, how many it
+    // has from later places, and each of those with its place; for each port what PortMemory holds; and four
+    // flags. Its length is fixed but for the values from later places, of which a model input has `lag` and one
+    // at most. `gap_in_doubt` is not saved: a restore is a gap, and the gap sets it.
+    void describe(Fields &fields, Memory &m) const override {
         for (std::vector<double> *values : {&m.x, &m.p, &m.nis}) {
             for (double &value : *values) {
-                if (!reader.f64(value)) {
-                    return false;
-                }
+                fields(value);
             }
         }
-        const auto read_place = [&](Place &place) {
-            std::uint64_t part = 0;
-            if (!reader.u64(place.tick) || !reader.u64(part) || part >= parts_) {
-                return false;
+        const auto place = [&](Place &at) {
+            std::uint64_t part = at.part;
+            fields(at.tick);
+            fields(part);
+            if (part >= parts_) {
+                fields.fail();
+            } else {
+                at.part = static_cast<std::uint32_t>(part);
             }
-            place.part = static_cast<std::uint32_t>(part);
-            return true;
         };
-        if (!read_place(m.at)) {
-            return false;
-        }
+        place(m.at);
         for (std::size_t i = 0; i < model_.inputs; ++i) {
-            bool has = false;
-            std::uint64_t count = 0;
-            if (!reader.flag(has) || !reader.f64(m.held[i]) || !reader.u64(count) || count > room_) {
-                return false;
+            bool has = m.has[i] != 0;
+            std::uint64_t count = m.count_given[i];
+            fields(has);
+            fields(m.held[i]);
+            fields(count);
+            if (count > room_) {
+                fields.fail();
+                return;
             }
-            m.has[i] = has ? 1 : 0;
-            m.first_given[i] = 0;
-            m.count_given[i] = static_cast<std::size_t>(count);
+            if (fields.reading()) {
+                m.has[i] = has ? 1 : 0;
+                m.first_given[i] = 0;
+                m.count_given[i] = static_cast<std::size_t>(count);
+            }
             for (std::size_t j = 0; j < m.count_given[i]; ++j) {
                 Given &one = given(m, i, j);
-                if (!reader.f64(one.value) || !read_place(one.from)) {
-                    return false;
-                }
+                fields(one.value);
+                place(one.from);
             }
         }
         for (PortMemory &memory : m.ports) {
-            std::uint64_t seen = 0;
-            std::uint64_t used = 0;
-            std::uint64_t oldest = 0;
-            if (!reader.flag(memory.seen) || !reader.u64(seen) || !reader.flag(memory.used) || !reader.u64(used) ||
-                !reader.u64(memory.refused) || !reader.u64(memory.late) || !reader.u64(memory.run) ||
-                !reader.u64(memory.kept) || !reader.u64(oldest) || memory.kept > over_ ||
-                oldest >= std::max<std::size_t>(over_, 1)) {
-                return false;
+            fields(memory.seen);
+            fields(memory.seen_at);
+            fields(memory.used);
+            fields(memory.used_at);
+            fields(memory.refused);
+            fields(memory.late);
+            fields(memory.run);
+            fields(memory.kept);
+            if (memory.kept > over_) {
+                fields.fail();
             }
-            memory.seen_at = static_cast<Time>(seen);
-            memory.used_at = static_cast<Time>(used);
-            memory.oldest = static_cast<std::size_t>(oldest);
+            fields.index(memory.oldest, std::max<std::size_t>(over_, 1));
         }
-        m.gap_in_doubt = false;
-        return reader.flag(m.started) && reader.flag(m.inputs_in_doubt) && reader.flag(m.lost) && reader.flag(m.first);
+        fields(m.started);
+        fields(m.inputs_in_doubt);
+        fields(m.lost);
+        fields(m.first);
     }
 
 private:
-    struct Memory {
-        std::vector<double> x;  // the estimate, where it stands
-        std::vector<double> p;  // its covariance, by rows
-        Place at;               // the place they stand at
-        // Each model input: the value in force at the place the state stands at, if it has had one, and after
-        // it the values it has from later places, oldest first, in a ring of `room_`.
-        std::vector<double> held;
-        std::vector<char> has;
-        std::vector<Given> given;
-        std::vector<std::size_t> first_given;
-        std::vector<std::size_t> count_given;
-        std::vector<PortMemory> ports;
-        std::vector<double> nis;       // `over` for each port
-        bool started = false;          // a tick has run
-        bool inputs_in_doubt = false;  // a model input was uncertain or unusable at the tick before
-        bool lost = false;             // a gap of no known length, and no measurement used since
-        bool gap_in_doubt = false;     // the next tick is one a gap ran, having passed over a tick or nobody knows
-        bool first = true;             // no measurement has been due since the start, a reset or a rebase
-    };
-
     Given &given(Memory &m, std::size_t input, std::size_t index) const {
         return m.given[input * room_ + (m.first_given[input] + index) % room_];
     }
@@ -854,7 +818,7 @@ private:
 
     // Carries the state to `to` where it stands before it, and it stands there (rule 7.9.2). What a model input
     // had before the place the state stands at is not kept.
-    void stand_at(Memory &m, Place to) {
+    void stand_at(Memory &m, Place to) const {
         if (!before(m.at, to)) {
             return;
         }
@@ -873,7 +837,7 @@ private:
     // Carries `x` and `p` from the place `at` to the later place `to`, a stretch at a time, a stretch ending
     // wherever a model input has a value from (rule 7.9.2). `at` is where the state stands or after it. The
     // model inputs are read and left as they are.
-    void carry(const Memory &m, std::vector<double> &x, std::vector<double> &p, Place at, Place to) {
+    void carry(const Memory &m, std::vector<double> &x, std::vector<double> &p, Place at, Place to) const {
         for (std::size_t i = 0; i < model_.inputs; ++i) {
             u_[i] = m.held[i];
             has_u_[i] = m.has[i];
@@ -915,7 +879,7 @@ private:
     // One step: x = Ad x + Bd u and P = Ad P Ad' + N, with u the model inputs in force, in `u_`. Where some model
     // input has no value, never having been usable, `stepped` is false: the state stays, and the covariance is
     // P + N.
-    void step(const Step &over, std::vector<double> &x, std::vector<double> &p, bool stepped) {
+    void step(const Step &over, std::vector<double> &x, std::vector<double> &p, bool stepped) const {
         const std::size_t n = model_.states;
         if (stepped) {
             for (std::size_t i = 0; i < n; ++i) {
@@ -938,7 +902,7 @@ private:
     }
 
     // `count` steps of a whole period.
-    void steps(std::vector<double> &x, std::vector<double> &p, std::uint64_t count, bool stepped) {
+    void steps(std::vector<double> &x, std::vector<double> &p, std::uint64_t count, bool stepped) const {
         const std::size_t n = model_.states;
         const Step &over = steps_[0];
         if (count <= kStepsOneByOne) {
@@ -1024,7 +988,7 @@ private:
     }
 
     // Rule 7.9.4: x = x + g (z - c x), and P = (1 - g c) P (1 - g c)' + g v g', with g = P c' / s.
-    void correct(Memory &m, const double *c, double innovation, double spread, double variance) {
+    void correct(Memory &m, const double *c, double innovation, double spread, double variance) const {
         const std::size_t n = model_.states;
         for (std::size_t i = 0; i < n; ++i) {
             double sum = 0.0;
@@ -1066,15 +1030,15 @@ private:
     std::size_t over_ = 0;  // zero where consistency is none
     double limit_ = 0.0;
 
-    Memory m_;
-    // Room to work in, so that a tick allocates nothing.
-    std::vector<double> a_, b_, c_, d_, e_, f_, gain_, vector_, work_;
-    std::vector<double> carried_x_, carried_p_;  // what is given at a tick, carried on from where the state stands
-    std::vector<double> u_;                      // the model inputs in force over a stretch
-    std::vector<char> has_u_;
-    std::vector<std::size_t> next_given_;
-    std::vector<std::size_t> due_;  // the ports with a measurement due, in the order of their places
-    std::vector<Offset> offsets_;
+    // Room to work in, so that a tick allocates nothing. It is not what the block remembers, and a function that
+    // may not change that may still work in it: so it is mutable.
+    mutable std::vector<double> a_, b_, c_, d_, e_, f_, gain_, vector_, work_;
+    mutable std::vector<double> carried_x_, carried_p_;  // what is given at a tick, carried on from where it stands
+    mutable std::vector<double> u_;                      // the model inputs in force over a stretch
+    mutable std::vector<char> has_u_;
+    mutable std::vector<std::size_t> next_given_;
+    mutable std::vector<std::size_t> due_;  // the ports with a measurement due, in the order of their places
+    mutable std::vector<Offset> offsets_;
 };
 
 }  // namespace
