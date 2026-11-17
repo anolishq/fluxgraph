@@ -165,6 +165,7 @@ endif()
 if(FLUXGRAPH_BUILD_V2)
     add_subdirectory(src/v2)
     add_subdirectory(tools/fluxgraph_v2_driver)
+    add_subdirectory(tests/v2)
 endif()
 
 # Tests

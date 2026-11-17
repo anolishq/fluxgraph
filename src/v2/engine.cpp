@@ -32,6 +32,9 @@ using detail::span_between;
 constexpr std::uint64_t kStateMagic = 0x3245'5441'5453'4746ULL;
 constexpr std::uint32_t kStateVersion = 1;
 
+// How many waiting writes an input has room for from the start: the `max_waiting` a graph has unless it gives one.
+constexpr std::size_t kWaitingRoom = 1024;
+
 // A write that waits, or stands (rule 6.8).
 struct Written {
     Time at = 0;
@@ -89,7 +92,8 @@ struct Engine::Impl {
     bool initial_stands_in = true;  // no rebase since the engine was made or last reset (rule 7.2.1)
     PendingRebase rebase;
 
-    Status write(std::string_view input, State state, const Value *value, Time at);
+    Result<std::size_t> find_input(std::string_view input) const;
+    Status write(std::size_t index, State state, const Value *value, Time at);
     void forget_writes();
     void run_tick(std::int64_t number, Time time, Time limit, bool last_of_call, std::uint32_t periods);
     Value read_input(const detail::InputSpec &spec, const InputState &state, Time time) const;
@@ -99,12 +103,17 @@ struct Engine::Impl {
 
 // ---- writes (rules 6.7, 6.8 and 6.11)
 
-Status Engine::Impl::write(std::string_view input, State state, const Value *value, Time at) {
+Result<std::size_t> Engine::Impl::find_input(std::string_view input) const {
     const auto found = input_index.find(input);
     if (found == input_index.end()) {
         return Error{Errc::write_refused, std::format("'{}' is not an input of the graph", input)};
     }
-    const detail::InputSpec &spec = program.inputs[found->second];
+    return found->second;
+}
+
+Status Engine::Impl::write(std::size_t index, State state, const Value *value, Time at) {
+    const detail::InputSpec &spec = program.inputs[index];
+    const std::string_view input = spec.name;
     if (static_cast<unsigned>(state) > static_cast<unsigned>(State::good)) {
         return Error{Errc::write_refused, std::format("input '{}': a write has one of the four states", input)};
     }
@@ -123,7 +132,7 @@ Status Engine::Impl::write(std::string_view input, State state, const Value *val
         written.boolean = value->boolean;
         written.number = value->number;
     }
-    InputState &held = inputs[found->second];
+    InputState &held = inputs[index];
     if (held.stands && at < held.standing.at) {
         ++thrown;  // it can never stand, and is thrown away as it is made
         return {};
@@ -323,6 +332,9 @@ Result<Engine> Engine::compile(const Setting &graph) {
     impl->inputs.resize(program.inputs.size());
     for (std::size_t i = 0; i < program.inputs.size(); ++i) {
         impl->input_index.emplace(program.inputs[i].name, i);
+        // Room for the writes that may wait and the one more a write adds before the earliest is thrown away, so
+        // that an accepted write allocates nothing. Not past kWaitingRoom: `max_waiting` may be 2,147,483,647.
+        impl->inputs[i].waiting.reserve(std::min<std::size_t>(program.max_waiting, kWaitingRoom) + 1);
     }
     for (Type type : program.slot_types) {
         impl->slots.push_back(Value::none(State::not_ready, type));
@@ -348,17 +360,60 @@ Result<Engine> Engine::compile(const Setting &graph) {
 
 Time Engine::period() const { return impl_->program.period; }
 
-Status Engine::write(std::string_view input, State state, double value, Time at) {
+Result<InputHandle> Engine::input(std::string_view name) const {
+    const Result<std::size_t> index = impl_->find_input(name);
+    if (!index) {
+        return index.error();
+    }
+    return InputHandle(impl_->program.fingerprint, index.value());
+}
+
+Status Engine::owns(InputHandle input) const {
+    // The fingerprint says whose it is. The index is looked at as well, so that two graphs with one fingerprint,
+    // or a handle nobody gave of a graph whose fingerprint is zero, cannot write past the inputs.
+    if (input.graph_ != impl_->program.fingerprint || input.index_ >= impl_->inputs.size()) {
+        return Error{Errc::write_refused, "the handle is not of an input of this graph"};
+    }
+    return {};
+}
+
+Status Engine::write(InputHandle input, State state, double value, Time at) {
+    if (Status status = owns(input); !status) {
+        return status;
+    }
     const Value given = Value::of(value);
-    return impl_->write(input, state, &given, at);
+    return impl_->write(input.index_, state, &given, at);
+}
+
+Status Engine::write(InputHandle input, State state, bool value, Time at) {
+    if (Status status = owns(input); !status) {
+        return status;
+    }
+    const Value given = Value::of(value);
+    return impl_->write(input.index_, state, &given, at);
+}
+
+Status Engine::write(InputHandle input, State state, Time at) {
+    if (Status status = owns(input); !status) {
+        return status;
+    }
+    return impl_->write(input.index_, state, nullptr, at);
+}
+
+Status Engine::write(std::string_view input, State state, double value, Time at) {
+    const Result<InputHandle> handle = this->input(input);
+    return handle ? write(handle.value(), state, value, at) : Status(handle.error());
 }
 
 Status Engine::write(std::string_view input, State state, bool value, Time at) {
-    const Value given = Value::of(value);
-    return impl_->write(input, state, &given, at);
+    const Result<InputHandle> handle = this->input(input);
+    return handle ? write(handle.value(), state, value, at) : Status(handle.error());
 }
 
-Status Engine::write(std::string_view input, State state, Time at) { return impl_->write(input, state, nullptr, at); }
+Status Engine::write(std::string_view input, State state, Time at) {
+    const Result<InputHandle> handle = this->input(input);
+    return handle ? write(handle.value(), state, at) : Status(handle.error());
+}
 
 Result<TickReport> Engine::tick(Time now) {
     Impl &s = *impl_;
