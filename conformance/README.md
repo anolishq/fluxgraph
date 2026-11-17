@@ -938,3 +938,23 @@ and which settings are written without a point.
 - **Stability of blocks together** (section 7.8, open).
 - **The library.** Nothing here runs FluxGraph. A runner for the library
   comes with the rebuilt core.
+
+## The C++ core
+
+The library's version 2 core (`include/fluxgraph/v2`, `src/v2`) is tested
+against the same vectors, through `tools/fluxgraph_v2_driver`, a line
+protocol on stdin, and `cpp/adapter.py`, which gives it the interface the
+two readings have. `cpp/ASSUMPTIONS.md` lists what the text did not settle
+for its author.
+
+```bash
+cmake -S . -B build/v2 -G Ninja -DFLUXGRAPH_BUILD_V2=ON -DFLUXGRAPH_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build/v2 --target fluxgraph_v2_driver
+export FLUXGRAPH_V2_DRIVER=$PWD/build/v2/tools/fluxgraph_v2_driver/fluxgraph_v2_driver
+python3 conformance/run.py --cpp
+```
+
+`compare.py` and `contract.py` take `--cpp` too. A vector or a graph that
+needs a block type the core has not built yet is skipped and counted,
+never passed. The core has the engine and five block types so far:
+`formula`, `all_good`, `delay`, `window` and `integrate`.
