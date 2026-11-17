@@ -37,6 +37,16 @@ in `sim` mode: built with `ENABLE_FLUXGRAPH=ON`, the provider connects to
 - [Numerical methods](numerical-methods.md): integration methods for ODE
   models and their stability limits.
 
+## Version 2, being built
+
+Not released. FluxGraph 1.x is what the pages above describe.
+
+- [FluxGraph and its hosts](hosts.md): what the engine knows and what it
+  leaves to its host, and the three shapes a host gives it: generating,
+  processing, and both in two engines.
+- [Semantics, version 2](semantics_spec_v2.md): what 2.0 is built to.
+- [How that text came to say what it says](semantics_v2_history.md).
+
 ## Evidence
 
 - [Validation methodology](validation-methodology.md): how integration
