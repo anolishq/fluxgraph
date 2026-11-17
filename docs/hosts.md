@@ -95,9 +95,17 @@ but the graph.
 
 ## What is not yet so
 
-- **Generating is not yet tried on 2.0.** Every conformance vector is of a
-  graph given values and times as a processing host gives them. No graph of
-  a simulation host has been run on the version 2 core.
+- **Generating has been tried once on 2.0, as a spike.** Every conformance
+  vector is of a graph given values and times as a processing host gives
+  them. One graph of a simulation host, the simulation provider's four
+  thermal masses, has been run on the version 2 core beside 1.x: the branch
+  `spike/v2-sim-host`, in `spike/sim-host`. It ran, and it showed the next
+  point. Nothing has gone through the server.
+- **What acts on itself within a period belongs in one model.** A model is
+  stepped exactly, on inputs held over the period. Masses that heat one
+  another, each in a block of its own, were 0.06 K and 0.28 K out at a
+  period of 0.1 s in that spike, and exact to 4e-12 K as one linear model.
+  Section 7.8 of the specification says why.
 - **`noise` is not in the version 2 catalogue**, and a simulation wants it.
 - **The server speaks the 1.x protocol.**
 - **Rules and commands as 1.x has them** are open in section 4 of the
