@@ -3,7 +3,10 @@
 add_library(fluxgraph_v2 STATIC
     block_delay.cpp
     block_formula.cpp
+    block_hold.cpp
     block_integrate.cpp
+    block_logic.cpp
+    block_pid.cpp
     block_window.cpp
     blocks.cpp
     compiler.cpp

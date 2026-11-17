@@ -106,5 +106,13 @@ Result<std::unique_ptr<Block>> make_all_good(const BlockSetup &setup);
 Result<std::unique_ptr<Block>> make_delay(const BlockSetup &setup);
 Result<std::unique_ptr<Block>> make_window(const BlockSetup &setup);
 Result<std::unique_ptr<Block>> make_integrate(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_deadband(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_lowpass(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_rate_limit(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_hysteresis(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_held_for(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_since_true(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_latch(const BlockSetup &setup);
+Result<std::unique_ptr<Block>> make_pid(const BlockSetup &setup);
 
 }  // namespace fluxgraph::v2::detail
