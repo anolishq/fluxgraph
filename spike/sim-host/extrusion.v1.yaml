@@ -1,0 +1,174 @@
+# Shared FluxGraph physics for chamber + extruder multi-provider scenario.
+
+models:
+  - id: chamber_top
+    type: thermal_mass
+    params:
+      temp_signal: chamber_top/temperature
+      power_signal: chamber_top/heating_power
+      ambient_signal: chamber_top/ambient_temp
+      thermal_mass: 500.0
+      heat_transfer_coeff: 15.0
+      initial_temp: 22.0
+
+  - id: chamber_bottom
+    type: thermal_mass
+    params:
+      temp_signal: chamber_bottom/temperature
+      power_signal: chamber_bottom/heating_power
+      ambient_signal: chamber_bottom/ambient_temp
+      thermal_mass: 500.0
+      heat_transfer_coeff: 15.0
+      initial_temp: 22.0
+
+  - id: hotend
+    type: thermal_mass
+    params:
+      temp_signal: hotend/temperature
+      power_signal: hotend/heating_power
+      ambient_signal: hotend/ambient_temp
+      thermal_mass: 50.0
+      heat_transfer_coeff: 8.0
+      initial_temp: 22.0
+
+  - id: material_output
+    type: thermal_mass
+    params:
+      temp_signal: material_output/temperature
+      power_signal: material_output/heating_power
+      ambient_signal: material_output/ambient_temp
+      thermal_mass: 10.0
+      heat_transfer_coeff: 25.0
+      initial_temp: 22.0
+
+edges:
+  # Ambient baseline seeded by provider in sim mode.
+  - source: environment/ambient_temp
+    target: chamber_top/ambient_temp
+    transform:
+      type: linear
+      params:
+        scale: 1.0
+        offset: 0.0
+
+  - source: environment/ambient_temp
+    target: chamber_bottom/ambient_temp
+    transform:
+      type: linear
+      params:
+        scale: 1.0
+        offset: 0.0
+
+  # Chamber heating (tempctl0).
+  - source: tempctl0/relay1_state
+    target: chamber_top/heating_power
+    transform:
+      type: linear
+      params:
+        scale: 900.0
+        offset: 0.0
+
+  - source: tempctl0/relay2_state
+    target: chamber_bottom/heating_power
+    transform:
+      type: linear
+      params:
+        scale: 900.0
+        offset: 0.0
+
+  # Chamber sensors.
+  - source: chamber_top/temperature
+    target: tempctl0/tc1_temp
+    transform:
+      type: linear
+      params:
+        scale: 1.0
+        offset: 0.0
+
+  - source: chamber_bottom/temperature
+    target: tempctl0/tc2_temp
+    transform:
+      type: linear
+      params:
+        scale: 1.0
+        offset: 0.0
+
+  # Hotend ambient is chamber-coupled.
+  - source: chamber_top/temperature
+    target: hotend/ambient_temp
+    transform:
+      type: linear
+      params:
+        scale: 1.0
+        offset: 0.0
+
+  # Hotend heating (tempctl1).
+  - source: tempctl1/relay1_state
+    target: hotend/heating_power
+    transform:
+      type: linear
+      params:
+        scale: 1800.0
+        offset: 0.0
+
+  # Keep relay2 path known without introducing a second writer.
+  - source: tempctl1/relay2_state
+    target: sinks/tempctl1_relay2_seen
+    transform:
+      type: linear
+      params:
+        scale: 1.0
+        offset: 0.0
+
+  # Hotend sensor.
+  - source: hotend/temperature
+    target: tempctl1/tc1_temp
+    transform:
+      type: linear
+      params:
+        scale: 1.0
+        offset: 0.0
+
+  # Material output coupled to chamber and hotend.
+  - source: chamber_top/temperature
+    target: material_output/ambient_temp
+    transform:
+      type: linear
+      params:
+        scale: 1.0
+        offset: 0.0
+
+  - source: hotend/temperature
+    target: material_output/heating_power
+    transform:
+      type: linear
+      params:
+        scale: 3.0
+        offset: 100.0
+
+  - source: material_output/temperature
+    target: tempctl1/tc2_temp
+    transform:
+      type: linear
+      params:
+        scale: 1.0
+        offset: 0.0
+
+  # Keep motor duty paths known (FUTURE: currently has no combiner/accumulation semantics yet).
+  - source: motorctl0/motor1_duty
+    target: sinks/motor1_duty_seen
+    transform:
+      type: linear
+      params:
+        scale: 1.0
+        offset: 0.0
+
+  - source: motorctl0/motor2_duty
+    target: sinks/motor2_duty_seen
+    transform:
+      type: linear
+      params:
+        scale: 1.0
+        offset: 0.0
+
+rules: []

@@ -1,0 +1,60 @@
+# The simulation provider's config/multi-provider-extrusion.yaml (extrusion.v1.yaml here), written as a
+# version 2 graph. Four thermal masses: two halves of a chamber, a hotend that sits in the top half, and the
+# material leaving it.
+#
+# What became of each part of the 1.x graph:
+# - an edge with a scale and an offset is a formula, or nothing where the scale is 1 and the offset 0: a block
+#   reads the signal by its name;
+# - an edge to `sinks/...`, there so that 1.x would take a signal nothing reads, has nothing to become: the
+#   three inputs are declared and read by nothing.
+period: 100ms
+
+inputs:
+  environment/ambient_temp: {max_age: none}
+  tempctl0/relay1_state: {max_age: none}
+  tempctl0/relay2_state: {max_age: none}
+  tempctl1/relay1_state: {max_age: none}
+  tempctl1/relay2_state: {max_age: none}
+  motorctl0/motor1_duty: {max_age: none}
+  motorctl0/motor2_duty: {max_age: none}
+
+blocks:
+  - id: top_power
+    type: formula
+    in: {relay: tempctl0/relay1_state}
+    settings: {expr: "relay * 900"}
+  - id: chamber_top
+    type: thermal_mass
+    in: {power: top_power.y, ambient: environment/ambient_temp}
+    settings: {thermal_mass: 500, heat_transfer: 15, initial: 22}
+    out: {temp: tempctl0/tc1_temp}
+
+  - id: bottom_power
+    type: formula
+    in: {relay: tempctl0/relay2_state}
+    settings: {expr: "relay * 900"}
+  - id: chamber_bottom
+    type: thermal_mass
+    in: {power: bottom_power.y, ambient: environment/ambient_temp}
+    settings: {thermal_mass: 500, heat_transfer: 15, initial: 22}
+    out: {temp: tempctl0/tc2_temp}
+
+  - id: hotend_power
+    type: formula
+    in: {relay: tempctl1/relay1_state}
+    settings: {expr: "relay * 1800"}
+  - id: hotend
+    type: thermal_mass
+    in: {power: hotend_power.y, ambient: chamber_top.temp}
+    settings: {thermal_mass: 50, heat_transfer: 8, initial: 22}
+    out: {temp: tempctl1/tc1_temp}
+
+  - id: material_power
+    type: formula
+    in: {hot: hotend.temp}
+    settings: {expr: "hot * 3 + 100"}
+  - id: material_output
+    type: thermal_mass
+    in: {power: material_power.y, ambient: chamber_top.temp}
+    settings: {thermal_mass: 10, heat_transfer: 25, initial: 22}
+    out: {temp: tempctl1/tc2_temp}

@@ -1,0 +1,49 @@
+# The same four masses as extrusion.v2.yaml, with the three that act on one another (the top half of the
+# chamber, the hotend in it, and the material leaving the hotend) written as one linear model of three states.
+# A model is stepped exactly over a period (rule 7.8.7), so what passes between them within a period is in the
+# step, where three blocks each hold what the others gave at the tick.
+#
+#   d top/dt      = (top_power - 15 (top - ambient)) / 500
+#   d hotend/dt   = (hotend_power - 8 (hotend - top)) / 50
+#   d material/dt = (3 hotend + 100 - 25 (material - top)) / 10
+#
+# The inputs are the two powers, the ambient, and a constant 1 for the 100 W.
+period: 100ms
+
+inputs:
+  environment/ambient_temp: {max_age: none}
+  tempctl0/relay1_state: {max_age: none}
+  tempctl0/relay2_state: {max_age: none}
+  tempctl1/relay1_state: {max_age: none}
+  tempctl1/relay2_state: {max_age: none}
+  motorctl0/motor1_duty: {max_age: none}
+  motorctl0/motor2_duty: {max_age: none}
+
+blocks:
+  - id: top_power
+    type: formula
+    in: {relay: tempctl0/relay1_state}
+    settings: {expr: "relay * 900"}
+  - id: hotend_power
+    type: formula
+    in: {relay: tempctl1/relay1_state}
+    settings: {expr: "relay * 1800"}
+  - id: top_side
+    type: linear
+    in: {u0: top_power.y, u1: hotend_power.y, u2: environment/ambient_temp, u3: 1}
+    settings:
+      A: [[-0.03, 0, 0], [0.16, -0.16, 0], [2.5, 0.3, -2.5]]
+      B: [[0.002, 0, 0.03, 0], [0, 0.02, 0, 0], [0, 0, 0, 10]]
+      C: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+      initial: [22, 22, 22]
+    out: {y0: tempctl0/tc1_temp, y1: tempctl1/tc1_temp, y2: tempctl1/tc2_temp}
+
+  - id: bottom_power
+    type: formula
+    in: {relay: tempctl0/relay2_state}
+    settings: {expr: "relay * 900"}
+  - id: chamber_bottom
+    type: thermal_mass
+    in: {power: bottom_power.y, ambient: environment/ambient_temp}
+    settings: {thermal_mass: 500, heat_transfer: 15, initial: 22}
+    out: {temp: tempctl0/tc2_temp}

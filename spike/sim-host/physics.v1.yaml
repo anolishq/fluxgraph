@@ -1,0 +1,56 @@
+# FluxGraph simulation config for thermal chamber
+
+models:
+  - id: chamber_thermal
+    type: thermal_mass
+    params:
+      temp_signal: chamber_thermal.temperature
+      power_signal: chamber_thermal.heat_input
+      ambient_signal: chamber_thermal.ambient_temp
+      thermal_mass: 300.0
+      heat_transfer_coeff: 3.0
+      initial_temp: 25.0
+
+edges:
+  - source: environment/ambient_temp
+    target: chamber_thermal.ambient_temp
+    transform:
+      type: linear
+      params:
+        scale: 1.0
+        offset: 0.0
+
+  - source: chamber/relay1_state
+    target: chamber_thermal.heat_input
+    transform:
+      type: linear
+      params:
+        scale: 1000.0
+        offset: 0.0
+
+  # Relay2 unused but must be defined so FluxGraph accepts the signal
+  - source: chamber/relay2_state
+    target: chamber_thermal.ambient_temp
+    transform:
+      type: linear
+      params:
+        scale: 0.0
+        offset: 0.0
+
+  - source: chamber_thermal.temperature
+    target: chamber/tc1_temp
+    transform:
+      type: linear
+      params:
+        scale: 1.0
+        offset: 0.0
+
+  - source: chamber_thermal.temperature
+    target: chamber/tc2_temp
+    transform:
+      type: linear
+      params:
+        scale: 1.1 # TC2 reads 10% higher than actual temp (simulates placement near heater)
+        offset: 2.0 # TC2 reads 2 degC higher (simulates sensor offset)
+
+rules: []
