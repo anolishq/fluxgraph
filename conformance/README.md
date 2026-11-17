@@ -956,5 +956,5 @@ python3 conformance/run.py --cpp
 
 `compare.py` and `contract.py` take `--cpp` too. A vector or a graph that
 needs a block type the core has not built yet is skipped and counted,
-never passed. The core has the engine and five block types so far:
-`formula`, `all_good`, `delay`, `window` and `integrate`.
+never passed. The core has the engine and thirteen block types so far:
+all but the models and the estimator.

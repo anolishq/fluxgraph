@@ -16,38 +16,32 @@ struct BuiltType {
 };
 
 // Adding a block type is a row here and a maker: nothing in the compiler or the engine names a type.
-constexpr std::array<BuiltType, 5> kBuilt = {{
+constexpr std::array<BuiltType, 13> kBuilt = {{
     {"formula", &detail::make_formula},
     {"all_good", &detail::make_all_good},
     {"delay", &detail::make_delay},
     {"window", &detail::make_window},
     {"integrate", &detail::make_integrate},
+    {"deadband", &detail::make_deadband},
+    {"lowpass", &detail::make_lowpass},
+    {"rate_limit", &detail::make_rate_limit},
+    {"hysteresis", &detail::make_hysteresis},
+    {"held_for", &detail::make_held_for},
+    {"since_true", &detail::make_since_true},
+    {"latch", &detail::make_latch},
+    {"pid", &detail::make_pid},
 }};
 
-constexpr std::array<std::string_view, 5> kBuiltNames = {
-    "formula", "all_good", "delay", "window", "integrate",
+constexpr std::array<std::string_view, 13> kBuiltNames = {
+    "formula",    "all_good",   "delay",    "window",     "integrate", "deadband", "lowpass",
+    "rate_limit", "hysteresis", "held_for", "since_true", "latch",     "pid",
 };
 
 // The rest of Appendix A's catalogue. A graph that names one is refused as not built, which is not a refusal
 // of the graph.
-constexpr std::array<std::string_view, 17> kPlannedNames = {
-    "deadband",
-    "lowpass",
-    "rate_limit",
-    "hysteresis",
-    "held_for",
-    "since_true",
-    "latch",
-    "pid",
-    "linear",
-    "thermal_mass",
-    "thermal_rc2",
-    "first_order_process",
-    "second_order_process",
-    "mass_spring_damper",
-    "dc_motor",
-    "state_space",
-    "estimator",
+constexpr std::array<std::string_view, 9> kPlannedNames = {
+    "linear",   "thermal_mass", "thermal_rc2", "first_order_process", "second_order_process", "mass_spring_damper",
+    "dc_motor", "state_space",  "estimator",
 };
 
 }  // namespace
