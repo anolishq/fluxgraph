@@ -2,7 +2,8 @@
 
 Tests of [the version 2 semantics](../docs/semantics_spec_v2.md), fourth
 revision, not of the library. Nothing here is built or run by the
-library's presets.
+library's presets. CI runs `run.py` and `contract.py` on both readings
+when this directory or the text changes.
 
 The third revision did not pass review, and was amended thirteen times, a
 section at a time; the fourth is the third with those amendments worked
