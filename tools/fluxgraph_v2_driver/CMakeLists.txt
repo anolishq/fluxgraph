@@ -3,7 +3,7 @@ add_executable(fluxgraph_v2_driver
     main.cpp
 )
 
-target_link_libraries(fluxgraph_v2_driver PRIVATE fluxgraph_v2)
+target_link_libraries(fluxgraph_v2_driver PRIVATE fluxgraph_v2 ${FLUXGRAPH_V2_LOADERS})
 
 if(MSVC)
     target_compile_options(fluxgraph_v2_driver PRIVATE /W4 /WX)

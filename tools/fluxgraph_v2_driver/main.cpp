@@ -20,6 +20,7 @@
 //   reset <engine>                -> ok
 //   save <engine>                 -> ok <hex>
 //   restore <engine> <hex>        -> ok
+//   load json|yaml <=text>        -> ok <setting>    the text of a file, read by a loader this build has
 //
 // A <value> is `n <number>`, `b 0` or `b 1`, or `-` for none. A <setting> is, written before what it holds:
 // `i <whole>`, `f <number>`, `b 0|1`, `s <=text>`, `l <count>` and that many settings, or `m <count>` and that
@@ -40,6 +41,9 @@
 
 #include "fluxgraph/v2/block.hpp"
 #include "fluxgraph/v2/engine.hpp"
+#if defined(FLUXGRAPH_V2_JSON) || defined(FLUXGRAPH_V2_YAML)
+#include "fluxgraph/v2/load.hpp"
+#endif
 #include "fluxgraph/v2/setting.hpp"
 
 namespace {
@@ -141,6 +145,41 @@ std::string shown(double number) {
     return std::string(buffer.data(), written.ptr);
 }
 
+#if defined(FLUXGRAPH_V2_JSON) || defined(FLUXGRAPH_V2_YAML)
+// A setting as a line holds it: the inverse of read_setting. Only a loader's result is written out.
+void write_setting(const Setting &setting, std::string &line) {
+    using Kind = Setting::Kind;
+    switch (setting.kind()) {
+        case Kind::whole:
+            line += " i " + std::to_string(setting.as_whole());
+            break;
+        case Kind::number:
+            line += " f " + shown(setting.as_number());
+            break;
+        case Kind::boolean:
+            line += setting.as_boolean() ? " b 1" : " b 0";
+            break;
+        case Kind::text:
+            line += " s " + encoded(setting.as_text());
+            break;
+        case Kind::list:
+            line += " l " + std::to_string(setting.as_list().size());
+            for (const Setting &item : setting.as_list()) {
+                write_setting(item, line);
+            }
+            break;
+        case Kind::map:
+            line += " m " + std::to_string(setting.as_map().keys.size());
+            for (std::size_t i = 0; i < setting.as_map().keys.size(); ++i) {
+                line += " " + encoded(setting.as_map().keys[i]);
+                write_setting(setting.as_map().values[i], line);
+            }
+            break;
+    }
+}
+
+#endif
+
 // A setting, read from the front of the line. `depth` stops a line of nothing but `l 1 l 1 ...` short of the
 // stack's end.
 bool read_setting(Tokens &tokens, Setting &setting, int depth = 0) {
@@ -238,6 +277,9 @@ std::string refusal(const Error &error) {
         case Errc::state_refused:
             code = "state";
             break;
+        case Errc::file_refused:
+            code = "file";
+            break;
     }
     return "err " + std::string(code) + " " + encoded(error.message);
 }
@@ -278,6 +320,9 @@ public:
         }
         if (command == "new") {
             return make(tokens);
+        }
+        if (command == "load") {
+            return load(tokens);
         }
         if (command == "writes") {
             std::string_view how;
@@ -446,6 +491,36 @@ private:
         const fluxgraph::v2::Status status = engine.restore(state);
         return status ? "ok" : refusal(status.error());
     }
+
+    static std::string load(Tokens &tokens) {
+        std::string_view format;
+        std::string text;
+        if (!tokens.next(format) || !tokens.text(text) || !tokens.done()) {
+            return bad_request("a load names a format and gives the text of a file");
+        }
+#if defined(FLUXGRAPH_V2_JSON)
+        if (format == "json") {
+            return loaded(fluxgraph::v2::load_json(text));
+        }
+#endif
+#if defined(FLUXGRAPH_V2_YAML)
+        if (format == "yaml") {
+            return loaded(fluxgraph::v2::load_yaml(text));
+        }
+#endif
+        return bad_request("this build has no loader of that format");
+    }
+
+#if defined(FLUXGRAPH_V2_JSON) || defined(FLUXGRAPH_V2_YAML)
+    static std::string loaded(const fluxgraph::v2::Result<Setting> &read) {
+        if (!read) {
+            return refusal(read.error());
+        }
+        std::string line = "ok";
+        write_setting(read.value(), line);
+        return line;
+    }
+#endif
 
     std::map<std::uint64_t, Engine> engines_;
     std::uint64_t next_id_ = 1;

@@ -80,7 +80,9 @@
       "inherits": "ci-linux-release",
       "cacheVariables": {
         "FLUXGRAPH_BUILD_V2": "ON",
-        "FLUXGRAPH_BUILD_TESTS": "OFF"
+        "FLUXGRAPH_BUILD_TESTS": "OFF",
+        "FLUXGRAPH_JSON_ENABLED": "ON",
+        "FLUXGRAPH_YAML_ENABLED": "ON"
       }
     },
     {

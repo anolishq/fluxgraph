@@ -27,11 +27,28 @@ target_include_directories(fluxgraph_v2 PUBLIC
 
 target_compile_features(fluxgraph_v2 PUBLIC cxx_std_20)
 
+# The loaders (fluxgraph/v2/load.hpp), each a library of its own: the core has no dependency.
+if(FLUXGRAPH_JSON_ENABLED)
+    add_library(fluxgraph_v2_json STATIC load_json.cpp)
+    target_link_libraries(fluxgraph_v2_json PUBLIC fluxgraph_v2 PRIVATE nlohmann_json::nlohmann_json)
+    target_compile_definitions(fluxgraph_v2_json PUBLIC FLUXGRAPH_V2_JSON)
+    list(APPEND FLUXGRAPH_V2_LOADERS fluxgraph_v2_json)
+endif()
+if(FLUXGRAPH_YAML_ENABLED)
+    add_library(fluxgraph_v2_yaml STATIC load_yaml.cpp)
+    target_link_libraries(fluxgraph_v2_yaml PUBLIC fluxgraph_v2 PRIVATE yaml-cpp::yaml-cpp)
+    target_compile_definitions(fluxgraph_v2_yaml PUBLIC FLUXGRAPH_V2_YAML)
+    list(APPEND FLUXGRAPH_V2_LOADERS fluxgraph_v2_yaml)
+endif()
+set(FLUXGRAPH_V2_LOADERS "${FLUXGRAPH_V2_LOADERS}" PARENT_SCOPE)
+
 # The warnings the 1.x target is built with.
+foreach(target fluxgraph_v2 ${FLUXGRAPH_V2_LOADERS})
 if(MSVC)
-    target_compile_options(fluxgraph_v2 PRIVATE /W4 /WX)
+    target_compile_options(${target} PRIVATE /W4 /WX)
 else()
     # -Wshadow: MSVC's /W4 refuses a local that hides a member (C4458), and a build here should say so first.
     # -Wconversion: likewise its C4244, though not where the narrowing is inside a standard header.
-    target_compile_options(fluxgraph_v2 PRIVATE -Wall -Wextra -Wshadow -Wconversion -Werror -pedantic)
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wshadow -Wconversion -Werror -pedantic)
 endif()
+endforeach()

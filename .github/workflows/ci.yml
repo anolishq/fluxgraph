@@ -329,6 +329,7 @@ jobs:
           uv run python conformance/cpp/edges.py
           uv run python conformance/cpp/filter.py
           uv run python conformance/cpp/saved_state.py
+          uv run python conformance/cpp/loaders.py
           # The same writes, each made through a handle and not by name.
           FLUXGRAPH_V2_WRITES=handle uv run python conformance/run.py --cpp
           FLUXGRAPH_V2_WRITES=handle uv run python conformance/compare.py --cpp
