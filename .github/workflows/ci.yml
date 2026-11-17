@@ -312,8 +312,11 @@ jobs:
       - name: Configure
         run: cmake --preset "${{ matrix.preset }}"
 
-      - name: Build the driver
+      - name: Build the driver and the C++ checks
         run: cmake --build --preset "${{ matrix.preset }}" --parallel
+
+      - name: Check handles and what allocates
+        run: ./build/${{ matrix.preset }}/tests/v2/fluxgraph_v2_handles_and_memory
 
       - name: Run the conformance checks against the core
         env:
@@ -326,6 +329,9 @@ jobs:
           uv run python conformance/cpp/edges.py
           uv run python conformance/cpp/filter.py
           uv run python conformance/cpp/saved_state.py
+          # The same writes, each made through a handle and not by name.
+          FLUXGRAPH_V2_WRITES=handle uv run python conformance/run.py --cpp
+          FLUXGRAPH_V2_WRITES=handle uv run python conformance/compare.py --cpp
 
   # Apple clang, whose libc++ differs from the libstdc++ and MSVC lanes. The
   # core has no dependencies, so this needs no vcpkg.

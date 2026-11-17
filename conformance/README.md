@@ -954,7 +954,9 @@ export FLUXGRAPH_V2_DRIVER=$PWD/build/v2/tools/fluxgraph_v2_driver/fluxgraph_v2_
 python3 conformance/run.py --cpp
 ```
 
-`compare.py` and `contract.py` take `--cpp` too. A vector or a graph that
+`compare.py` and `contract.py` take `--cpp` too. With
+`FLUXGRAPH_V2_WRITES=handle` every write is made through a handle and not
+by name. A vector or a graph that
 needs a block type the core has not built yet is skipped and counted,
 never passed. The core has every block type of the catalogue, so none is
 skipped now.

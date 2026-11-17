@@ -11,6 +11,8 @@
 //   new <setting>                 -> ok <engine>
 //   free <engine>                 -> ok
 //   write <engine> <=input> <state> <value> <at>     -> ok
+//   writes handle|name            -> ok    how a write is made from here on: through Engine::input and a
+//                                          handle, or by name, as it is unless said
 //   tick <engine> <now>           -> ok 0
 //                                 -> ok <ran> <gap 0|1> <skipped, or ?> <tick> <time> <thrown> <waiting> <n>
 //                                    then n of: <=name> <state> <value>
@@ -277,6 +279,14 @@ public:
         if (command == "new") {
             return make(tokens);
         }
+        if (command == "writes") {
+            std::string_view how;
+            if (!tokens.next(how) || (how != "handle" && how != "name") || !tokens.done()) {
+                return bad_request("writes are made by handle or by name");
+            }
+            by_handle_ = how == "handle";
+            return "ok";
+        }
         std::uint64_t id = 0;
         if (!tokens.whole(id)) {
             return bad_request("no engine named");
@@ -291,7 +301,7 @@ public:
             return "ok";
         }
         if (command == "write") {
-            return write(engine, tokens);
+            return write(engine, tokens, by_handle_);
         }
         if (command == "tick") {
             return tick(engine, tokens);
@@ -338,7 +348,7 @@ private:
         return "ok " + std::to_string(id);
     }
 
-    static std::string write(Engine &engine, Tokens &tokens) {
+    static std::string write(Engine &engine, Tokens &tokens, bool by_handle) {
         std::string input;
         std::string_view state_name;
         std::string_view kind;
@@ -355,6 +365,16 @@ private:
         fluxgraph::v2::Time at = 0;
         if (!tokens.whole(at) || !tokens.done()) {
             return bad_request("the time of a write is a whole number of nanoseconds that fits in 64 bits");
+        }
+        if (by_handle) {
+            const fluxgraph::v2::Result<fluxgraph::v2::InputHandle> handle = engine.input(input);
+            if (!handle) {
+                return refusal(handle.error());
+            }
+            const fluxgraph::v2::Status status = kind == "n"   ? engine.write(handle.value(), state, number, at)
+                                                 : kind == "b" ? engine.write(handle.value(), state, flag == 1, at)
+                                                               : engine.write(handle.value(), state, at);
+            return status ? "ok" : refusal(status.error());
         }
         const fluxgraph::v2::Status status = kind == "n"   ? engine.write(input, state, number, at)
                                              : kind == "b" ? engine.write(input, state, flag == 1, at)
@@ -429,6 +449,7 @@ private:
 
     std::map<std::uint64_t, Engine> engines_;
     std::uint64_t next_id_ = 1;
+    bool by_handle_ = false;
 };
 
 }  // namespace

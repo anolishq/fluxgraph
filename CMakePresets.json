@@ -224,14 +224,16 @@
       "name": "ci-linux-release-v2",
       "configurePreset": "ci-linux-release-v2",
       "targets": [
-        "fluxgraph_v2_driver"
+        "fluxgraph_v2_driver",
+        "fluxgraph_v2_handles_and_memory"
       ]
     },
     {
       "name": "ci-linux-v2-asan",
       "configurePreset": "ci-linux-v2-asan",
       "targets": [
-        "fluxgraph_v2_driver"
+        "fluxgraph_v2_driver",
+        "fluxgraph_v2_handles_and_memory"
       ]
     },
     {

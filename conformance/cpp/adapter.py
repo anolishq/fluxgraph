@@ -10,6 +10,8 @@ Two kinds of refusal are made here and not by the core, because what is refused 
 - a value that is neither a number nor a boolean, and a graph with a key that is not text or a value that is
   none of a whole number, a number, a boolean, text, a list or a map.
 
+With FLUXGRAPH_V2_WRITES=handle every write is made through Engine::input and a handle, and by name otherwise.
+
 A graph that names a block type of the catalogue the core has not built yet raises NotBuilt, which is neither a
 refusal nor an agreement: the checks count such a graph as skipped.
 """
@@ -28,6 +30,7 @@ _DURATION = re.compile(r"^([0-9]+(?:\.[0-9]+)?)(ns|us|ms|s|m|h)$")
 _UNIT = {"ns": 1e-9, "us": 1e-6, "ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}
 _INT64 = range(-(2**63), 2**63)
 ENVIRONMENT = "FLUXGRAPH_V2_DRIVER"
+WRITES = "FLUXGRAPH_V2_WRITES"
 
 
 class CompileError(Exception):
@@ -61,6 +64,10 @@ class _Driver:
         types = self.ask("types")  # how many are built, their names, how many are planned, their names
         count = int(types[0])
         self.built, self.planned = set(types[1 : 1 + count]), set(types[2 + count :])
+        how = os.environ.get(WRITES, "name")
+        if how not in ("name", "handle"):
+            raise SystemExit(f"{WRITES} is {how!r}, and has to be `name` or `handle`")
+        self.ask(f"writes {how}")
 
     def ask(self, line):
         """-> the tokens of the reply, after its `ok`. Raises what a refusal stands for."""
