@@ -322,6 +322,7 @@ jobs:
           uv run python conformance/run.py --cpp
           uv run python conformance/contract.py --cpp
           uv run python conformance/compare.py --cpp
+          uv run python conformance/steps.py --cpp
 
   # Apple clang, whose libc++ differs from the libstdc++ and MSVC lanes. The
   # core has no dependencies, so this needs no vcpkg.

@@ -484,10 +484,16 @@ def main():
         at = f"{n} states, size {size:g}, period {period / 1e9:g} s"
         print(f"{family:30s} {which:3s} {error:11.3g}  {at}, entry {where}")
     tried += refusals() + default_settles()
-    noises, table, routes = against_the_core_noise(rng)
+    try:
+        noises, table, routes = against_the_core_noise(rng)
+    except getattr(adapter, "NotBuilt", ()) as not_built:
+        # Counted as skipped and never as held, as run.py counts a vector.
+        print(f"the process noise: SKIPPED ({not_built})")
+        noises, table, routes = 0, {}, None
     tried += noises
-    print(f"the two decimal routes to the process noise: out from each other by at most {routes:.1g}")
-    print("N: a variance of N, read by itself; N+: two variances and twice their covariance, read as one sum")
+    if routes is not None:
+        print(f"the two decimal routes to the process noise: out from each other by at most {routes:.1g}")
+        print("N: a variance of N, read by itself; N+: two variances and twice their covariance, read as one sum")
     for (family, which), (error, n, size, period, where) in sorted(table.items()):
         most = max(most, error)
         at = f"{n} states, size {size:g}, period {period / 1e9:g} s"
