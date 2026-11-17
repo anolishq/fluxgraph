@@ -76,10 +76,28 @@
       }
     },
     {
+      "name": "ci-linux-release-v2",
+      "inherits": "ci-linux-release",
+      "cacheVariables": {
+        "FLUXGRAPH_BUILD_V2": "ON",
+        "FLUXGRAPH_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "ci-linux-v2-asan",
+      "inherits": "ci-linux-release-v2",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    },
+    {
       "name": "ci-windows-release",
       "inherits": "base-windows-msvc",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "FLUXGRAPH_BUILD_V2": "ON"
       }
     },
     {
@@ -127,7 +145,8 @@
       "cacheVariables": {
         "FLUXGRAPH_BUILD_SERVER": "ON",
         "FLUXGRAPH_YAML_ENABLED": "ON",
-        "FLUXGRAPH_BUILD_EXAMPLES": "ON"
+        "FLUXGRAPH_BUILD_EXAMPLES": "ON",
+        "FLUXGRAPH_BUILD_V2": "ON"
       }
     },
     {
@@ -200,6 +219,20 @@
     {
       "name": "ci-linux-release",
       "configurePreset": "ci-linux-release"
+    },
+    {
+      "name": "ci-linux-release-v2",
+      "configurePreset": "ci-linux-release-v2",
+      "targets": [
+        "fluxgraph_v2_driver"
+      ]
+    },
+    {
+      "name": "ci-linux-v2-asan",
+      "configurePreset": "ci-linux-v2-asan",
+      "targets": [
+        "fluxgraph_v2_driver"
+      ]
     },
     {
       "name": "ci-windows-release",
