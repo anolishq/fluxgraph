@@ -16,7 +16,7 @@ struct BuiltType {
 };
 
 // Adding a block type is a row here and a maker: nothing in the compiler or the engine names a type.
-constexpr std::array<BuiltType, 13> kBuilt = {{
+constexpr std::array<BuiltType, 21> kBuilt = {{
     {"formula", &detail::make_formula},
     {"all_good", &detail::make_all_good},
     {"delay", &detail::make_delay},
@@ -30,18 +30,44 @@ constexpr std::array<BuiltType, 13> kBuilt = {{
     {"since_true", &detail::make_since_true},
     {"latch", &detail::make_latch},
     {"pid", &detail::make_pid},
+    {"linear", &detail::make_model},
+    {"thermal_mass", &detail::make_model},
+    {"thermal_rc2", &detail::make_model},
+    {"first_order_process", &detail::make_model},
+    {"second_order_process", &detail::make_model},
+    {"mass_spring_damper", &detail::make_model},
+    {"dc_motor", &detail::make_model},
+    {"state_space", &detail::make_model},
 }};
 
-constexpr std::array<std::string_view, 13> kBuiltNames = {
-    "formula",    "all_good",   "delay",    "window",     "integrate", "deadband", "lowpass",
-    "rate_limit", "hysteresis", "held_for", "since_true", "latch",     "pid",
+constexpr std::array<std::string_view, 21> kBuiltNames = {
+    "formula",
+    "all_good",
+    "delay",
+    "window",
+    "integrate",
+    "deadband",
+    "lowpass",
+    "rate_limit",
+    "hysteresis",
+    "held_for",
+    "since_true",
+    "latch",
+    "pid",
+    "linear",
+    "thermal_mass",
+    "thermal_rc2",
+    "first_order_process",
+    "second_order_process",
+    "mass_spring_damper",
+    "dc_motor",
+    "state_space",
 };
 
 // The rest of Appendix A's catalogue. A graph that names one is refused as not built, which is not a refusal
 // of the graph.
-constexpr std::array<std::string_view, 9> kPlannedNames = {
-    "linear",   "thermal_mass", "thermal_rc2", "first_order_process", "second_order_process", "mass_spring_damper",
-    "dc_motor", "state_space",  "estimator",
+constexpr std::array<std::string_view, 1> kPlannedNames = {
+    "estimator",
 };
 
 }  // namespace
