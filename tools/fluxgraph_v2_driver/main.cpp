@@ -145,7 +145,8 @@ std::string shown(double number) {
     return std::string(buffer.data(), written.ptr);
 }
 
-// A setting as a line holds it: the inverse of read_setting.
+#if defined(FLUXGRAPH_V2_JSON) || defined(FLUXGRAPH_V2_YAML)
+// A setting as a line holds it: the inverse of read_setting. Only a loader's result is written out.
 void write_setting(const Setting &setting, std::string &line) {
     using Kind = Setting::Kind;
     switch (setting.kind()) {
@@ -176,6 +177,8 @@ void write_setting(const Setting &setting, std::string &line) {
             break;
     }
 }
+
+#endif
 
 // A setting, read from the front of the line. `depth` stops a line of nothing but `l 1 l 1 ...` short of the
 // stack's end.
