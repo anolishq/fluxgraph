@@ -53,8 +53,8 @@ void check(bool holds, std::string_view what) {
     all_held = all_held && holds;
 }
 
-// A low-pass, a total, a delay and a window of one input, with `max_waiting` as given, or the graph's own where
-// it is zero.
+// A low-pass, a total, a delay, a window, a model and an estimator of one input, with `max_waiting` as given, or the
+// graph's own where it is zero.
 Setting graph(std::int64_t max_waiting, std::string_view tau) {
     Setting lowpass;
     lowpass.set("id", Setting::text("f"))
@@ -79,15 +79,43 @@ Setting graph(std::int64_t max_waiting, std::string_view tau) {
         .set("in", Setting::map().set("x", Setting::text("x")))
         .set("settings", Setting::map().set("window", Setting::text("8s")))
         .set("out", Setting::map().set("mean", Setting::text("mean")).set("slope", Setting::text("slope")));
+    const auto one_by_one = [](std::int64_t entry) {
+        return Setting::list().add(Setting::list().add(Setting::whole(entry)));
+    };
+    Setting model;
+    model.set("id", Setting::text("m"))
+        .set("type", Setting::text("first_order_process"))
+        .set("in", Setting::map().set("u", Setting::text("x")))
+        .set("settings", Setting::map().set("tau", Setting::text("2s")).set("gain", Setting::whole(3)))
+        .set("out", Setting::map().set("y", Setting::text("plant")));
+    Setting measure;
+    measure.set("z", Setting::map().set("of", Setting::text("y")).set("r", Setting::whole(1)));
+    Setting linear;
+    linear.set("type", Setting::text("linear")).set("A", one_by_one(0)).set("B", one_by_one(1)).set("C", one_by_one(1));
+    Setting estimator;
+    estimator.set("id", Setting::text("k"))
+        .set("type", Setting::text("estimator"))
+        .set("in", Setting::map().set("u", Setting::text("x")).set("z", Setting::text("x")))
+        .set("settings", Setting::map()
+                             .set("model", std::move(linear))
+                             .set("q", Setting::map().set("x0", Setting::whole(1)))
+                             .set("p0", Setting::map().set("x0", Setting::whole(1)))
+                             .set("measure", std::move(measure))
+                             .set("consistency", Setting::text("none")))
+        .set("out", Setting::map().set("x0", Setting::text("estimate")));
     Setting made;
     made.set("period", Setting::text("1s"));
     if (max_waiting != 0) {
         made.set("max_waiting", Setting::whole(max_waiting));
     }
     made.set("inputs", Setting::map().set("x", Setting::map().set("max_age", Setting::text("none"))))
-        .set(
-            "blocks",
-            Setting::list().add(std::move(lowpass)).add(std::move(total)).add(std::move(delay)).add(std::move(window)));
+        .set("blocks", Setting::list()
+                           .add(std::move(lowpass))
+                           .add(std::move(total))
+                           .add(std::move(delay))
+                           .add(std::move(window))
+                           .add(std::move(model))
+                           .add(std::move(estimator)));
     return made;
 }
 

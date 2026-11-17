@@ -110,7 +110,7 @@ protected:
         statistics(tick, out, memory, work);
     }
 
-    void take(const Tick & /*tick*/, std::span<const Value> /*in*/, Memory &memory, const Work &work) const override {
+    void take(const Tick & /*tick*/, std::span<const Value> /*in*/, Memory &memory, Work &work) const override {
         memory.slots[memory.oldest] = work.pending;
         memory.oldest = (memory.oldest + 1) % memory.slots.size();
         if (work.pending_new) {
@@ -119,7 +119,7 @@ protected:
         }
     }
 
-    void pass_over(const Gap &gap, Memory &memory) const override {
+    void pass_over(const Gap &gap, Memory &memory, Work & /*work*/) const override {
         // Rule 8.6: the ticks passed over hold no sample, and count as not_ready. Nobody knowing how many, or a
         // rebase of a window that takes only new samples (rule 8.5), is all of them.
         std::size_t holes = memory.slots.size();

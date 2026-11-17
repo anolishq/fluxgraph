@@ -80,13 +80,12 @@ protected:
         out[0] = memory.held[memory.next];
     }
 
-    void take(const Tick & /*tick*/, std::span<const Value> in, Memory &memory,
-              const NoWork & /*work*/) const override {
+    void take(const Tick & /*tick*/, std::span<const Value> in, Memory &memory, NoWork & /*work*/) const override {
         memory.held[memory.next] = in[0];
         memory.next = (memory.next + 1) % memory.held.size();
     }
 
-    void pass_over(const Gap &gap, Memory &memory) const override {
+    void pass_over(const Gap &gap, Memory &memory, NoWork & /*work*/) const override {
         if (!gap.known) {
             std::fill(memory.held.begin(), memory.held.end(), Value{});  // everything it holds is not_ready
         } else {
