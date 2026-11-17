@@ -53,7 +53,8 @@ void check(bool holds, std::string_view what) {
     all_held = all_held && holds;
 }
 
-// A low-pass and a total of one input, with `max_waiting` as given, or the graph's own where it is zero.
+// A low-pass, a total, a delay and a window of one input, with `max_waiting` as given, or the graph's own where
+// it is zero.
 Setting graph(std::int64_t max_waiting, std::string_view tau) {
     Setting lowpass;
     lowpass.set("id", Setting::text("f"))
@@ -66,13 +67,27 @@ Setting graph(std::int64_t max_waiting, std::string_view tau) {
         .set("type", Setting::text("integrate"))
         .set("in", Setting::map().set("x", Setting::text("x")))
         .set("out", Setting::map().set("y", Setting::text("total")));
+    Setting delay;
+    delay.set("id", Setting::text("d"))
+        .set("type", Setting::text("delay"))
+        .set("in", Setting::map().set("x", Setting::text("x")))
+        .set("settings", Setting::map().set("ticks", Setting::whole(3)).set("initial", Setting::number(0.0)))
+        .set("out", Setting::map().set("y", Setting::text("late")));
+    Setting window;
+    window.set("id", Setting::text("w"))
+        .set("type", Setting::text("window"))
+        .set("in", Setting::map().set("x", Setting::text("x")))
+        .set("settings", Setting::map().set("window", Setting::text("8s")))
+        .set("out", Setting::map().set("mean", Setting::text("mean")).set("slope", Setting::text("slope")));
     Setting made;
     made.set("period", Setting::text("1s"));
     if (max_waiting != 0) {
         made.set("max_waiting", Setting::whole(max_waiting));
     }
     made.set("inputs", Setting::map().set("x", Setting::map().set("max_age", Setting::text("none"))))
-        .set("blocks", Setting::list().add(std::move(lowpass)).add(std::move(total)));
+        .set(
+            "blocks",
+            Setting::list().add(std::move(lowpass)).add(std::move(total)).add(std::move(delay)).add(std::move(window)));
     return made;
 }
 

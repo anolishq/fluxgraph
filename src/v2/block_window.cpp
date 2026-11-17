@@ -7,6 +7,7 @@
 
 #include "blocks.hpp"
 #include "exact.hpp"
+#include "remembers.hpp"
 
 namespace fluxgraph::v2::detail {
 
@@ -25,7 +26,24 @@ struct Slot {
 
 enum Port : std::size_t { kMean, kMedian, kMin, kMax, kSpread, kSlope, kCount, kPorts };
 
-class WindowBlock : public Block {
+// What a saved state holds of a slot is its state and its value. A sample's time is not saved, and need not be:
+// a state is restored into a rebase, which forgets every sample time (rules 8.2 and 8.5).
+struct Memory {
+    std::vector<Slot> slots;  // the last n ticks; the oldest is at `oldest`
+    std::size_t oldest = 0;
+    bool has_taken = false;  // with only_new: the sample time of the last sample it took
+    Time taken = 0;
+};
+
+// What the first phase finds and leaves for the second, and the room it sorts in.
+struct Work {
+    Slot pending;  // this tick's, until the second phase takes it in
+    bool pending_new = false;
+    Time pending_time = 0;
+    std::vector<double> sorted;
+};
+
+class WindowBlock : public InPlace<Memory, Work> {
 public:
     Status configure(const BlockSetup &setup) {
         SettingsReader settings(setup);
@@ -56,8 +74,7 @@ public:
         // Rule 7.3.2, worked exactly (rule 6.3), and at least 1.
         needed_ = std::max<std::uint64_t>(1, ceil_of_fraction(min_good, ticks));
         period_ = setup.period;
-        slots_.assign(static_cast<std::size_t>(ticks), Slot{});
-        sorted_.assign(static_cast<std::size_t>(ticks), 0.0);
+        ticks_ = static_cast<std::size_t>(ticks);
         reset();
         return {};
     }
@@ -66,110 +83,90 @@ public:
     std::span<const OutputPort> outputs() const override { return outputs_; }
     Status bind(std::span<const std::optional<Type>> /*input_types*/) override { return {}; }
 
-    LoopRole loop_role() const override { return LoopRole{LoopRole::Kind::remembers, slots_.size(), false}; }
+    LoopRole loop_role() const override { return LoopRole{LoopRole::Kind::remembers, ticks_, false}; }
 
-    void loop_settled() override {
-        for (Slot &slot : slots_) {  // rule 7.8.8: it holds such a sample as a good one from then on
+protected:
+    void settle(Memory &memory) const override {
+        for (Slot &slot : memory.slots) {  // rule 7.8.8: it holds such a sample as a good one from then on
             if (slot.state == State::uncertain) {
                 slot.state = State::good;
             }
         }
     }
 
-    void give(const Tick &tick, std::span<const Value> in, std::span<Value> out) override {
+    void look(const Tick &tick, std::span<const Value> in, std::span<Value> out, const Memory &memory,
+              Work &work) const override {
         const Value &x = in[0];
-        pending_ = Slot{x.state, x.number, x.is_usable() && x.timed, x.time};
-        pending_new_ = false;
+        work.pending = Slot{x.state, x.number, x.is_usable() && x.timed, x.time};
+        work.pending_new = false;
         if (only_new_ && x.is_usable()) {  // rule 7.3.8
-            if (x.timed && (!has_taken_ || x.time > taken_)) {
-                pending_new_ = true;
-                pending_time_ = x.time;
+            if (x.timed && (!memory.has_taken || x.time > memory.taken)) {
+                work.pending_new = true;
+                work.pending_time = x.time;
             } else {
-                pending_ = Slot{};  // not another sample: the tick holds none, and counts as not_ready
+                work.pending = Slot{};  // not another sample: the tick holds none, and counts as not_ready
             }
         }
-        statistics(tick, out);
+        statistics(tick, out, memory, work);
     }
 
-    void update(const Tick & /*tick*/, std::span<const Value> /*in*/) override {
-        slots_[oldest_] = pending_;
-        oldest_ = (oldest_ + 1) % slots_.size();
-        if (pending_new_) {
-            has_taken_ = true;
-            taken_ = pending_time_;
+    void take(const Tick & /*tick*/, std::span<const Value> /*in*/, Memory &memory, const Work &work) const override {
+        memory.slots[memory.oldest] = work.pending;
+        memory.oldest = (memory.oldest + 1) % memory.slots.size();
+        if (work.pending_new) {
+            memory.has_taken = true;
+            memory.taken = work.pending_time;
         }
     }
 
-    void gap(const Gap &gap) override {
+    void pass_over(const Gap &gap, Memory &memory) const override {
         // Rule 8.6: the ticks passed over hold no sample, and count as not_ready. Nobody knowing how many, or a
         // rebase of a window that takes only new samples (rule 8.5), is all of them.
-        std::size_t holes = slots_.size();
+        std::size_t holes = memory.slots.size();
         if (gap.known && !(gap.rebase && only_new_)) {
-            holes = static_cast<std::size_t>(std::min<std::uint64_t>(gap.ticks, slots_.size()));
+            holes = static_cast<std::size_t>(std::min<std::uint64_t>(gap.ticks, memory.slots.size()));
         }
         for (std::size_t i = 0; i < holes; ++i) {
-            slots_[oldest_] = Slot{};
-            oldest_ = (oldest_ + 1) % slots_.size();
+            memory.slots[memory.oldest] = Slot{};
+            memory.oldest = (memory.oldest + 1) % memory.slots.size();
         }
         if (gap.rebase) {
-            has_taken_ = false;  // rule 8.5: every sample time it remembers is forgotten
-            for (Slot &slot : slots_) {
+            memory.has_taken = false;  // rule 8.5: every sample time it remembers is forgotten
+            for (Slot &slot : memory.slots) {
                 slot.timed = false;  // the samples it holds are from then on at their ticks' times
             }
         }
     }
 
-    void reset() override {
-        std::fill(slots_.begin(), slots_.end(), Slot{});  // a tick from before the graph started holds none
-        oldest_ = 0;
-        has_taken_ = false;
-        taken_ = 0;
-    }
+    // A tick from before the graph started holds no sample.
+    Memory start() const override { return Memory{std::vector<Slot>(ticks_, Slot{}), 0, false, 0}; }
 
-    void save(StateWriter &writer) const override {
-        writer.u64(oldest_);
-        writer.flag(has_taken_);
-        writer.u64(static_cast<std::uint64_t>(taken_));
-        for (const Slot &slot : slots_) {
-            writer.u64(static_cast<std::uint64_t>(slot.state));
-            writer.f64(slot.value);
-        }
-    }
+    Work room() const override { return Work{Slot{}, false, 0, std::vector<double>(ticks_, 0.0)}; }
 
-    bool restore(StateReader &reader) override {
-        std::uint64_t oldest = 0;
-        std::uint64_t taken = 0;
-        if (!reader.u64(oldest) || oldest >= slots_.size() || !reader.flag(has_taken_) || !reader.u64(taken)) {
-            return false;
+    void describe(Fields &fields, Memory &memory) const override {
+        fields.index(memory.oldest, memory.slots.size());
+        fields(memory.has_taken);
+        fields(memory.taken);
+        for (Slot &slot : memory.slots) {
+            fields.state(slot.state);
+            fields(slot.value);
         }
-        oldest_ = static_cast<std::size_t>(oldest);
-        taken_ = static_cast<Time>(taken);
-        for (Slot &slot : slots_) {
-            std::uint64_t state = 0;
-            if (!reader.u64(state) || state > 3 || !reader.f64(slot.value)) {
-                return false;
-            }
-            slot.state = static_cast<State>(state);
-            // A sample's time is not saved, and need not be: a state is restored into a rebase, which forgets
-            // every sample time (rules 8.2 and 8.5).
-            slot.timed = false;
-        }
-        return true;
     }
 
 private:
     // The slot of the window's i-th tick, oldest first, at the tick being given: the last is this tick's.
-    const Slot &at(std::size_t i) const {
-        return i + 1 == slots_.size() ? pending_ : slots_[(oldest_ + 1 + i) % slots_.size()];
+    static const Slot &at(const Memory &memory, const Work &work, std::size_t i) {
+        return i + 1 == memory.slots.size() ? work.pending
+                                            : memory.slots[(memory.oldest + 1 + i) % memory.slots.size()];
     }
 
-    void statistics(const Tick &tick, std::span<Value> out) {
-        const std::size_t n = slots_.size();
+    void statistics(const Tick &tick, std::span<Value> out, const Memory &memory, Work &work) const {
+        const std::size_t n = memory.slots.size();
         std::uint64_t usable_count = 0;
         std::uint64_t good_count = 0;
         State worst_hole = State::good;
         for (std::size_t i = 0; i < n; ++i) {
-            const Slot &slot = at(i);
+            const Slot &slot = at(memory, work, i);
             if (!usable(slot.state)) {
                 worst_hole = worst(worst_hole, slot.state);
             } else {
@@ -190,16 +187,17 @@ private:
         std::size_t count = 0;
         double sum = 0.0;
         for (std::size_t i = 0; i < n; ++i) {
-            const Slot &slot = at(i);
+            const Slot &slot = at(memory, work, i);
             if (slot.state == State::good || (!enough_good && slot.state == State::uncertain)) {
-                sorted_[count++] = slot.value;
+                work.sorted[count++] = slot.value;
                 sum += slot.value;  // a plain sum (rule 3.6)
             }
         }
-        std::sort(sorted_.begin(), sorted_.begin() + static_cast<std::ptrdiff_t>(count));
-        const double low = sorted_[0];
-        const double high = sorted_[count - 1];
-        const double median = count % 2 == 1 ? sorted_[count / 2] : (sorted_[count / 2 - 1] + sorted_[count / 2]) / 2.0;
+        std::sort(work.sorted.begin(), work.sorted.begin() + static_cast<std::ptrdiff_t>(count));
+        const double low = work.sorted[0];
+        const double high = work.sorted[count - 1];
+        const double median =
+            count % 2 == 1 ? work.sorted[count / 2] : (work.sorted[count / 2 - 1] + work.sorted[count / 2]) / 2.0;
         out[kMean] = Value::of(sum / static_cast<double>(count), state);
         out[kMedian] = Value::of(median, state);
         out[kMin] = Value::of(low, state);
@@ -208,9 +206,11 @@ private:
         // Rule 7.3.6: a slope needs two samples, and two times.
         double rate = 0.0;
         if (enough_good && good_count >= 2) {
-            out[kSlope] = slope(tick, false, rate) ? Value::of(rate, State::good) : Value::none(State::bad);
+            out[kSlope] =
+                slope(tick, false, rate, memory, work) ? Value::of(rate, State::good) : Value::none(State::bad);
         } else if (usable_count >= 2) {
-            out[kSlope] = slope(tick, true, rate) ? Value::of(rate, State::uncertain) : Value::none(State::bad);
+            out[kSlope] =
+                slope(tick, true, rate, memory, work) ? Value::of(rate, State::uncertain) : Value::none(State::bad);
         } else {
             out[kSlope] = Value::none(State::bad);
         }
@@ -218,8 +218,8 @@ private:
 
     // The least-squares slope of value against time, per second, of the good samples, or of the usable ones
     // (Appendix A). False where every sample it would be of has one time: there is no slope then.
-    bool slope(const Tick &tick, bool of_usable, double &rate) const {
-        const std::size_t n = slots_.size();
+    bool slope(const Tick &tick, bool of_usable, double &rate, const Memory &memory, const Work &work) const {
+        const std::size_t n = memory.slots.size();
         const auto counts = [of_usable](const Slot &slot) {
             return slot.state == State::good || (of_usable && slot.state == State::uncertain);
         };
@@ -227,8 +227,8 @@ private:
         // nanoseconds, divided by 10^9. A sample with no time of its own has its tick's, which is whole periods
         // before this tick's.
         const auto seconds = [&](std::size_t from, std::size_t i) {
-            const Slot &a = at(from);
-            const Slot &b = at(i);
+            const Slot &a = at(memory, work, from);
+            const Slot &b = at(memory, work, i);
             return nanoseconds_between(a.timed ? a.time : tick.time, a.timed ? 0 : n - 1 - from,
                                        b.timed ? b.time : tick.time, b.timed ? 0 : n - 1 - i, period_) /
                    1e9;
@@ -239,13 +239,13 @@ private:
         double sum_v = 0.0;
         bool two_times = false;
         for (std::size_t i = 0; i < n; ++i) {
-            if (counts(at(i))) {
+            if (counts(at(memory, work, i))) {
                 first = first == n ? i : first;
                 const double t = seconds(first, i);
                 two_times = two_times || t != 0.0;
                 count += 1.0;
                 sum_t += t;
-                sum_v += at(i).value;
+                sum_v += at(memory, work, i).value;
             }
         }
         if (!two_times) {
@@ -256,9 +256,9 @@ private:
         double above = 0.0;
         double below = 0.0;
         for (std::size_t i = 0; i < n; ++i) {
-            if (counts(at(i))) {
+            if (counts(at(memory, work, i))) {
                 const double t = seconds(first, i) - mean_t;
-                above += t * (at(i).value - mean_v);
+                above += t * (at(memory, work, i).value - mean_v);
                 below += t * t;
             }
         }
@@ -280,15 +280,7 @@ private:
     std::uint64_t needed_ = 1;
     Time period_ = 1;
 
-    std::vector<Slot> slots_;  // the last n ticks; the oldest is at oldest_
-    std::size_t oldest_ = 0;
-    bool has_taken_ = false;  // with only_new: the sample time of the last sample it took
-    Time taken_ = 0;
-
-    Slot pending_;  // this tick's, from give() until update() takes it in
-    bool pending_new_ = false;
-    Time pending_time_ = 0;
-    std::vector<double> sorted_;  // room to sort in, so that a tick allocates nothing
+    std::size_t ticks_ = 1;
 };
 
 }  // namespace
