@@ -969,6 +969,10 @@ Three more checks are of the core alone:
   that fits and at clocks at both ends of the range, where both Python
   readings count in whole numbers of any size.
 - `cpp/filter.py`: the estimator on data from its own model.
+- `cpp/loaders.py`: the JSON and YAML loaders. The graph of every
+  vector is read by each and set against what PyYAML gives the Python
+  readings, and each thing a loader decides is shown on a line or two
+  of text.
 - `cpp/saved_state.py`: the layout of a saved state, byte by byte, and
   that a state spoiled one way at a time is refused each time and
   changes nothing.

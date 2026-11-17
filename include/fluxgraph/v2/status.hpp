@@ -15,6 +15,7 @@ enum class Errc {
     call_refused,          ///< A call to tick was refused (rule 6.11). Nothing changed.
     rebase_refused,        ///< A rebase was refused (rule 6.11). Nothing changed.
     state_refused,         ///< A saved state is not of this graph (rule 8.2). Nothing changed.
+    file_refused,          ///< The text of a graph file could not be read (fluxgraph/v2/load.hpp).
 };
 
 struct Error {
