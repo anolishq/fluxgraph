@@ -23,6 +23,7 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
       cpp: ${{ steps.cppfilter.outputs.cpp }}
       docs: ${{ steps.docsfilter.outputs.docs }}
+      conformance: ${{ steps.conformancefilter.outputs.conformance }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
@@ -59,6 +60,15 @@ jobs:
               - 'docs/**'
               - '*.md'
               - '.markdownlint.jsonc'
+              - '.github/workflows/ci.yml'
+      # The version 2 semantics and the tests of that text.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: conformancefilter
+        with:
+          filters: |
+            conformance:
+              - 'conformance/**'
+              - 'docs/semantics_spec_v2.md'
               - '.github/workflows/ci.yml'
 
   docs:
@@ -129,6 +139,47 @@ jobs:
 
       - name: Run mypy
         run: uv run mypy tests
+
+  # The version 2 semantics are tested by vectors, against two Python readings
+  # of the text. Nothing here builds or runs the library.
+  conformance:
+    name: Conformance (${{ matrix.reading }} reading)
+    needs: [changes]
+    if: needs.changes.outputs.conformance == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - reading: reference
+            flag: ""
+          - reading: second
+            flag: "--second"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked --extra dev
+
+      - name: Run the vectors
+        run: uv run python conformance/run.py ${{ matrix.flag }}
+
+      - name: Check the host contract
+        run: uv run python conformance/contract.py ${{ matrix.flag }}
 
   linux-matrix:
     name: Linux ${{ matrix.lane }}
@@ -383,7 +434,7 @@ jobs:
   ok:
     name: ok
     if: always()
-    needs: [changes, docs, python-lint, python-typecheck, linux-matrix, strict-dimensional-validation, windows-core, windows-diagram, diagram-render-smoke, version-sync, cpp-format, clang-tidy]
+    needs: [changes, docs, python-lint, python-typecheck, conformance, linux-matrix, strict-dimensional-validation, windows-core, windows-diagram, diagram-render-smoke, version-sync, cpp-format, clang-tidy]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
