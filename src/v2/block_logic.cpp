@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "blocks.hpp"
+#include "remembers.hpp"
 
 namespace fluxgraph::v2::detail {
 
@@ -13,17 +14,18 @@ namespace {
 
 enum Port : std::size_t { kY, kElapsed, kDoubtful, kGaps, kPorts };
 
+// Counters that start again at the tick being run.
+Counters restarted(bool gap_here) { return Counters{0, 0, gap_here ? std::uint64_t{1} : 0}; }
+
 // What the four share: a boolean `y` and the three counters, and the knowledge that a gap's tick is the next to
 // run, so that a count which starts again at that tick starts `gaps` at one (rule 8.6).
-class CountingBlock : public Block {
+template <typename Memory>
+class CountingBlock : public Committing<Memory> {
 public:
     std::span<const OutputPort> outputs() const override { return outputs_; }
     Status bind(std::span<const std::optional<Type>> /*input_types*/) override { return {}; }
 
 protected:
-    // Counters that start again at the tick being run.
-    static Counters restarted(bool gap_here) { return Counters{0, 0, gap_here ? std::uint64_t{1} : 0}; }
-
     std::array<OutputPort, kPorts> outputs_ = {{
         {"y", Type::boolean, false},
         {"elapsed", Type::number, false},
@@ -35,7 +37,15 @@ protected:
 
 // ---- hysteresis
 
-class HysteresisBlock : public CountingBlock {
+struct HysteresisMemory {
+    bool decided = false;
+    bool side = false;
+    Counters counters;
+    bool gap_here = false;
+};
+// `gap_here` is not saved: a restore is a gap, and the gap sets it.
+
+class HysteresisBlock : public CountingBlock<HysteresisMemory> {
 public:
     Status configure(const BlockSetup &setup) {
         SettingsReader settings(setup);
@@ -57,76 +67,73 @@ public:
 
     std::span<const InputPort> inputs() const override { return inputs_; }
 
-    void give(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out) override {
+protected:
+    using Memory = HysteresisMemory;
+
+    void step(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out, const Memory &now,
+              Memory &next) const override {
         const Value &x = in[0];
-        next_ = now_;
-        next_.gap_here = false;
+        next.gap_here = false;
         if (x.is_usable()) {
             if (x.number >= rise_ || x.number <= fall_) {
                 const bool side = x.number >= rise_;
-                if (!now_.decided || now_.side != side) {
-                    next_.counters = restarted(now_.gap_here);  // rule 7.5.4: from the tick its value last changed
+                if (!now.decided || now.side != side) {
+                    next.counters = restarted(now.gap_here);  // rule 7.5.4: from the tick its value last changed
                 }
-                next_.decided = true;
-                next_.side = side;
+                next.decided = true;
+                next.side = side;
             }
-            out[kY] = next_.decided ? Value::of(next_.side, x.state) : Value::none(State::not_ready, Type::boolean);
+            out[kY] = next.decided ? Value::of(next.side, x.state) : Value::none(State::not_ready, Type::boolean);
         } else {
             out[kY] = Value::none(x.state, Type::boolean);  // it stays as it was
         }
-        next_.counters.elapsed += 1;
-        next_.counters.doubtful += x.state != State::good ? 1 : 0;
-        next_.counters.give(out, kElapsed, period_seconds_);
+        next.counters.elapsed += 1;
+        next.counters.doubtful += x.state != State::good ? 1 : 0;
+        next.counters.give(out, kElapsed, period_seconds_);
     }
 
-    void update(const Tick & /*tick*/, std::span<const Value> /*in*/) override { now_ = next_; }
-
-    void gap(const Gap &gap) override {
-        now_.counters.gaps += 1;
-        now_.gap_here = true;
+    void pass_over(const Gap &gap, Memory &now) const override {
+        now.counters.gaps += 1;
+        now.gap_here = true;
         if (gap.known) {
-            now_.counters.elapsed += gap.ticks;
-            now_.counters.doubtful += gap.ticks;
+            now.counters.elapsed += gap.ticks;
+            now.counters.doubtful += gap.ticks;
         }
     }
 
-    void reset() override {
-        now_ = Memory{};
-        now_.decided = has_initial_;
-        now_.side = initial_;
+    Memory start() const override {
+        Memory made;
+        made.decided = has_initial_;
+        made.side = initial_;
+        return made;
     }
 
-    void save(StateWriter &writer) const override {
-        writer.flag(now_.decided);
-        writer.flag(now_.side);
-        now_.counters.save(writer);
-    }
-
-    bool restore(StateReader &reader) override {
-        now_.gap_here = false;
-        return reader.flag(now_.decided) && reader.flag(now_.side) && now_.counters.restore(reader);
+    void describe(Fields &fields, Memory &memory) const override {
+        fields(memory.decided);
+        fields(memory.side);
+        fields(memory.counters);
     }
 
 private:
-    struct Memory {
-        bool decided = false;
-        bool side = false;
-        Counters counters;
-        bool gap_here = false;
-    };
-
     std::array<InputPort, 1> inputs_ = {{{"x", Type::number, true, false}}};
     double rise_ = 0.0;
     double fall_ = 0.0;
     bool has_initial_ = false;
     bool initial_ = false;
-    Memory now_;
-    Memory next_;
 };
 
 // ---- held_for (rule 7.6.1)
 
-class HeldForBlock : public CountingBlock {
+struct HeldForMemory {
+    bool running = false;
+    std::uint64_t age = 0;      // ticks since the tick the timer started on
+    std::uint64_t stretch = 0;  // unusable ticks in a row
+    Counters counters;
+    bool gap_here = false;
+};
+// `gap_here` is not saved: a restore is a gap, and the gap sets it.
+
+class HeldForBlock : public CountingBlock<HeldForMemory> {
 public:
     Status configure(const BlockSetup &setup) {
         SettingsReader settings(setup);
@@ -152,98 +159,90 @@ public:
 
     std::span<const InputPort> inputs() const override { return inputs_; }
 
-    void give(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out) override {
+protected:
+    using Memory = HeldForMemory;
+
+    void step(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out, const Memory &now,
+              Memory &next) const override {
         const Value &x = in[0];
-        next_ = now_;
-        next_.gap_here = false;
+        next.gap_here = false;
         if (x.is_usable() && x.boolean) {
-            if (!now_.running) {
-                next_.running = true;
-                next_.age = 0;  // the tick on which the input becomes true counts as no time at all
-                next_.counters = restarted(now_.gap_here);
+            if (!now.running) {
+                next.running = true;
+                next.age = 0;  // the tick on which the input becomes true counts as no time at all
+                next.counters = restarted(now.gap_here);
             } else {
-                next_.age = now_.age + 1;
+                next.age = now.age + 1;
             }
-            next_.stretch = 0;
-            next_.counters.elapsed += 1;
-            next_.counters.doubtful += x.state != State::good ? 1 : 0;
-            out[kY] = Value::of(next_.age > time_, x.state);
+            next.stretch = 0;
+            next.counters.elapsed += 1;
+            next.counters.doubtful += x.state != State::good ? 1 : 0;
+            out[kY] = Value::of(next.age > time_, x.state);
         } else if (x.is_usable()) {
-            next_ = Memory{};  // a usable input that is false stops the timer
+            next = Memory{};  // a usable input that is false stops the timer
             out[kY] = Value::of(false, x.state);
-        } else if (hold_ && now_.running && now_.stretch < hold_limit_) {
+        } else if (hold_ && now.running && now.stretch < hold_limit_) {
             // The timer runs on, and the output is uncertain: true once the time has run out.
-            next_.stretch = now_.stretch + 1;
-            next_.age = now_.age + 1;
-            next_.counters.elapsed += 1;
-            next_.counters.doubtful += 1;
-            out[kY] = Value::of(next_.age > time_, State::uncertain);
+            next.stretch = now.stretch + 1;
+            next.age = now.age + 1;
+            next.counters.elapsed += 1;
+            next.counters.doubtful += 1;
+            out[kY] = Value::of(next.age > time_, State::uncertain);
         } else {
-            next_ = Memory{};
+            next = Memory{};
             out[kY] = Value::none(x.state, Type::boolean);
         }
         // Zero while the timer is not running: a stopped timer's memory is all zero.
-        next_.counters.give(out, kElapsed, period_seconds_);
+        next.counters.give(out, kElapsed, period_seconds_);
     }
 
-    void update(const Tick & /*tick*/, std::span<const Value> /*in*/) override { now_ = next_; }
-
-    void gap(const Gap &gap) override {
-        if (now_.running) {
+    void pass_over(const Gap &gap, Memory &now) const override {
+        if (now.running) {
             if (!gap.known || (gap.ticks > 0 && !hold_)) {
-                now_ = Memory{};  // nobody knows, or `reset`: the timer stops
+                now = Memory{};  // nobody knows, or `reset`: the timer stops
             } else {
                 // `hold`: the unusable stretch grows by the ticks passed over. A gap that passed over none stops
                 // no timer.
-                now_.stretch += gap.ticks;
-                if (now_.stretch > hold_limit_) {
-                    now_ = Memory{};
+                now.stretch += gap.ticks;
+                if (now.stretch > hold_limit_) {
+                    now = Memory{};
                 } else {
-                    now_.age += gap.ticks;
-                    now_.counters.elapsed += gap.ticks;
-                    now_.counters.doubtful += gap.ticks;
-                    now_.counters.gaps += 1;
+                    now.age += gap.ticks;
+                    now.counters.elapsed += gap.ticks;
+                    now.counters.doubtful += gap.ticks;
+                    now.counters.gaps += 1;
                 }
             }
         }
-        now_.gap_here = true;
+        now.gap_here = true;
     }
 
-    void reset() override { now_ = Memory{}; }
-
-    void save(StateWriter &writer) const override {
-        writer.flag(now_.running);
-        writer.u64(now_.age);
-        writer.u64(now_.stretch);
-        now_.counters.save(writer);
-    }
-
-    bool restore(StateReader &reader) override {
-        now_.gap_here = false;
-        return reader.flag(now_.running) && reader.u64(now_.age) && reader.u64(now_.stretch) &&
-               now_.counters.restore(reader);
+    void describe(Fields &fields, Memory &memory) const override {
+        fields(memory.running);
+        fields(memory.age);
+        fields(memory.stretch);
+        fields(memory.counters);
     }
 
 private:
-    struct Memory {
-        bool running = false;
-        std::uint64_t age = 0;      // ticks since the tick the timer started on
-        std::uint64_t stretch = 0;  // unusable ticks in a row
-        Counters counters;
-        bool gap_here = false;
-    };
-
     std::array<InputPort, 1> inputs_ = {{{"x", Type::boolean, true, false}}};
     std::uint64_t time_ = 0;  // in ticks
     bool hold_ = false;
     std::uint64_t hold_limit_ = 0;
-    Memory now_;
-    Memory next_;
 };
 
 // ---- since_true (rule 7.6.2)
 
-class SinceTrueBlock : public CountingBlock {
+struct SinceTrueMemory {
+    bool started = false;
+    bool lost = false;      // a gap of no known length, and the clock not set since
+    std::uint64_t age = 0;  // the tick's number less the clock's
+    Counters counters;
+    bool gap_here = false;
+};
+// `gap_here` is not saved: a restore is a gap, and the gap sets it.
+
+class SinceTrueBlock : public CountingBlock<SinceTrueMemory> {
 public:
     Status configure(const BlockSetup &setup) {
         SettingsReader settings(setup);
@@ -264,25 +263,28 @@ public:
 
     std::span<const InputPort> inputs() const override { return inputs_; }
 
-    void give(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out) override {
+protected:
+    using Memory = SinceTrueMemory;
+
+    void step(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out, const Memory &now,
+              Memory &next) const override {
         const Value &x = in[0];
-        next_ = now_;
-        next_.gap_here = false;
-        if (!now_.started) {
-            next_.started = true;  // its clock starts at the first tick
-            next_.age = 0;
+        next.gap_here = false;
+        if (!now.started) {
+            next.started = true;  // its clock starts at the first tick
+            next.age = 0;
         } else {
-            next_.age = now_.age + 1;
+            next.age = now.age + 1;
         }
         if (x.is_usable() && x.boolean) {
-            next_.age = 0;  // the clock is set again
-            next_.lost = false;
-            next_.counters = restarted(now_.gap_here);
+            next.age = 0;  // the clock is set again
+            next.lost = false;
+            next.counters = restarted(now.gap_here);
         }
-        next_.counters.elapsed += 1;
-        next_.counters.doubtful += x.state != State::good ? 1 : 0;
+        next.counters.elapsed += 1;
+        next.counters.doubtful += x.state != State::good ? 1 : 0;
         // After a gap of no known length the input was last true longer ago than `time`.
-        const bool value = next_.lost || next_.age > time_;
+        const bool value = next.lost || next.age > time_;
         if (x.is_usable()) {
             out[kY] = Value::of(value, x.state);
         } else if (assume_false_) {
@@ -290,58 +292,45 @@ public:
         } else {
             out[kY] = Value::none(x.state, Type::boolean);
         }
-        next_.counters.give(out, kElapsed, period_seconds_);
+        next.counters.give(out, kElapsed, period_seconds_);
     }
 
-    void update(const Tick & /*tick*/, std::span<const Value> /*in*/) override { now_ = next_; }
-
-    void gap(const Gap &gap) override {
-        now_.gap_here = true;
+    void pass_over(const Gap &gap, Memory &now) const override {
+        now.gap_here = true;
         if (gap.known) {
-            now_.age += gap.ticks;  // the clock is not set
-            now_.counters.elapsed += gap.ticks;
-            now_.counters.doubtful += gap.ticks;
-            now_.counters.gaps += 1;
+            now.age += gap.ticks;  // the clock is not set
+            now.counters.elapsed += gap.ticks;
+            now.counters.doubtful += gap.ticks;
+            now.counters.gaps += 1;
         } else {
-            now_.lost = true;
-            now_.counters = restarted(true);  // its counts start again at the gap's tick
+            now.lost = true;
+            now.counters = restarted(true);  // its counts start again at the gap's tick
         }
     }
 
-    void reset() override { now_ = Memory{}; }
-
-    void save(StateWriter &writer) const override {
-        writer.flag(now_.started);
-        writer.flag(now_.lost);
-        writer.u64(now_.age);
-        now_.counters.save(writer);
-    }
-
-    bool restore(StateReader &reader) override {
-        now_.gap_here = false;
-        return reader.flag(now_.started) && reader.flag(now_.lost) && reader.u64(now_.age) &&
-               now_.counters.restore(reader);
+    void describe(Fields &fields, Memory &memory) const override {
+        fields(memory.started);
+        fields(memory.lost);
+        fields(memory.age);
+        fields(memory.counters);
     }
 
 private:
-    struct Memory {
-        bool started = false;
-        bool lost = false;      // a gap of no known length, and the clock not set since
-        std::uint64_t age = 0;  // the tick's number less the clock's
-        Counters counters;
-        bool gap_here = false;
-    };
-
     std::array<InputPort, 1> inputs_ = {{{"x", Type::boolean, true, false}}};
     std::uint64_t time_ = 0;
     bool assume_false_ = false;
-    Memory now_;
-    Memory next_;
 };
 
 // ---- latch (rule 7.6.3)
 
-class LatchBlock : public CountingBlock {
+struct LatchMemory {
+    bool set = false;
+    Counters counters;
+    bool gap_here = false;
+};
+// `gap_here` is not saved: a restore is a gap, and the gap sets it.
+
+class LatchBlock : public CountingBlock<LatchMemory> {
 public:
     Status configure(const BlockSetup &setup) {
         SettingsReader settings(setup);
@@ -351,62 +340,48 @@ public:
 
     std::span<const InputPort> inputs() const override { return inputs_; }
 
-    void give(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out) override {
+protected:
+    using Memory = LatchMemory;
+
+    void step(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out, const Memory &now,
+              Memory &next) const override {
         const Value &set = in[0];
         const Value &reset = in[1];
-        next_ = now_;
-        next_.gap_here = false;
+        next.gap_here = false;
         if (reset.is_usable() && reset.boolean) {
-            next_.set = false;
-            next_.counters = restarted(now_.gap_here);  // `elapsed` counts from the tick it was last cleared
+            next.set = false;
+            next.counters = restarted(now.gap_here);  // `elapsed` counts from the tick it was last cleared
             out[kY] = Value::of(false, reset.state);
-        } else if (now_.set) {
+        } else if (now.set) {
             out[kY] = Value::of(true);  // `set` is not used
         } else if (set.is_usable()) {
-            next_.set = set.boolean;
+            next.set = set.boolean;
             out[kY] = Value::of(set.boolean, set.state);
         } else {
             out[kY] = Value::none(set.state, Type::boolean);
         }
-        next_.counters.elapsed += 1;
+        next.counters.elapsed += 1;
         // Those on which it was not set when the tick began and `set` was not good.
-        next_.counters.doubtful += !now_.set && set.state != State::good ? 1 : 0;
-        next_.counters.give(out, kElapsed, period_seconds_);
+        next.counters.doubtful += !now.set && set.state != State::good ? 1 : 0;
+        next.counters.give(out, kElapsed, period_seconds_);
     }
 
-    void update(const Tick & /*tick*/, std::span<const Value> /*in*/) override { now_ = next_; }
-
-    void gap(const Gap &gap) override {
-        now_.counters.gaps += 1;
-        now_.gap_here = true;
+    void pass_over(const Gap &gap, Memory &now) const override {
+        now.counters.gaps += 1;
+        now.gap_here = true;
         if (gap.known) {
-            now_.counters.elapsed += gap.ticks;
-            now_.counters.doubtful += now_.set ? 0 : gap.ticks;
+            now.counters.elapsed += gap.ticks;
+            now.counters.doubtful += now.set ? 0 : gap.ticks;
         }
     }
 
-    void reset() override { now_ = Memory{}; }
-
-    void save(StateWriter &writer) const override {
-        writer.flag(now_.set);
-        now_.counters.save(writer);
-    }
-
-    bool restore(StateReader &reader) override {
-        now_.gap_here = false;
-        return reader.flag(now_.set) && now_.counters.restore(reader);
+    void describe(Fields &fields, Memory &memory) const override {
+        fields(memory.set);
+        fields(memory.counters);
     }
 
 private:
-    struct Memory {
-        bool set = false;
-        Counters counters;
-        bool gap_here = false;
-    };
-
     std::array<InputPort, 2> inputs_ = {{{"set", Type::boolean, true, false}, {"reset", Type::boolean, false, false}}};
-    Memory now_;
-    Memory next_;
 };
 
 }  // namespace

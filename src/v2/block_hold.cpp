@@ -7,6 +7,7 @@
 
 #include "blocks.hpp"
 #include "exact.hpp"
+#include "remembers.hpp"
 
 namespace fluxgraph::v2::detail {
 
@@ -23,7 +24,8 @@ struct Ride {
     bool holds(std::uint64_t run) const { return run <= limit; }
 };
 
-class HoldBlock : public Block {
+template <typename Memory>
+class HoldBlock : public Committing<Memory> {
 public:
     std::span<const InputPort> inputs() const override { return inputs_; }
     Status bind(std::span<const std::optional<Type>> /*input_types*/) override { return {}; }
@@ -35,7 +37,13 @@ protected:
 
 // ---- deadband (rules 7.4.1 to 7.4.4)
 
-class DeadbandBlock : public HoldBlock {
+struct DeadbandMemory {
+    bool holding = false;
+    double value = 0.0;
+    std::uint64_t run = 0;  // unusable ticks in a row since the last usable input
+};
+
+class DeadbandBlock : public HoldBlock<DeadbandMemory> {
 public:
     Status configure(const BlockSetup &setup) {
         SettingsReader settings(setup);
@@ -48,67 +56,62 @@ public:
 
     std::span<const OutputPort> outputs() const override { return outputs_; }
 
-    void give(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out) override {
+protected:
+    using Memory = DeadbandMemory;
+
+    void step(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out, const Memory &now,
+              Memory &next) const override {
         const Value &x = in[0];
-        next_ = now_;
         if (x.is_usable()) {
             // The first usable input is taken as it is; after that, one that has moved by `step` or more.
-            if (!now_.holding || std::fabs(x.number - now_.value) >= step_) {
-                next_.value = x.number;
+            if (!now.holding || std::fabs(x.number - now.value) >= step_) {
+                next.value = x.number;
             }
-            next_.holding = true;
-            next_.run = 0;
-            out[0] = Value::of(next_.value, x.state);  // the state of the input at this tick
-        } else if (now_.holding && ride_.rides(now_.run)) {
-            next_.run = now_.run + 1;
-            out[0] = Value::of(now_.value, State::uncertain);
+            next.holding = true;
+            next.run = 0;
+            out[0] = Value::of(next.value, x.state);  // the state of the input at this tick
+        } else if (now.holding && ride_.rides(now.run)) {
+            next.run = now.run + 1;
+            out[0] = Value::of(now.value, State::uncertain);
         } else {
-            next_ = Memory{};
+            next = Memory{};
             out[0] = Value::none(x.state);
         }
     }
 
-    void update(const Tick & /*tick*/, std::span<const Value> /*in*/) override { now_ = next_; }
-
-    void gap(const Gap &gap) override {
+    void pass_over(const Gap &gap, Memory &now) const override {
         if (!gap.known) {
-            now_ = Memory{};
-        } else if (now_.holding) {
-            now_.run += gap.ticks;  // counts of ticks: see Counters
-            if (!ride_.holds(now_.run)) {
-                now_ = Memory{};
+            now = Memory{};
+        } else if (now.holding) {
+            now.run += gap.ticks;  // counts of ticks: see Counters
+            if (!ride_.holds(now.run)) {
+                now = Memory{};
             }
         }
     }
 
-    void reset() override { now_ = Memory{}; }
-
-    void save(StateWriter &writer) const override {
-        writer.flag(now_.holding);
-        writer.f64(now_.value);
-        writer.u64(now_.run);
-    }
-
-    bool restore(StateReader &reader) override {
-        return reader.flag(now_.holding) && reader.f64(now_.value) && reader.u64(now_.run);
+    void describe(Fields &fields, Memory &memory) const override {
+        fields(memory.holding);
+        fields(memory.value);
+        fields(memory.run);
     }
 
 private:
-    struct Memory {
-        bool holding = false;
-        double value = 0.0;
-        std::uint64_t run = 0;  // unusable ticks in a row since the last usable input
-    };
-
     std::array<OutputPort, 1> outputs_ = {{{"y", Type::number, false}}};
     double step_ = 0.0;
-    Memory now_;
-    Memory next_;
 };
 
 // ---- lowpass (rules 7.4.5 to 7.4.8)
 
-class LowpassBlock : public HoldBlock {
+struct LowpassMemory {
+    bool holding = false;
+    double y = 0.0;
+    std::uint64_t run = 0;
+    bool doubted = false;
+    std::int64_t doubt = 0;  // the number of the latest tick at which it took an uncertain input
+};
+
+class LowpassBlock : public HoldBlock<LowpassMemory> {
 public:
     Status configure(const BlockSetup &setup) {
         SettingsReader settings(setup);
@@ -127,90 +130,76 @@ public:
 
     LoopRole loop_role() const override { return LoopRole{LoopRole::Kind::remembers, settle_, false}; }
 
-    void loop_settled() override { now_.doubted = false; }  // rule 7.8.8: its doubt is cleared
+protected:
+    using Memory = LowpassMemory;
 
-    void give(const Tick &tick, std::span<const Value> in, std::span<Value> out) override {
+    void step(const Tick &tick, std::span<const Value> in, std::span<Value> out, const Memory &now,
+              Memory &next) const override {
         const Value &x = in[0];
-        next_ = now_;
         if (x.is_usable()) {
-            if (!now_.holding) {
-                next_.y = x.number;
+            if (!now.holding) {
+                next.y = x.number;
             } else {
                 // The ticks it rode through decay too: m is the ticks since its last usable input.
-                const double kept = now_.run == 0 ? decay_ : std::pow(decay_, static_cast<double>(now_.run) + 1.0);
-                next_.y = kept * now_.y + (1.0 - kept) * x.number;
+                const double kept = now.run == 0 ? decay_ : std::pow(decay_, static_cast<double>(now.run) + 1.0);
+                next.y = kept * now.y + (1.0 - kept) * x.number;
             }
-            next_.holding = true;
-            next_.run = 0;
+            next.holding = true;
+            next.run = 0;
             if (x.state == State::uncertain) {  // rule 7.4.7: its doubt, a first input among them
-                next_.doubted = true;
-                next_.doubt = tick.number;
+                next.doubted = true;
+                next.doubt = tick.number;
             }
             // Rule 7.4.8: uncertain if the input is, and on the `settle` ticks after its doubt. A tick is never
             // before the doubt, so the difference is in order.
-            const bool settling = next_.doubted && span_between(next_.doubt, tick.number) <= settle_;
-            out[0] = Value::of(next_.y, x.state == State::uncertain || settling ? State::uncertain : State::good);
-        } else if (now_.holding && ride_.rides(now_.run)) {
-            next_.run = now_.run + 1;
-            out[0] = Value::of(now_.y, State::uncertain);
+            const bool settling = next.doubted && span_between(next.doubt, tick.number) <= settle_;
+            out[0] = Value::of(next.y, x.state == State::uncertain || settling ? State::uncertain : State::good);
+        } else if (now.holding && ride_.rides(now.run)) {
+            next.run = now.run + 1;
+            out[0] = Value::of(now.y, State::uncertain);
         } else {
-            next_ = Memory{};  // forgetting clears its doubt
+            next = Memory{};  // forgetting clears its doubt
             out[0] = Value::none(x.state);
         }
     }
 
-    void update(const Tick & /*tick*/, std::span<const Value> /*in*/) override { now_ = next_; }
-
-    void gap(const Gap &gap) override {
+    void pass_over(const Gap &gap, Memory &now) const override {
         if (!gap.known) {
-            now_ = Memory{};
-        } else if (now_.holding) {
-            now_.run += gap.ticks;
-            if (!ride_.holds(now_.run)) {
-                now_ = Memory{};
+            now = Memory{};
+        } else if (now.holding) {
+            now.run += gap.ticks;
+            if (!ride_.holds(now.run)) {
+                now = Memory{};
             }
         }
     }
 
-    void reset() override { now_ = Memory{}; }
+    void settle(Memory &now) const override { now.doubted = false; }  // rule 7.8.8: its doubt is cleared
 
-    void save(StateWriter &writer) const override {
-        writer.flag(now_.holding);
-        writer.f64(now_.y);
-        writer.u64(now_.run);
-        writer.flag(now_.doubted);
-        writer.u64(static_cast<std::uint64_t>(now_.doubt));
-    }
-
-    bool restore(StateReader &reader) override {
-        std::uint64_t doubt = 0;
-        if (!reader.flag(now_.holding) || !reader.f64(now_.y) || !reader.u64(now_.run) || !reader.flag(now_.doubted) ||
-            !reader.u64(doubt)) {
-            return false;
-        }
-        now_.doubt = static_cast<std::int64_t>(doubt);
-        return true;
+    void describe(Fields &fields, Memory &memory) const override {
+        fields(memory.holding);
+        fields(memory.y);
+        fields(memory.run);
+        fields(memory.doubted);
+        fields(memory.doubt);
     }
 
 private:
-    struct Memory {
-        bool holding = false;
-        double y = 0.0;
-        std::uint64_t run = 0;
-        bool doubted = false;
-        std::int64_t doubt = 0;  // the number of the latest tick at which it took an uncertain input
-    };
-
     std::array<OutputPort, 1> outputs_ = {{{"y", Type::number, false}}};
     double decay_ = 0.0;
     std::uint64_t settle_ = 0;  // in ticks
-    Memory now_;
-    Memory next_;
 };
 
 // ---- rate_limit (rules 7.4.9 to 7.4.14)
 
-class RateLimitBlock : public HoldBlock {
+struct RateLimitMemory {
+    bool holding = false;
+    bool only_initial = false;  // what it holds is `initial`, and no output it has given
+    double value = 0.0;
+    std::uint64_t run = 0;  // ticks since it took a value: unusable ones in a row, and ones it followed blind
+};
+
+class RateLimitBlock : public HoldBlock<RateLimitMemory> {
 public:
     Status configure(const BlockSetup &setup) {
         SettingsReader settings(setup);
@@ -242,18 +231,21 @@ public:
 
     CallRole call_role() const override { return CallRole{CallRole::Kind::shaper, 0}; }
 
-    void give(const Tick &tick, std::span<const Value> in, std::span<Value> out) override {
+protected:
+    using Memory = RateLimitMemory;
+
+    void step(const Tick &tick, std::span<const Value> in, std::span<Value> out, const Memory &now,
+              Memory &next) const override {
         const Value &x = in[0];
         const Value &track = in[1];
-        next_ = now_;
         if (tick.acts_by_call && !tick.last_of_call) {
             // Rule 7.4.12: at a catch-up tick it takes nothing, moves nothing and forgets nothing. Where it
             // holds a value it took from an input, the tick is one with a usable input for rules 3 and 4.
-            if (now_.holding && !now_.only_initial) {
-                next_.run = 0;
+            if (now.holding && !now.only_initial) {
+                next.run = 0;
             }
             out[0] = Value::none(State::not_ready);  // held by the engine (rule 6.13): this is not looked at
-            out[1] = x.is_usable() ? Value::of(now_.holding && x.number != now_.value, x.state)
+            out[1] = x.is_usable() ? Value::of(now.holding && x.number != now.value, x.state)
                                    : Value::none(x.state, Type::boolean);
             return;
         }
@@ -264,17 +256,17 @@ public:
             if (track.is_usable()) {
                 // It gives `track` and holds it as a value it took from an input at this tick.
                 const State state = follow.is_usable() ? track.state : State::uncertain;
-                next_.holding = true;
-                next_.only_initial = false;
-                next_.value = track.number;
-                next_.run = 0;
+                next.holding = true;
+                next.only_initial = false;
+                next.value = track.number;
+                next.run = 0;
                 out[0] = Value::of(track.number, state);
                 out[1] = Value::of(false, state);
             } else {
                 // It holds what it held and forgets nothing, however many such ticks there are; the tick counts
                 // towards `ride_through` when it next has an input it cannot use and does not follow.
-                if (now_.holding && !now_.only_initial) {
-                    next_.run = now_.run + 1;
+                if (now.holding && !now.only_initial) {
+                    next.run = now.run + 1;
                 }
                 out[0] = Value::none(track.state);
                 out[1] = Value::none(track.state, Type::boolean);
@@ -286,9 +278,9 @@ public:
         if (x.is_usable()) {
             // Rule 7.4.13: where it holds no value it took from an input, and `track` is usable, it holds the
             // value of `track` in place of `initial` or of nothing.
-            bool holding = now_.holding;
-            double held = now_.value;
-            if ((!now_.holding || now_.only_initial) && track.is_usable()) {
+            bool holding = now.holding;
+            double held = now.value;
+            if ((!now.holding || now.only_initial) && track.is_usable()) {
                 holding = true;
                 held = track.number;
             }
@@ -300,62 +292,46 @@ public:
                     y = held - reach_down_ * periods;
                 }
             }
-            next_.holding = true;
-            next_.only_initial = false;
-            next_.value = y;
-            next_.run = 0;
+            next.holding = true;
+            next.only_initial = false;
+            next.value = y;
+            next.run = 0;
             out[0] = Value::of(y, x.state);
             out[1] = Value::of(y != x.number, x.state);  // `limited`: the output is not the input
             return;
         }
         // Holding `initial` and nothing else it does not ride through.
-        if (now_.holding && !now_.only_initial && ride_.rides(now_.run)) {
-            next_.run = now_.run + 1;
-            out[0] = Value::of(now_.value, State::uncertain);
+        if (now.holding && !now.only_initial && ride_.rides(now.run)) {
+            next.run = now.run + 1;
+            out[0] = Value::of(now.value, State::uncertain);
         } else {
-            next_ = start();
+            next = start();
             out[0] = Value::none(x.state);
         }
         out[1] = Value::none(x.state, Type::boolean);  // there is nothing to compare
     }
 
-    void update(const Tick & /*tick*/, std::span<const Value> /*in*/) override { now_ = next_; }
-
-    void gap(const Gap &gap) override {
+    void pass_over(const Gap &gap, Memory &now) const override {
         if (!gap.known) {
-            now_ = start();
-        } else if (now_.holding && !now_.only_initial) {
-            now_.run += gap.ticks;
-            if (!ride_.holds(now_.run)) {
-                now_ = start();
+            now = start();
+        } else if (now.holding && !now.only_initial) {
+            now.run += gap.ticks;
+            if (!ride_.holds(now.run)) {
+                now = start();
             }
         }
     }
 
-    void reset() override { now_ = start(); }
-
-    void save(StateWriter &writer) const override {
-        writer.flag(now_.holding);
-        writer.flag(now_.only_initial);
-        writer.f64(now_.value);
-        writer.u64(now_.run);
-    }
-
-    bool restore(StateReader &reader) override {
-        return reader.flag(now_.holding) && reader.flag(now_.only_initial) && reader.f64(now_.value) &&
-               reader.u64(now_.run);
+    void describe(Fields &fields, Memory &memory) const override {
+        fields(memory.holding);
+        fields(memory.only_initial);
+        fields(memory.value);
+        fields(memory.run);
     }
 
 private:
-    struct Memory {
-        bool holding = false;
-        bool only_initial = false;  // what it holds is `initial`, and no output it has given
-        double value = 0.0;
-        std::uint64_t run = 0;  // ticks since it took a value: unusable ones in a row, and ones it followed blind
-    };
-
     // As it is made, and as it is having forgotten: holding `initial` if it was given one.
-    Memory start() const { return Memory{has_initial_, has_initial_, initial_, 0}; }
+    Memory start() const override { return Memory{has_initial_, has_initial_, initial_, 0}; }
 
     // `track` is where the actuator is, read back from it, and need not be connected (rule 7.4.13).
     // `follow` is what a host says while nothing acts on the output (rule 7.4.14).
@@ -368,8 +344,6 @@ private:
     bool has_initial_ = false;
     double initial_ = 0.0;
     bool follows_ = false;  // `follow` is connected: left unconnected, the block acts
-    Memory now_;
-    Memory next_;
 };
 
 }  // namespace

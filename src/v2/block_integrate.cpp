@@ -6,6 +6,7 @@
 
 #include "blocks.hpp"
 #include "exact.hpp"
+#include "remembers.hpp"
 
 namespace fluxgraph::v2::detail {
 
@@ -25,7 +26,7 @@ struct Memory {
     bool gap_here = false;  // a gap whose tick is the next to run: a reset at that tick still counts it
 };
 
-class IntegrateBlock : public Block {
+class IntegrateBlock : public Committing<Memory> {
 public:
     Status configure(const BlockSetup &setup) {
         SettingsReader settings(setup);
@@ -47,64 +48,55 @@ public:
     std::span<const OutputPort> outputs() const override { return outputs_; }
     Status bind(std::span<const std::optional<Type>> /*input_types*/) override { return {}; }
 
-    void give(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out) override {
+protected:
+    void step(const Tick & /*tick*/, std::span<const Value> in, std::span<Value> out, const Memory &now,
+              Memory &next) const override {
         const Value &x = in[0];
         const Value &reset = in[1];
         const bool resets = reset.is_usable() && reset.boolean;  // rule 7.7.4; any other reset is not used
-        next_ = now_;
         if (resets) {
-            next_ = Memory{};
-            next_.gaps = now_.gap_here ? 1 : 0;  // rule 7.7.3: a gap whose tick is the tick of the reset is counted
+            next = Memory{};
+            next.gaps = now.gap_here ? 1 : 0;  // rule 7.7.3: a gap whose tick is the tick of the reset is counted
         }
-        next_.gap_here = false;
-        next_.elapsed += 1;
+        next.gap_here = false;
+        next.elapsed += 1;
         if (x.is_usable()) {
-            next_.total += x.number * scale_;  // rule 7.7.1: the value at a tick includes that tick's addition
-            next_.doubtful += x.state == State::uncertain ? 1 : 0;
+            next.total += x.number * scale_;  // rule 7.7.1: the value at a tick includes that tick's addition
+            next.doubtful += x.state == State::uncertain ? 1 : 0;
         } else {
-            next_.missed += 1;
+            next.missed += 1;
         }
 
         // Rule 7.7.2: the total always has a value. It is uncertain past `max_missed` and after a gap of no known
         // length, until a reset, and on a tick where its input is uncertain or an uncertain reset cleared it.
-        const bool past = next_.lost || (has_max_missed_ && next_.missed > max_missed_);
+        const bool past = next.lost || (has_max_missed_ && next.missed > max_missed_);
         const bool in_doubt = x.state == State::uncertain || (resets && reset.state == State::uncertain);
-        out[kTotal] = Value::of(next_.total, past || in_doubt ? State::uncertain : State::good);
-        out[kMissed] = Value::of(static_cast<double>(next_.missed) * period_seconds_);
-        out[kDoubtful] = Value::of(static_cast<double>(next_.doubtful) * period_seconds_);
-        out[kElapsed] = Value::of(static_cast<double>(next_.elapsed) * period_seconds_);
-        out[kGaps] = Value::of(static_cast<double>(next_.gaps));
+        out[kTotal] = Value::of(next.total, past || in_doubt ? State::uncertain : State::good);
+        out[kMissed] = Value::of(static_cast<double>(next.missed) * period_seconds_);
+        out[kDoubtful] = Value::of(static_cast<double>(next.doubtful) * period_seconds_);
+        out[kElapsed] = Value::of(static_cast<double>(next.elapsed) * period_seconds_);
+        out[kGaps] = Value::of(static_cast<double>(next.gaps));
     }
 
-    void update(const Tick & /*tick*/, std::span<const Value> /*in*/) override { now_ = next_; }
-
-    void gap(const Gap &gap) override {
-        now_.gaps += 1;
-        now_.gap_here = true;
+    void pass_over(const Gap &gap, Memory &now) const override {
+        now.gaps += 1;
+        now.gap_here = true;
         if (gap.known) {
-            now_.missed += gap.ticks;
-            now_.elapsed += gap.ticks;
+            now.missed += gap.ticks;
+            now.elapsed += gap.ticks;
         } else if (has_max_missed_) {
-            now_.lost = true;  // what it missed is more than any max_missed
+            now.lost = true;  // what it missed is more than any max_missed
         }
     }
 
-    void reset() override { now_ = Memory{}; }
-
-    void save(StateWriter &writer) const override {
-        writer.f64(now_.total);
-        writer.u64(now_.missed);
-        writer.u64(now_.doubtful);
-        writer.u64(now_.elapsed);
-        writer.u64(now_.gaps);
-        writer.flag(now_.lost);
-        writer.flag(now_.gap_here);
-    }
-
-    bool restore(StateReader &reader) override {
-        return reader.f64(now_.total) && reader.u64(now_.missed) && reader.u64(now_.doubtful) &&
-               reader.u64(now_.elapsed) && reader.u64(now_.gaps) && reader.flag(now_.lost) &&
-               reader.flag(now_.gap_here);
+    void describe(Fields &fields, Memory &memory) const override {
+        fields(memory.total);
+        fields(memory.missed);
+        fields(memory.doubtful);
+        fields(memory.elapsed);
+        fields(memory.gaps);
+        fields(memory.lost);
+        fields(memory.gap_here);
     }
 
 private:
@@ -120,9 +112,6 @@ private:
     std::uint64_t max_missed_ = 0;  // in ticks
     double scale_ = 1.0;
     double period_seconds_ = 1.0;
-
-    Memory now_;   // as the last tick left it
-    Memory next_;  // as this tick leaves it, from give() until update() takes it
 };
 
 }  // namespace
