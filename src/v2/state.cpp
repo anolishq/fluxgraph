@@ -5,6 +5,12 @@
 
 namespace fluxgraph::v2 {
 
+void StateWriter::u32(std::uint32_t value) {
+    for (int i = 0; i < 4; ++i) {
+        bytes_.push_back(static_cast<std::uint8_t>((value >> (8 * i)) & 0xFFu));
+    }
+}
+
 void StateWriter::u64(std::uint64_t value) {
     for (int i = 0; i < 8; ++i) {
         bytes_.push_back(static_cast<std::uint8_t>((value >> (8 * i)) & 0xFFu));
@@ -22,6 +28,27 @@ void StateWriter::value(const Value &value) {
     flag(value.timed);
     f64(value.number);
     u64(static_cast<std::uint64_t>(value.time));
+}
+
+bool StateReader::u32(std::uint32_t &value) {
+    if (bytes_.size() < 4) {
+        return false;
+    }
+    value = 0;
+    for (int i = 0; i < 4; ++i) {
+        value |= static_cast<std::uint32_t>(bytes_[static_cast<std::size_t>(i)]) << (8 * i);
+    }
+    bytes_ = bytes_.subspan(4);
+    return true;
+}
+
+bool StateReader::part(std::size_t length, StateReader &part) {
+    if (bytes_.size() < length) {
+        return false;
+    }
+    part = StateReader(bytes_.first(length));
+    bytes_ = bytes_.subspan(length);
+    return true;
 }
 
 bool StateReader::u64(std::uint64_t &value) {

@@ -967,3 +967,6 @@ Three more checks are of the core alone:
   that fits and at clocks at both ends of the range, where both Python
   readings count in whole numbers of any size.
 - `cpp/filter.py`: the estimator on data from its own model.
+- `cpp/saved_state.py`: the layout of a saved state, byte by byte, and
+  that a state spoiled in each of fourteen ways is refused and changes
+  nothing.
