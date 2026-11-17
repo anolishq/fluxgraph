@@ -27,7 +27,10 @@ using detail::after_by_more_than;
 using detail::kTimeMax;
 using detail::span_between;
 
-constexpr std::uint64_t kStateMagic = 0x3376'4746'5846'4c46ULL;  // a state this engine wrote, in this layout
+// A saved state (the layout is given with SavedState): its first eight bytes, "FGSTATE2", and its version. The
+// version goes up with any change to what the engine or a block writes, and a state of another is refused.
+constexpr std::uint64_t kStateMagic = 0x3245'5441'5453'4746ULL;
+constexpr std::uint32_t kStateVersion = 1;
 
 // A write that waits, or stands (rule 6.8).
 struct Written {
@@ -553,23 +556,37 @@ void Engine::reset() {
 // what stands, what waits, the clock, a rebase not yet followed by its call, or the count of writes thrown away.
 void Engine::Impl::save(StateWriter &writer) const {
     writer.u64(kStateMagic);
+    writer.u32(kStateVersion);
     writer.u64(program.fingerprint);
     writer.u64(static_cast<std::uint64_t>(last_tick));
+    writer.u32(static_cast<std::uint32_t>(loops.size()));
     for (const LoopState &loop : loops) {
         writer.flag(loop.doubted);
         writer.u64(static_cast<std::uint64_t>(loop.doubt));
     }
+    writer.u32(static_cast<std::uint32_t>(program.blocks.size()));
+    std::vector<std::uint8_t> &bytes = writer.bytes();
     for (const detail::BlockSpec &spec : program.blocks) {
+        const std::size_t at = bytes.size();
+        writer.u32(0);  // the length of the block's part, known once it is written
         spec.block->save(writer);
+        const std::uint32_t length = static_cast<std::uint32_t>(bytes.size() - at - 4);
+        for (std::size_t i = 0; i < 4; ++i) {
+            bytes[at + i] = static_cast<std::uint8_t>((length >> (8 * i)) & 0xFFu);
+        }
     }
 }
 
-// Takes back what save() wrote after its first two words. False where the state is not whole, and the engine
-// is then in no state to run.
+// Takes back what save() wrote after its mark, version and fingerprint. False where the state is not whole, and
+// the engine is then in no state to run.
 bool Engine::Impl::load(StateReader &reader) {
     std::uint64_t last = 0;
     if (!reader.u64(last) ||
         (last != static_cast<std::uint64_t>(std::int64_t{-1}) && last > detail::kTimeMaxUnsigned)) {
+        return false;
+    }
+    std::uint32_t count = 0;
+    if (!reader.u32(count) || count != loops.size()) {
         return false;
     }
     for (LoopState &loop : loops) {
@@ -579,8 +596,14 @@ bool Engine::Impl::load(StateReader &reader) {
         }
         loop.doubt = static_cast<std::int64_t>(doubt);
     }
+    if (!reader.u32(count) || count != program.blocks.size()) {
+        return false;
+    }
     for (detail::BlockSpec &spec : program.blocks) {
-        if (!spec.block->restore(reader)) {
+        // A block's part is as long as the state says, and the block reads all of it and no more.
+        std::uint32_t length = 0;
+        StateReader part({});
+        if (!reader.u32(length) || !reader.part(length, part) || !spec.block->restore(part) || !part.at_end()) {
             return false;
         }
     }
@@ -601,9 +624,17 @@ Status Engine::restore(const SavedState &state) {
     Impl &s = *impl_;
     StateReader reader(state.bytes);
     std::uint64_t magic = 0;
+    std::uint32_t version = 0;
     std::uint64_t fingerprint = 0;
-    if (!reader.u64(magic) || magic != kStateMagic || !reader.u64(fingerprint) ||
-        fingerprint != s.program.fingerprint) {
+    if (!reader.u64(magic) || magic != kStateMagic || !reader.u32(version)) {
+        return Error{Errc::state_refused, "this is not a saved state"};
+    }
+    if (version != kStateVersion) {
+        return Error{
+            Errc::state_refused,
+            std::format("the state is of format version {}, and this engine reads version {}", version, kStateVersion)};
+    }
+    if (!reader.u64(fingerprint) || fingerprint != s.program.fingerprint) {
         return Error{Errc::state_refused, "the state was not saved from this graph"};
     }
     StateWriter held;
@@ -611,7 +642,9 @@ Status Engine::restore(const SavedState &state) {
     if (!s.load(reader)) {
         StateReader back(held.bytes());
         std::uint64_t unused = 0;
+        std::uint32_t unused_version = 0;
         back.u64(unused);
+        back.u32(unused_version);
         back.u64(unused);
         s.load(back);
         return Error{Errc::state_refused, "the state is not one this engine wrote"};

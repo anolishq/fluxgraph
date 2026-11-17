@@ -22,10 +22,6 @@ constexpr std::int64_t kMaxCount = 2'147'483'647;  // Appendix A: the width of `
 // doubling, to within rounding: what is specified is the result (rule 7.9.2).
 constexpr std::uint64_t kStepsOneByOne = 64;
 
-// The first word of what an estimator saves: no number a state holds, so that a state saved in an earlier layout,
-// which began with the first state's value, is refused and not misread.
-constexpr std::uint64_t kSavedLayout = 0x7FF8'E571'0000'000DULL;
-
 // A place (rule 7.9.2): `part` parts of a period after tick `tick`. For a model in continuous time a period has
 // sixteen parts; for one in discrete time it has one, and a place is a tick. No place the state or a model input's
 // value has is before tick 0, and none is after the last tick 64 bits can number by more than a period.
@@ -430,14 +426,13 @@ public:
         m.first = true;
     }
 
-    // What is saved, in order: a word that says this layout; the state, its covariance and each port's kept
+    // What is saved, in order: the state, its covariance and each port's kept
     // normalised innovations squared; the place the state stands at; for each model input whether it has a
     // value in force, that value, how many it has from later places, and each of those with its place; for each
     // port what PortMemory holds; and four flags. Its length is fixed but for the values from later places, of
     // which a model input has `lag` and one at most.
     void save(StateWriter &writer) const override {
         const Memory &m = m_;
-        writer.u64(kSavedLayout);
         for (const std::vector<double> *values : {&m.x, &m.p, &m.nis}) {
             for (double value : *values) {
                 writer.f64(value);
@@ -475,10 +470,6 @@ public:
 
     bool restore(StateReader &reader) override {
         Memory &m = m_;
-        std::uint64_t layout = 0;
-        if (!reader.u64(layout) || layout != kSavedLayout) {
-            return false;
-        }
         for (std::vector<double> *values : {&m.x, &m.p, &m.nis}) {
             for (double &value : *values) {
                 if (!reader.f64(value)) {

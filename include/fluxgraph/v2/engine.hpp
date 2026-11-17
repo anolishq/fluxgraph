@@ -39,6 +39,20 @@ struct Output {
 };
 
 /// A state written out by Engine::save (rule 8.2), for the same graph to take back.
+///
+/// Every whole number is little-endian:
+///
+///     u64  the mark: the eight bytes "FGSTATE2"
+///     u32  the format version
+///     u64  the graph's fingerprint
+///     u64  the number of the last tick run, or all ones where none has
+///     u32  how many loops, then for each a byte and a u64: its doubt
+///     u32  how many blocks, then for each a u32 length and that many bytes: what the block remembers
+///
+/// The version goes up with any change to what the engine or a block writes. A state of another version, of
+/// another graph, cut short, or with a block's part not of the length that block reads is refused, and the engine
+/// is left as it was. Nothing is promised of one version reading another's: a state is for the library that
+/// saved it.
 struct SavedState {
     std::vector<std::uint8_t> bytes;
 };

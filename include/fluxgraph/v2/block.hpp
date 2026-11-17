@@ -120,6 +120,7 @@ struct LoopRole {
 /// Writes what a block remembers (rule 8.2).
 class StateWriter {
 public:
+    void u32(std::uint32_t value);
     void u64(std::uint64_t value);
     void f64(double value);
     void flag(bool value);
@@ -137,10 +138,13 @@ class StateReader {
 public:
     explicit StateReader(std::span<const std::uint8_t> bytes) : bytes_(bytes) {}
 
+    bool u32(std::uint32_t &value);
     bool u64(std::uint64_t &value);
     bool f64(double &value);
     bool flag(bool &value);
     bool value(Value &value);
+    /// Takes the next `length` bytes out as a reader of their own. False where fewer are left.
+    bool part(std::size_t length, StateReader &part);
     bool at_end() const { return bytes_.empty(); }
 
 private:
