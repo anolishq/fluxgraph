@@ -22,17 +22,21 @@ host at the end of section 6; what is still open is under each section.
 ## 1. Why a second version
 
 FluxGraph 1.x is a simulation library: physics models, then transforms
-between signals, then rules. It is to become the signal-graph engine for
-two uses:
+between signals, then rules. It is to become a signal-graph engine that
+does not know what it is used for. Its host decides that
+([hosts.md](hosts.md)):
 
-- **Simulation**, as now: a plant model driven by actuator signals.
-- **Signal processing on a live machine**: filters, transfer functions,
-  estimators and detectors over measured signals, for the Anolis runtime
-  (its derived-signals RFC, `docs/rfcs/derived-signals.md` in the anolis
-  repository).
+- **Generating**, as now: a plant model driven by actuator signals, for a
+  host that simulates.
+- **Processing**: filters, transfer functions, estimators and detectors
+  over measured signals, for a host on a live machine. The first such host
+  is the Anolis runtime (its derived-signals RFC,
+  `docs/rfcs/derived-signals.md` in the anolis repository).
+- **Both**, in two engines of which neither knows of the other: one stands
+  in for a machine, and one processes what comes out of it.
 
-One engine for both lets one model serve as a simulator's plant and as an
-estimator's predictor.
+One engine for all of them lets one model serve as a simulator's plant and
+as an estimator's predictor.
 
 The second use was tried on 1.x as it stands. Ten signal-processing blocks
 were written as 1.x models, with the library unchanged, and replayed against
