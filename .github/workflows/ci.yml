@@ -261,6 +261,87 @@ jobs:
       - name: Run tests
         run: ctest --preset "${{ matrix.preset }}"
 
+  # The version 2 core, built and run against the conformance vectors through
+  # its driver. The asan lane is the same checks under ASan and UBSan.
+  v2-core:
+    name: Version 2 core (${{ matrix.lane }})
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: release
+            preset: ci-linux-release-v2
+          - lane: asan
+            preset: ci-linux-v2-asan
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++
+
+      - name: Setup vcpkg
+        uses: anolishq/.github/.github/actions/setup-vcpkg@f4817837f29993c35b5350fbb5dfe2563437fcde # v2.11
+        with:
+          triplet: x64-linux
+          # No dependencies are built (tests off) — read-only so it can't clobber
+          # the shared x64-linux key written by the server-enabled lane.
+          cache-write: "false"
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked --extra dev
+
+      - name: Configure
+        run: cmake --preset "${{ matrix.preset }}"
+
+      - name: Build the driver
+        run: cmake --build --preset "${{ matrix.preset }}" --parallel
+
+      - name: Run the conformance checks against the core
+        env:
+          FLUXGRAPH_V2_DRIVER: ${{ github.workspace }}/build/${{ matrix.preset }}/tools/fluxgraph_v2_driver/fluxgraph_v2_driver
+        run: |
+          uv run python conformance/run.py --cpp
+          uv run python conformance/contract.py --cpp
+          uv run python conformance/compare.py --cpp
+
+  # Apple clang, whose libc++ differs from the libstdc++ and MSVC lanes. The
+  # core has no dependencies, so this needs no vcpkg.
+  v2-core-macos:
+    name: Version 2 core (Apple clang)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Configure
+        run: cmake -S . -B build/v2 -DFLUXGRAPH_BUILD_V2=ON -DFLUXGRAPH_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build the driver
+        run: cmake --build build/v2 --target fluxgraph_v2_driver --parallel
+
   strict-dimensional-validation:
     name: Strict dimensional validation
     needs: [changes]
@@ -434,7 +515,7 @@ jobs:
   ok:
     name: ok
     if: always()
-    needs: [changes, docs, python-lint, python-typecheck, conformance, linux-matrix, strict-dimensional-validation, windows-core, windows-diagram, diagram-render-smoke, version-sync, cpp-format, clang-tidy]
+    needs: [changes, docs, python-lint, python-typecheck, conformance, linux-matrix, v2-core, v2-core-macos, strict-dimensional-validation, windows-core, windows-diagram, diagram-render-smoke, version-sync, cpp-format, clang-tidy]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
