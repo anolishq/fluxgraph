@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - 'v*'
+  # A dry run of the release build before tagging: the 24.04 server build, its
+  # tests, packaging and the glibc floor check, without publishing (#169).
+  # Publishing runs only on a tag.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -115,6 +119,7 @@ jobs:
             > manifest.json
 
       - name: Create GitHub release
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3
         with:
           files: |
@@ -125,6 +130,7 @@ jobs:
 
   upload-metrics:
     name: Upload metrics to release
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-26.04
     needs: [release-linux-x86_64, metrics]
     steps:
