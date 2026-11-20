@@ -1784,3 +1784,87 @@ TEST(GraphCompilerTest, PermissiveModeWarnsOnSignedCustomModelScalarConstraintVi
     }
     EXPECT_TRUE(saw_gain_warning);
 }
+
+// #142: model and rule ids are unique and non-empty; a duplicate made errors,
+// describe() output and diagrams ambiguous.
+namespace {
+
+ModelSpec thermal_mass_model(const std::string &id, const std::string &prefix) {
+    ModelSpec spec;
+    spec.id = id;
+    spec.type = "thermal_mass";
+    spec.params["thermal_mass"] = 1000.0;
+    spec.params["heat_transfer_coeff"] = 10.0;
+    spec.params["initial_temp"] = 25.0;
+    spec.params["temp_signal"] = prefix + "/temperature";
+    spec.params["power_signal"] = prefix + "/power";
+    spec.params["ambient_signal"] = prefix + "/ambient";
+    return spec;
+}
+
+RuleSpec overheat_rule(const std::string &id, const std::string &signal) {
+    RuleSpec rule;
+    rule.id = id;
+    rule.condition = signal + " > 100.0";
+    ActionSpec action;
+    action.device = "heater";
+    action.function = "shutdown";
+    rule.actions.push_back(action);
+    return rule;
+}
+
+std::string compile_error(const GraphSpec &spec) {
+    SignalNamespace signal_ns;
+    FunctionNamespace func_ns;
+    GraphCompiler compiler;
+    try {
+        compiler.compile(spec, signal_ns, func_ns);
+    } catch (const std::runtime_error &e) {
+        return e.what();
+    }
+    return "";
+}
+
+}  // namespace
+
+TEST(GraphCompilerTest, DuplicateModelIdsThrowNamingTheIdAndBothIndices) {
+    GraphSpec spec;
+    spec.models.push_back(thermal_mass_model("chamber", "a"));
+    spec.models.push_back(thermal_mass_model("chamber", "b"));
+
+    const std::string error = compile_error(spec);
+    EXPECT_NE(error.find("'chamber'"), std::string::npos) << error;
+    EXPECT_NE(error.find("models[0]"), std::string::npos) << error;
+    EXPECT_NE(error.find("models[1]"), std::string::npos) << error;
+}
+
+TEST(GraphCompilerTest, DuplicateRuleIdsThrowNamingTheIdAndBothIndices) {
+    GraphSpec spec;
+    spec.rules.push_back(overheat_rule("overheat", "a.temperature"));
+    spec.rules.push_back(overheat_rule("overheat", "b.temperature"));
+
+    const std::string error = compile_error(spec);
+    EXPECT_NE(error.find("'overheat'"), std::string::npos) << error;
+    EXPECT_NE(error.find("rules[0]"), std::string::npos) << error;
+    EXPECT_NE(error.find("rules[1]"), std::string::npos) << error;
+}
+
+TEST(GraphCompilerTest, EmptyModelAndRuleIdsThrow) {
+    GraphSpec models;
+    models.models.push_back(thermal_mass_model("  ", "a"));
+    EXPECT_NE(compile_error(models).find("models[0].id must be non-empty"), std::string::npos);
+
+    GraphSpec rules;
+    rules.rules.push_back(overheat_rule("", "a.temperature"));
+    EXPECT_NE(compile_error(rules).find("rules[0].id must be non-empty"), std::string::npos);
+}
+
+TEST(GraphCompilerTest, DistinctModelAndRuleIdsCompile) {
+    GraphSpec spec;
+    spec.models.push_back(thermal_mass_model("chamber_a", "a"));
+    spec.models.push_back(thermal_mass_model("chamber_b", "b"));
+    spec.rules.push_back(overheat_rule("overheat_a", "a.temperature"));
+    spec.rules.push_back(overheat_rule("overheat_b", "b.temperature"));
+
+    EXPECT_EQ(compile_error(spec), "");
+}

@@ -46,6 +46,28 @@ using compiler_internal::validate_model_signature_contracts;
 using compiler_internal::validate_model_stability_limits;
 using compiler_internal::validate_registration_request;
 
+namespace {
+
+// models[] and rules[] ids name entries in errors, describe() and diagrams, so
+// each must be non-empty and unique within its list (#142).
+template <typename Specs>
+void require_unique_ids(const char *list, const Specs &specs) {
+    std::unordered_map<std::string, size_t> first_index;
+    for (size_t i = 0; i < specs.size(); ++i) {
+        if (trim_copy(specs[i].id).empty()) {
+            throw std::runtime_error(std::format("GraphCompiler: {}[{}].id must be non-empty", list, i));
+        }
+        const auto [it, inserted] = first_index.emplace(specs[i].id, i);
+        if (!inserted) {
+            throw std::runtime_error(
+                std::format("GraphCompiler: {}[{}] and {}[{}] share the id '{}'; ids must be unique", list, it->second,
+                            list, i, specs[i].id));
+        }
+    }
+}
+
+}  // namespace
+
 GraphCompiler::GraphCompiler() = default;
 GraphCompiler::~GraphCompiler() = default;
 
@@ -184,6 +206,9 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec, SignalNamespace &s
 
         signal_contracts[id] = unit;
     }
+
+    require_unique_ids("models", spec.models);
+    require_unique_ids("rules", spec.rules);
 
     {
         auto &registry = factory_registry();

@@ -10,6 +10,11 @@ if(NOT TARGET fluxgraph)
   message(FATAL_ERROR "add_subdirectory did not define the fluxgraph target")
 endif()
 
+# The name find_package consumers link, so one link line works both ways (#143).
+if(NOT TARGET fluxgraph::fluxgraph)
+  message(FATAL_ERROR "add_subdirectory did not define the fluxgraph::fluxgraph alias")
+endif()
+
 if(FLUXGRAPH_BUILD_TESTS OR FLUXGRAPH_BUILD_EXAMPLES OR TARGET fluxgraph_tests)
   message(FATAL_ERROR
     "fluxgraph as a subproject defaulted tests or examples on: "
