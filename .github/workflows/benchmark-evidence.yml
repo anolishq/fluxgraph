@@ -50,20 +50,42 @@ jobs:
       - name: Resolve benchmark options
         id: opts
         shell: pwsh
+        # Inputs reach the script through env:, never ${{ }} in the script
+        # text, so a dispatch value is data, not code (#151).
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_POLICY_PROFILE: ${{ github.event.inputs.policy_profile }}
+          INPUT_INCLUDE_OPTIONAL: ${{ github.event.inputs.include_optional }}
+          INPUT_BASELINE_PATH: ${{ github.event.inputs.baseline_path }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           $profile = "ci-hosted"
           $includeOptional = "false"
           $baseline = ""
 
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            if ("${{ github.event.inputs.policy_profile }}" -ne "") {
-              $profile = "${{ github.event.inputs.policy_profile }}"
+          if ($env:EVENT_NAME -eq "workflow_dispatch") {
+            if ($env:INPUT_POLICY_PROFILE -in @("ci-hosted", "ci-dedicated")) {
+              $profile = $env:INPUT_POLICY_PROFILE
             }
-            if ("${{ github.event.inputs.include_optional }}" -eq "true") {
+            elseif ($env:INPUT_POLICY_PROFILE -ne "") {
+              throw "policy_profile must be ci-hosted or ci-dedicated."
+            }
+            if ($env:INPUT_INCLUDE_OPTIONAL -eq "true") {
               $includeOptional = "true"
             }
-            if ("${{ github.event.inputs.baseline_path }}" -ne "") {
-              $baseline = "${{ github.event.inputs.baseline_path }}"
+            if ($env:INPUT_BASELINE_PATH -ne "") {
+              $requested = $env:INPUT_BASELINE_PATH
+              if ($requested -match "[\r\n]") {
+                throw "baseline_path must be a single line."
+              }
+              $root = [System.IO.Path]::GetFullPath($env:GITHUB_WORKSPACE)
+              $full = [System.IO.Path]::GetFullPath((Join-Path $root $requested))
+              $inside = $full.StartsWith($root + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)
+              if (-not $inside -or -not (Test-Path -LiteralPath $full -PathType Leaf)) {
+                throw "baseline_path must name a file inside the repository."
+              }
+              $baseline = $requested
             }
           }
 
@@ -85,7 +107,7 @@ jobs:
             }
           }
 
-          $benchDir = "artifacts/benchmarks/${{ github.run_id }}_${{ github.run_attempt }}_ci-windows-release"
+          $benchDir = "artifacts/benchmarks/$($env:RUN_ID)_$($env:RUN_ATTEMPT)_ci-windows-release"
 
           "profile=$profile" >> $env:GITHUB_OUTPUT
           "include_optional=$includeOptional" >> $env:GITHUB_OUTPUT
@@ -94,20 +116,25 @@ jobs:
 
       - name: Run benchmark suite + policy evaluation
         shell: pwsh
+        env:
+          BENCH_DIR: ${{ steps.opts.outputs.bench_dir }}
+          POLICY_PROFILE: ${{ steps.opts.outputs.profile }}
+          INCLUDE_OPTIONAL: ${{ steps.opts.outputs.include_optional }}
+          BASELINE: ${{ steps.opts.outputs.baseline }}
         run: |
           $params = @{
             Preset = "ci-windows-release"
             Config = "Release"
-            OutputDir = "${{ steps.opts.outputs.bench_dir }}"
-            PolicyProfile = "${{ steps.opts.outputs.profile }}"
+            OutputDir = $env:BENCH_DIR
+            PolicyProfile = $env:POLICY_PROFILE
           }
 
-          if ("${{ steps.opts.outputs.include_optional }}" -eq "true") {
+          if ($env:INCLUDE_OPTIONAL -eq "true") {
             $params["IncludeOptional"] = $true
           }
 
-          if ("${{ steps.opts.outputs.baseline }}" -ne "") {
-            $params["Baseline"] = "${{ steps.opts.outputs.baseline }}"
+          if ($env:BASELINE -ne "") {
+            $params["Baseline"] = $env:BASELINE
           }
 
           .\scripts\bench.ps1 @params
