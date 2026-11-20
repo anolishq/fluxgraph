@@ -31,8 +31,6 @@ target-version = "py312"
 exclude = [
     "build",
     "build-server",
-    "build-windows-server",
-    "build-windows-server-release",
     "build-test",
     "vcpkg_installed",
 ]
@@ -78,7 +76,7 @@ strict = true
 ignore_missing_imports = true
 warn_unused_configs = true
 show_error_codes = true
-exclude = "(^build/|^build-server/|^build-windows-server/|^build-windows-server-release/|^build-test/|^vcpkg_installed/)"
+exclude = "(^build/|^build-server/|^build-test/|^vcpkg_installed/)"
 
 [[tool.mypy.overrides]]
 module = ["tests.*"]
