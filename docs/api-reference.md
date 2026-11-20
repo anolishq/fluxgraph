@@ -235,7 +235,7 @@ spec.edges.push_back(edge);
 - `noise` - Add Gaussian noise: y = x + N(0, amplitude)
 - `saturation` - Clamp to bounds: y = clamp(x, min, max)
 - `deadband` - Zero below threshold: y = (|x| < threshold) ? 0 : x
-- `rate_limiter` - Limit rate of change: |dy/dt| <= max_rate
+- `rate_limiter` - Limit rate of change: |dy/dt| <= max_rate_per_sec
 - `moving_average` - Sliding window average
 - `unit_convert` - Convert from the source signal's declared unit (from `GraphSpec::signals`) to `to_unit`, resolved at compile time. Optional `from_unit` is checked against the declared source unit, and is used as the source unit when none is declared; with neither, permissive mode applies identity (scale 1, offset 0)
 
