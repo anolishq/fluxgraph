@@ -323,6 +323,14 @@ GraphSpec load_yaml_string(const std::string &yaml_content) {
             throw std::runtime_error("YAML parse error at /: Expected map");
         }
 
+        // A misspelt section would otherwise load as an empty one (#171).
+        for (const auto &entry : root) {
+            const std::string key = entry.first.Scalar();
+            if (key != "signals" && key != "models" && key != "edges" && key != "rules") {
+                throw std::runtime_error("YAML parse error at /" + key + ": unknown top-level key");
+            }
+        }
+
         // Each section is optional, but a present section must be a sequence.
         if (const YAML::Node signals = optional_sequence(root, "signals")) {
             size_t index = 0;

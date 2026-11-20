@@ -400,3 +400,15 @@ TEST(JsonLoaderTest, EmptySectionsAndEmptyActionsStillLoad) {
 }
 
 #endif  // FLUXGRAPH_JSON_ENABLED
+
+// #171: a misspelt section loaded as an empty one, so a "rule" typo dropped
+// every rule without a word.
+TEST(JsonLoaderTest, RejectsUnknownTopLevelKeys) {
+    expect_json_error(R"({"edges": [], "rule": [{"id": "overheat", "condition": "b.y > 1.0", "actions": []}]})",
+                      "JSON parse error at /rule: unknown top-level key");
+    expect_json_error(R"({"edge": []})", "JSON parse error at /edge: unknown top-level key");
+}
+
+TEST(JsonLoaderTest, AcceptsTheFourTopLevelSections) {
+    EXPECT_NO_THROW((void)load_json_string(R"({"signals": [], "models": [], "edges": [], "rules": []})"));
+}
