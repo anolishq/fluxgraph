@@ -57,7 +57,7 @@ Models represent physical systems with internal state and differential equations
 ### Model Object
 
 ```yaml
-- id: unique_identifier # Model identifier (required; uniqueness is not checked)
+- id: unique_identifier # Model identifier (required; must be unique among models)
   type: model_type # Model type (thermal_mass, thermal_rc2, first_order_process, second_order_process, state_space_siso_discrete, mass_spring_damper, dc_motor)
   params: # Model-specific parameters
     param_name: value
@@ -596,7 +596,7 @@ Rules trigger device actions when conditions are met.
 ### Rule Object
 
 ```yaml
-- id: unique_identifier # Unique rule identifier
+- id: unique_identifier # Rule identifier (required; must be unique among rules)
   condition: "signal > value" # Simple comparison
   actions: # Required sequence of action objects; may be empty ([])
     - device: device_id
