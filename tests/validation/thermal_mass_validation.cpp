@@ -134,11 +134,8 @@ Options parse_options(int argc, char **argv) {
 }
 
 double analytical_temperature(const ScenarioConfig &scenario, double t) {
-    if (scenario.heat_transfer_coeff <= 0.0) {
-        const double slope = scenario.power / scenario.thermal_mass;
-        return scenario.initial_temp + slope * t;
-    }
-
+    // A scenario reaches this only after ThermalMassModel accepted it, so
+    // heat_transfer_coeff is finite and > 0.
     const double k = scenario.heat_transfer_coeff / scenario.thermal_mass;
     const double steady_state = scenario.ambient_temp + scenario.power / scenario.heat_transfer_coeff;
     return steady_state + (scenario.initial_temp - steady_state) * std::exp(-k * t);

@@ -1,7 +1,6 @@
 #include "fluxgraph/model/thermal_mass.hpp"
 
 #include <cmath>
-#include <limits>
 #include <sstream>
 #include <stdexcept>
 
@@ -67,12 +66,8 @@ void ThermalMassModel::tick(double dt, SignalStore &store) {
 void ThermalMassModel::reset() { temperature_ = initial_temp_; }
 
 double ThermalMassModel::compute_stability_limit() const {
-    // Stability for dT/dt = -k*T with k = h/C.
-    if (heat_transfer_coeff_ <= 0.0) {
-        return std::numeric_limits<double>::infinity();  // No cooling =
-                                                         // unconditionally stable
-    }
-
+    // Stability for dT/dt = -k*T with k = h/C. The constructor requires h to
+    // be finite and > 0, so tau is always defined.
     const double tau = thermal_mass_ / heat_transfer_coeff_;
     if (integration_method_ == ThermalIntegrationMethod::ForwardEuler) {
         return 2.0 * tau;
