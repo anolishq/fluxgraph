@@ -4,7 +4,7 @@ FluxGraph YAML files define signal processing graphs with a human-friendly synta
 
 ## YAML Structure
 
-A graph file is a YAML map with four top-level sequences. Each is optional, but a key that is present must hold a sequence or be null (an empty `[]` is fine, and a bare `rules:`, `~` or `null` loads as an empty section), and any other root is rejected, including a null one (`~`, `null`, a bare `---`, or a lone `...`, which yaml-cpp reads as a document with null content). Input with no document at all (empty, or only whitespace and comments) loads as an empty graph:
+A graph file is a YAML map with four top-level sequences. Each is optional, but a key that is present must hold a sequence or be null (an empty `[]` is fine, and a bare `rules:`, `~` or `null` loads as an empty section), and any other root is rejected, including a null one (`~`, `null`, a bare `---`, or a lone `...`, which yaml-cpp reads as a document with null content). Input with no document at all (empty, or only whitespace and comments) loads as an empty graph. Any other top-level key is rejected (`YAML parse error at /rule: unknown top-level key`), so a misspelt section fails the load instead of loading empty:
 
 ```yaml
 signals:
@@ -57,7 +57,7 @@ Models represent physical systems with internal state and differential equations
 ### Model Object
 
 ```yaml
-- id: unique_identifier # Model identifier (required; uniqueness is not checked)
+- id: unique_identifier # Model identifier (required; must be unique among models)
   type: model_type # Model type (thermal_mass, thermal_rc2, first_order_process, second_order_process, state_space_siso_discrete, mass_spring_damper, dc_motor)
   params: # Model-specific parameters
     param_name: value
@@ -596,7 +596,7 @@ Rules trigger device actions when conditions are met.
 ### Rule Object
 
 ```yaml
-- id: unique_identifier # Unique rule identifier
+- id: unique_identifier # Rule identifier (required; must be unique among rules)
   condition: "signal > value" # Simple comparison
   actions: # Required sequence of action objects; may be empty ([])
     - device: device_id

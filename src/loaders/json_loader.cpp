@@ -243,6 +243,14 @@ GraphSpec parse_json(const json &j) {
         throw std::runtime_error("JSON parse error at /: Expected object");
     }
 
+    // A misspelt section would otherwise load as an empty one (#171).
+    for (const auto &item : j.items()) {
+        const std::string &key = item.key();
+        if (key != "signals" && key != "models" && key != "edges" && key != "rules") {
+            throw std::runtime_error("JSON parse error at /" + key + ": unknown top-level key");
+        }
+    }
+
     // Each section is optional, but a present section must be an array.
     if (const json *signals = optional_array(j, "signals", "/signals", true)) {
         size_t index = 0;

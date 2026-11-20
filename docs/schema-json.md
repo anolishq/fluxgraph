@@ -4,7 +4,7 @@ FluxGraph JSON files define signal processing graphs using a simple, validated s
 
 ## JSON Structure
 
-A graph file is a JSON object with four top-level arrays. Each is optional, but a key that is present must hold an array or `null` (an empty array is fine, and `null` loads as an empty section), and a root that is not an object is rejected:
+A graph file is a JSON object with four top-level arrays. Each is optional, but a key that is present must hold an array or `null` (an empty array is fine, and `null` loads as an empty section), and a root that is not an object is rejected. Any other top-level key is rejected too (`JSON parse error at /rule: unknown top-level key`), so a misspelt section fails the load instead of loading empty:
 
 ```json
 {
@@ -57,7 +57,7 @@ Models represent physical systems with internal state and differential equations
 
 **Fields:**
 
-- `id` (string, required) - Unique model identifier
+- `id` (string, required) - Model identifier, unique among models; the compiler rejects a duplicate or empty id
 - `type` (string, required) - Model type (built-in: `"thermal_mass"`, `"thermal_rc2"`, `"first_order_process"`, `"second_order_process"`, `"state_space_siso_discrete"`, `"mass_spring_damper"`, `"dc_motor"`)
 - `params` (object, optional) - Model-specific parameters (supports nested structured values); must be an object if present. Built-in model types fail at compile time when a required parameter is missing
 
@@ -664,7 +664,7 @@ Rules trigger device actions when conditions are met.
 
 **Fields:**
 
-- `id` (string, required) - Unique rule identifier
+- `id` (string, required) - Rule identifier, unique among rules; the compiler rejects a duplicate or empty id
 - `condition` (string, required) - Simple comparison (basic parser in v1.0)
 - `actions` (array, required) - Array of action objects; may be empty. A rule without `actions`, or whose `actions` is not an array, fails to load
 - `on_error` (string, optional, default `"log_and_continue"`) - Any string is accepted and stored on the compiled rule; no value changes engine behaviour
