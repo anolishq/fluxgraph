@@ -510,7 +510,7 @@ Clamp to bounds: `y = clamp(x, min, max)`
 | `min` | number | Minimum output value |
 | `max` | number | Maximum output value|
 
-`min_value`/`max_value` are accepted as aliases. `min` must not exceed `max` (equal is allowed), and neither may be NaN; otherwise the graph fails to compile.
+`min_value`/`max_value` are accepted as aliases; giving a bound under both names fails to compile. `min` must not exceed `max` (equal is allowed), and neither may be NaN; otherwise the graph fails to compile.
 
 **Example:**
 
@@ -563,7 +563,7 @@ Limit rate of change: `|dy/dt| <= max_rate_per_sec`
 **Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `max_rate_per_sec` | number | Maximum rate in units/second (alias `max_rate`); not validated, and a value <= 0 disables limiting |
+| `max_rate_per_sec` | number | Maximum rate in units/second (alias `max_rate`; giving both fails to compile); not validated, and a value <= 0 disables limiting |
 
 **Example:**
 

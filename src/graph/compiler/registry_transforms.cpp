@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
+#include <string>
 
 #include "common.hpp"
 #include "fluxgraph/transform/deadband.hpp"
@@ -16,6 +17,19 @@
 #include "registry_builtins.hpp"
 
 namespace fluxgraph::compiler_internal {
+
+namespace {
+
+// A parameter given under both its name and its alias is a contradiction,
+// not a choice: refuse it rather than drop one unchecked (#170).
+void reject_both_names(const ParamMap &params, const std::string &name, const std::string &alias,
+                       const std::string &context) {
+    if (params.count(name) != 0U && params.count(alias) != 0U) {
+        throw std::runtime_error(context + ": both " + name + " and " + alias + " given");
+    }
+}
+
+}  // namespace
 
 void register_builtin_transforms(FactoryRegistry &registry) {
     register_builtin_transform(
@@ -70,6 +84,8 @@ void register_builtin_transforms(FactoryRegistry &registry) {
         double max_val = 0.0;
         std::string min_path = context + "/min";
         std::string max_path = context + "/max";
+        reject_both_names(spec.params, "min", "min_value", context);
+        reject_both_names(spec.params, "max", "max_value", context);
         if (auto it = spec.params.find("min"); it != spec.params.end()) {
             min_val = as_double(it->second, min_path);
         } else {
@@ -96,6 +112,7 @@ void register_builtin_transforms(FactoryRegistry &registry) {
     register_builtin_transform(registry, "rate_limiter", [](const TransformSpec &spec) -> std::unique_ptr<ITransform> {
         const std::string context = "transform[rate_limiter]";
         double max_rate = 0.0;
+        reject_both_names(spec.params, "max_rate_per_sec", "max_rate", context);
         if (auto it = spec.params.find("max_rate_per_sec"); it != spec.params.end()) {
             max_rate = as_double(it->second, context + "/max_rate_per_sec");
         } else {

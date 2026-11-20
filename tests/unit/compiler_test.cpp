@@ -1097,6 +1097,32 @@ TEST(GraphCompilerTest, SaturationRejectsInvertedAliasBounds) {
     expect_transform_rejected(spec, {"Invalid parameter at transform[saturation]/max_value", "min_value"});
 }
 
+// #170: both names for one parameter is a contradiction, not a choice; the
+// alias used to be dropped silently, unchecked.
+TEST(GraphCompilerTest, SaturationRejectsBothNamesForOneBound) {
+    TransformSpec spec;
+    spec.type = "saturation";
+    spec.params["min"] = 0.0;
+    spec.params["max"] = 10.0;
+    spec.params["min_value"] = 20.0;
+    expect_transform_rejected(spec, {"transform[saturation]: both min and min_value given"});
+
+    TransformSpec max_spec;
+    max_spec.type = "saturation";
+    max_spec.params["min"] = 0.0;
+    max_spec.params["max"] = 10.0;
+    max_spec.params["max_value"] = -5.0;
+    expect_transform_rejected(max_spec, {"transform[saturation]: both max and max_value given"});
+}
+
+TEST(GraphCompilerTest, RateLimiterRejectsBothNamesForTheRate) {
+    TransformSpec spec;
+    spec.type = "rate_limiter";
+    spec.params["max_rate_per_sec"] = 5.0;
+    spec.params["max_rate"] = -1.0;
+    expect_transform_rejected(spec, {"transform[rate_limiter]: both max_rate_per_sec and max_rate given"});
+}
+
 TEST(GraphCompilerTest, SaturationRejectsNaNBounds) {
     const double nan = std::numeric_limits<double>::quiet_NaN();
     {

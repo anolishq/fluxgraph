@@ -247,23 +247,23 @@ edge.transform.params["seed"] = 42;        // Reproducible noise
 **Formula:**
 
 ```
-y = clamp(x, min_value, max_value)
-  = max(min_value, min(max_value, x))
+y = clamp(x, min, max)
+  = max(min, min(max, x))
 ```
 
 **Parameters:**
 
-- `min_value` (double, required; `min` is accepted as an alias) - Minimum output
-- `max_value` (double, required) - Maximum output
+- `min` (double, required; alias `min_value`) - Minimum output
+- `max` (double, required; alias `max_value`) - Maximum output
 
-Neither bound may be NaN, and `min_value` must not exceed `max_value` (equal bounds are allowed). A graph that breaks this fails to compile with `Invalid parameter at transform[saturation]/...`, and the `SaturationTransform` constructor throws `std::invalid_argument`.
+Give each bound under one name: a spec with both `min` and `min_value`, or both `max` and `max_value`, fails to compile with `transform[saturation]: both min and min_value given`. Neither bound may be NaN, and `min` must not exceed `max` (equal bounds are allowed). A graph that breaks this fails to compile with `Invalid parameter at transform[saturation]/...`, and the `SaturationTransform` constructor throws `std::invalid_argument`.
 
 **State:** Stateless
 
 **Behavior:**
 
-- If x < min_value: y = min_value
-- If x > max_value: y = max_value
+- If x < min: y = min
+- If x > max: y = max
 - Otherwise: y = x
 
 **Use Cases:**
@@ -279,8 +279,8 @@ EdgeSpec edge;
 edge.source_path = "controller.output";
 edge.target_path = "actuator.command";
 edge.transform.type = "saturation";
-edge.transform.params["min_value"] = 0.0;
-edge.transform.params["max_value"] = 100.0;
+edge.transform.params["min"] = 0.0;
+edge.transform.params["max"] = 100.0;
 ```
 
 **Analytical Validation:**
@@ -342,19 +342,19 @@ Exact threshold enforcement (EXPECT_DOUBLE_EQ) at boundary (see analytical tests
 **Formula:**
 
 ```
-max_change = max_rate * dt
+max_change = max_rate_per_sec * dt
 y_{n+1} = y_n + clamp(x_n - y_n, -max_change, max_change)
 ```
 
 **Parameters:**
 
-- `max_rate` (double, required) - Maximum rate of change (units/sec)
+- `max_rate_per_sec` (double, required; alias `max_rate`) - Maximum rate of change (units/sec). A spec with both names fails to compile with `transform[rate_limiter]: both max_rate_per_sec and max_rate given`.
 
 **State:** Current output value y
 
 **Behavior:**
 
-- For max_rate > 0 and dt > 0, output changes by at most max_rate \* dt per tick; the first sample after construction or reset passes straight through, and max_rate <= 0 or dt <= 0 disables limiting (passthrough)
+- For max_rate_per_sec > 0 and dt > 0, output changes by at most max_rate_per_sec \* dt per tick; the first sample after construction or reset passes straight through, and max_rate_per_sec <= 0 or dt <= 0 disables limiting (passthrough)
 - Gradual approach to target
 - Prevents sudden jumps
 
@@ -371,17 +371,17 @@ EdgeSpec edge;
 edge.source_path = "setpoint.target";
 edge.target_path = "setpoint.ramped";
 edge.transform.type = "rate_limiter";
-edge.transform.params["max_rate"] = 5.0;  // Max 5 units/sec change
+edge.transform.params["max_rate_per_sec"] = 5.0;  // Max 5 units/sec change
 ```
 
 **Time to settle (approx):**
 
 ```
-t = |x_final - y_initial| / max_rate
+t = |x_final - y_initial| / max_rate_per_sec
 ```
 
 **Analytical Validation:**
-Slope constraint |dy/dt| <= max_rate verified (see analytical tests).
+Slope constraint |dy/dt| <= max_rate_per_sec verified (see analytical tests).
 
 ---
 
@@ -479,8 +479,8 @@ EdgeSpec edge3;
 edge3.source_path = "sensor.filtered";
 edge3.target_path = "sensor.output";
 edge3.transform.type = "saturation";
-edge3.transform.params["min_value"] = 0.0;
-edge3.transform.params["max_value"] = 100.0;
+edge3.transform.params["min"] = 0.0;
+edge3.transform.params["max"] = 100.0;
 ```
 
 **Execution order:** Graph compiler determines correct order via topological sort.
