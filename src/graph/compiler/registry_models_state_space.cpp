@@ -100,20 +100,11 @@ StateSpaceSisoDiscreteConfig decode_state_space_siso_discrete_config(const Model
     return config;
 }
 
-void validate_structured_params(const ModelSpec &spec, bool strict, const CompilationOptions &options) {
-    try {
-        (void)decode_state_space_siso_discrete_config(spec);
-    } catch (const std::exception &e) {
-        if (strict) {
-            throw;
-        }
-        if (options.warning_handler) {
-            options.warning_handler(
-                "GraphCompiler: state_space_siso_discrete structured parameter "
-                "validation warning for model '" +
-                spec.id + "': " + e.what());
-        }
-    }
+// An invalid structured param fails in either mode: the factory decodes the
+// same params and has no fallback, so a permissive warning here would only
+// precede the same error (#140).
+void validate_structured_params(const ModelSpec &spec, bool /*strict*/, const CompilationOptions & /*options*/) {
+    (void)decode_state_space_siso_discrete_config(spec);
 }
 
 }  // namespace

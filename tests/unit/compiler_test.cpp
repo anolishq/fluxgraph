@@ -537,6 +537,44 @@ TEST(GraphCompilerTest, StrictModeAllowsDeclaredStateSpaceSignalContracts) {
     EXPECT_NO_THROW(compiler.compile(spec, signal_ns, func_ns, options));
 }
 
+// #140: permissive mode used to warn about an invalid structured param and
+// then fail compile on the same error. It is now one error and no warning.
+TEST(GraphCompilerTest, PermissiveModeReportsAnInvalidStateSpaceParamOnceAsAnError) {
+    GraphSpec spec;
+    spec.signals.push_back({"ss.u", "dimensionless"});
+    spec.signals.push_back({"ss.y", "dimensionless"});
+
+    ModelSpec model;
+    model.id = "ss";
+    model.type = "state_space_siso_discrete";
+    model.params["A_d"] = matrix_param({{0.9}});
+    model.params["B_d"] = vector_param({0.1, 0.2});
+    model.params["C"] = vector_param({1.0});
+    model.params["D"] = 0.0;
+    model.params["x0"] = vector_param({0.0});
+    model.params["output_signal"] = std::string("ss.y");
+    model.params["input_signal"] = std::string("ss.u");
+    spec.models.push_back(model);
+
+    SignalNamespace signal_ns;
+    FunctionNamespace func_ns;
+    GraphCompiler compiler;
+    CompilationOptions options;
+    options.dimensional_policy = DimensionalPolicy::permissive;
+    std::vector<std::string> warnings;
+    options.warning_handler = [&warnings](const std::string &warning) { warnings.push_back(warning); };
+
+    try {
+        compiler.compile(spec, signal_ns, func_ns, options);
+        FAIL() << "expected the invalid B_d to fail compile";
+    } catch (const std::runtime_error &e) {
+        EXPECT_NE(std::string(e.what()).find("B_d: expected vector length 1"), std::string::npos) << e.what();
+    }
+    for (const auto &warning : warnings) {
+        EXPECT_EQ(warning.find("B_d"), std::string::npos) << "misleading warning: " << warning;
+    }
+}
+
 TEST(GraphCompilerTest, ParseMassSpringDamperModel) {
     ModelSpec spec;
     spec.id = "msd";
