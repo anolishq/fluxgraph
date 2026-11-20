@@ -77,8 +77,6 @@ def resolve_build_dir(repo_root: Path, preset: str, override: Optional[Path]) ->
     # Most presets use build/<preset>. Keep explicit map for known exceptions.
     special = {
         "ci-linux-release-server": repo_root / "build-server",
-        "dev-windows-server": repo_root / "build-windows-server",
-        "ci-windows-release-server": repo_root / "build-windows-server-release",
     }
     if preset in special:
         return special[preset]
