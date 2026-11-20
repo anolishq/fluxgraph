@@ -32,13 +32,13 @@ FetchContent_Declare(
 set(FLUXGRAPH_BUILD_TESTS OFF)     # needed only for v1.0.6 and earlier, which build tests
 set(FLUXGRAPH_BUILD_EXAMPLES OFF)
 FetchContent_MakeAvailable(fluxgraph)
-target_link_libraries(your_target PRIVATE fluxgraph)
+target_link_libraries(your_target PRIVATE fluxgraph::fluxgraph)
 ```
 
 Replace `v1.1.0` with the
 [latest release](https://github.com/anolishq/fluxgraph/releases/latest) tag.
-The namespaced target `fluxgraph::fluxgraph` exists only when you use
-`find_package(fluxgraph)` against an installed package.
+The same `fluxgraph::fluxgraph` link line works with `find_package(fluxgraph)`
+against an installed package.
 
 [Embedding](docs/EMBEDDING.md) covers the loaders, custom transforms and
 models, and threading.
