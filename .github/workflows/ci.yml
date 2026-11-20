@@ -512,7 +512,7 @@ jobs:
     if: needs.changes.outputs.cpp == 'true'
     permissions:
       contents: read
-    uses: anolishq/.github/.github/workflows/clang-tidy-diff.yml@721e8a07128cd274efe6a17e0a51c0a9b1caf6b9 # clang-tidy-diff
+    uses: anolishq/.github/.github/workflows/clang-tidy-diff.yml@5d26f03ad4502fdf6537e39daf7ea3864afc911f # clang-tidy-diff
     with:
       # x64-linux (not the gate's x64-linux-static default) so we reuse the warm
       # vcpkg cache the server-enabled CI lane writes — its closure (grpc+protobuf
@@ -522,6 +522,11 @@ jobs:
       configure-preset: ci-linux-tidy
       apt-packages: graphviz
       blocking: true
+      # After a runner image update the cache key misses until the server-enabled
+      # lane saves on the new image, and this job builds the whole closure, grpc
+      # included, from source before clang-tidy runs (anolishq/.github#184).
+      # A warm cache finishes in under 10 minutes.
+      timeout-minutes: 120
 
   ok:
     name: ok

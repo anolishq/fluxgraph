@@ -448,3 +448,26 @@ TEST(YamlLoaderTest, RejectsNullRoot) {
 }
 
 #endif  // FLUXGRAPH_YAML_ENABLED
+
+// #171: a misspelt section loaded as an empty one, so a `rule:` typo dropped
+// every rule without a word.
+TEST(YamlLoaderTest, RejectsUnknownTopLevelKeys) {
+    expect_yaml_error(R"yaml(
+edges:
+  - source: a.x
+    target: b.y
+    transform:
+      type: linear
+      params: {scale: 1.0}
+rule:
+  - id: overheat
+    condition: b.y > 1.0
+    actions: []
+)yaml",
+                      "YAML parse error at /rule: unknown top-level key");
+    expect_yaml_error("edge: []\n", "YAML parse error at /edge: unknown top-level key");
+}
+
+TEST(YamlLoaderTest, AcceptsTheFourTopLevelSections) {
+    EXPECT_NO_THROW((void)load_yaml_string("signals: []\nmodels: []\nedges: []\nrules: []\n"));
+}
