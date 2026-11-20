@@ -64,7 +64,7 @@ add_subdirectory(external/fluxgraph)
 
 # Your executable
 add_executable(your_app src/main.cpp)
-target_link_libraries(your_app PRIVATE fluxgraph)
+target_link_libraries(your_app PRIVATE fluxgraph::fluxgraph)
 ```
 
 ### Step 3: Use in Code
@@ -115,7 +115,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(fluxgraph)
 
 add_executable(your_app src/main.cpp)
-target_link_libraries(your_app PRIVATE fluxgraph)
+target_link_libraries(your_app PRIVATE fluxgraph::fluxgraph)
 ```
 
 **Pros:**
@@ -193,7 +193,7 @@ set(CMAKE_CXX_STANDARD 20)
 add_subdirectory(external/fluxgraph)
 
 add_executable(your_app src/main.cpp)
-target_link_libraries(your_app PRIVATE fluxgraph)
+target_link_libraries(your_app PRIVATE fluxgraph::fluxgraph)
 ```
 
 Build graphs programmatically using `GraphSpec`:
@@ -224,7 +224,7 @@ set(FLUXGRAPH_JSON_ENABLED ON CACHE BOOL "Enable JSON loader")
 add_subdirectory(external/fluxgraph)
 
 add_executable(your_app src/main.cpp)
-target_link_libraries(your_app PRIVATE fluxgraph)
+target_link_libraries(your_app PRIVATE fluxgraph::fluxgraph)
 ```
 
 Load graphs from JSON files:
@@ -255,7 +255,7 @@ set(FLUXGRAPH_YAML_ENABLED ON CACHE BOOL "Enable YAML loader")
 add_subdirectory(external/fluxgraph)
 
 add_executable(your_app src/main.cpp)
-target_link_libraries(your_app PRIVATE fluxgraph)
+target_link_libraries(your_app PRIVATE fluxgraph::fluxgraph)
 ```
 
 Load graphs from YAML files:
@@ -287,7 +287,7 @@ set(FLUXGRAPH_YAML_ENABLED ON CACHE BOOL "Enable YAML loader")
 add_subdirectory(external/fluxgraph)
 
 add_executable(your_app src/main.cpp)
-target_link_libraries(your_app PRIVATE fluxgraph)
+target_link_libraries(your_app PRIVATE fluxgraph::fluxgraph)
 ```
 
 Use either loader as needed:
@@ -489,7 +489,7 @@ Add the executable to your CMakeLists.txt:
 
 ```cmake
 add_executable(chamber_sim chamber_sim.cpp)
-target_link_libraries(chamber_sim PRIVATE fluxgraph)
+target_link_libraries(chamber_sim PRIVATE fluxgraph::fluxgraph)
 ```
 
 ```bash

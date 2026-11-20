@@ -632,7 +632,7 @@ CMake 3.20+, C++20 standard:
 
 ```cmake
 add_subdirectory(fluxgraph)
-target_link_libraries(your_app PRIVATE fluxgraph)
+target_link_libraries(your_app PRIVATE fluxgraph::fluxgraph)
 ```
 
 **Zero external dependencies** in the core library. Optional features add GoogleTest (tests), nlohmann-json (JSON loader), yaml-cpp (YAML loader) and gRPC/Protobuf (server).

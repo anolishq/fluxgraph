@@ -123,6 +123,9 @@ endif()
 
 # Create static library
 add_library(fluxgraph STATIC ${FLUXGRAPH_SOURCES})
+# The name find_package consumers link, defined in-tree too, so FetchContent and
+# add_subdirectory consumers use the same link line (#143). 1.x target only.
+add_library(fluxgraph::fluxgraph ALIAS fluxgraph)
 
 # Public include directory
 target_include_directories(fluxgraph PUBLIC
