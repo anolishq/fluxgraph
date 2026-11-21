@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The YAML loader types a quoted or `!!str`-tagged scalar as a string, as the
+  JSON loader does a JSON string. A quoted `"42"`, `"true"` or `"inf"` used to
+  load as a number or a boolean, so a string parameter or action arg that
+  looked numeric could not be written in YAML. Plain scalars are typed as
+  before, except that `inf`, `nan` and hex floats are now strings, and rule
+  action args are typed by the same rules as params (#139).
 - `ENABLE_FUZZING` adds FluxGraph's fuzz targets only where FluxGraph is the
   top-level project. A project that fetched FluxGraph and set the option to
   fuzz itself did not configure: FluxGraph asked it for a Clang toolchain,
