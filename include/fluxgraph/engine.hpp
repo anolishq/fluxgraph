@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -43,6 +45,17 @@ public:
     /// Check if a program is loaded
     bool is_loaded() const { return loaded_; }
 
+    /// Called with a rule's id and a message when the rule hits an error during
+    /// tick(). The rule's on_error is log_and_continue: its remaining commands
+    /// for that tick are dropped and the tick carries on. Today the only such
+    /// error is command-backlog overflow. Optional (#141).
+    using RuleErrorHandler = std::function<void(const std::string &rule_id, const std::string &message)>;
+    void set_rule_error_handler(RuleErrorHandler handler) { rule_error_handler_ = std::move(handler); }
+
+    /// Commands dropped by rule errors since construction, whether or not a
+    /// handler is set.
+    std::uint64_t dropped_rule_commands() const { return dropped_rule_commands_; }
+
 private:
     struct PendingCommand {
         DeviceId device = INVALID_DEVICE;
@@ -58,6 +71,8 @@ private:
     std::vector<std::unique_ptr<IModel>> models_;
     std::vector<CompiledRule> rules_;
     std::vector<PendingCommand> pending_commands_;
+    RuleErrorHandler rule_error_handler_;
+    std::uint64_t dropped_rule_commands_ = 0;
 
     // Five-stage tick implementation
     void process_edges(double dt, SignalStore &store);

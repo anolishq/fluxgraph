@@ -575,6 +575,36 @@ TEST(GraphCompilerTest, PermissiveModeReportsAnInvalidStateSpaceParamOnceAsAnErr
     }
 }
 
+// #141: on_error accepts only log_and_continue (or empty, the default); any
+// other value fails to compile, naming the rule and the value.
+TEST(GraphCompilerTest, RuleOnErrorAcceptsOnlyLogAndContinue) {
+    const auto compile_with = [](const std::string &on_error) {
+        GraphSpec spec;
+        spec.signals.push_back({"chamber.temp", "degC"});
+        RuleSpec rule;
+        rule.id = "heater_on";
+        rule.condition = "chamber.temp < 20.0";
+        rule.actions.push_back({"heater", "set_power", {}});
+        rule.on_error = on_error;
+        spec.rules.push_back(rule);
+        SignalNamespace signal_ns;
+        FunctionNamespace func_ns;
+        GraphCompiler compiler;
+        return compiler.compile(spec, signal_ns, func_ns);
+    };
+
+    EXPECT_NO_THROW(compile_with("log_and_continue"));
+    EXPECT_NO_THROW(compile_with(""));
+    try {
+        compile_with("halt_and_catch_fire");
+        FAIL() << "expected an unknown on_error to fail compile";
+    } catch (const std::runtime_error &e) {
+        const std::string what = e.what();
+        EXPECT_NE(what.find("heater_on"), std::string::npos) << what;
+        EXPECT_NE(what.find("halt_and_catch_fire"), std::string::npos) << what;
+    }
+}
+
 TEST(GraphCompilerTest, ParseMassSpringDamperModel) {
     ModelSpec spec;
     spec.id = "msd";

@@ -410,7 +410,7 @@ TEST(EngineTest, RuleCommandsAccumulateUntilDrain) {
     EXPECT_EQ(func_ns.lookup_function(commands[1].function), "noop");
 }
 
-TEST(EngineTest, RuleCommandBacklogOverflowThrows) {
+TEST(EngineTest, RuleCommandBacklogOverflowIsLoggedAndTheTickContinues) {
     GraphSpec spec;
 
     RuleSpec rule;
@@ -435,15 +435,20 @@ TEST(EngineTest, RuleCommandBacklogOverflowThrows) {
     SignalId sensor_id = signal_ns.resolve("sensor.value");
     store.write(sensor_id, 0.0, "dimensionless");
 
-    bool overflow_observed = false;
+    // #141: on_error log_and_continue. An overflowing rule's commands are
+    // dropped and reported, and the tick finishes instead of throwing.
+    std::vector<std::pair<std::string, std::string>> errors;
+    engine.set_rule_error_handler(
+        [&errors](const std::string &rule_id, const std::string &message) { errors.emplace_back(rule_id, message); });
+
     for (int i = 0; i < 1000; ++i) {
-        try {
-            engine.tick(0.1, store);
-        } catch (const std::runtime_error &e) {
-            overflow_observed = std::string(e.what()).find("command backlog") != std::string::npos;
-            break;
-        }
+        ASSERT_NO_THROW(engine.tick(0.1, store));
     }
 
-    EXPECT_TRUE(overflow_observed);
+    ASSERT_FALSE(errors.empty());
+    EXPECT_EQ(errors.front().first, "emit_each_tick");
+    EXPECT_NE(errors.front().second.find("command backlog"), std::string::npos) << errors.front().second;
+    EXPECT_GT(engine.dropped_rule_commands(), 0u);
+    // The commands queued before the backlog filled are still there to drain.
+    EXPECT_FALSE(engine.drain_commands().empty());
 }

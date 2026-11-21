@@ -667,7 +667,7 @@ Rules trigger device actions when conditions are met.
 - `id` (string, required) - Rule identifier, unique among rules; the compiler rejects a duplicate or empty id
 - `condition` (string, required) - Simple comparison (basic parser in v1.0)
 - `actions` (array, required) - Array of action objects; may be empty. A rule without `actions`, or whose `actions` is not an array, fails to load
-- `on_error` (string, optional, default `"log_and_continue"`) - Any string is accepted and stored on the compiled rule; no value changes engine behaviour
+- `on_error` (string, optional, default `"log_and_continue"`) - The only accepted value is `"log_and_continue"`; any other value fails to compile, naming the rule. When the rule hits an error during a tick (today only command-backlog overflow, when the host does not drain commands often enough), its remaining commands for that tick are dropped, the engine reports it through `Engine::set_rule_error_handler` and counts it in `Engine::dropped_rule_commands()`, and the tick finishes. The server logs each one.
 
 **Action `args` constraint:**
 
