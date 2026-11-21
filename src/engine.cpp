@@ -129,9 +129,16 @@ void Engine::evaluate_rules(SignalStore &store) {
             // Emit commands for all actions
             for (size_t i = 0; i < rule.device_functions.size(); ++i) {
                 if (pending_commands_.size() >= pending_commands_.capacity()) {
-                    throw std::runtime_error(
-                        "Engine: command backlog capacity exceeded; call "
-                        "drain_commands() more frequently");
+                    // on_error log_and_continue (#141): drop this rule's
+                    // remaining commands, report it, and finish the tick.
+                    dropped_rule_commands_ += rule.device_functions.size() - i;
+                    if (rule_error_handler_) {
+                        rule_error_handler_(rule.id,
+                                            "Engine: command backlog capacity exceeded; call "
+                                            "drain_commands() more frequently. Dropped " +
+                                                std::to_string(rule.device_functions.size() - i) + " command(s)");
+                    }
+                    break;
                 }
 
                 PendingCommand cmd;

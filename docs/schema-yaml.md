@@ -603,7 +603,7 @@ Rules trigger device actions when conditions are met.
       function: function_name
       args:
         arg_name: value
-  on_error: log_and_continue # Optional, defaults to log_and_continue; stored but not read by the engine
+  on_error: log_and_continue # Optional and the only accepted value: a rule error drops its commands for the tick and is reported
 ```
 
 **Action `args` constraint:**

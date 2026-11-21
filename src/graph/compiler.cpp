@@ -453,7 +453,13 @@ CompiledProgram GraphCompiler::compile(const GraphSpec &spec, SignalNamespace &s
 
         CompiledRule rule;
         rule.id = rule_spec.id;
-        rule.on_error = rule_spec.on_error;
+        // on_error has one policy, log_and_continue, which the engine applies
+        // to a rule error (#141); empty means that default.
+        if (!rule_spec.on_error.empty() && rule_spec.on_error != "log_and_continue") {
+            throw std::runtime_error("Rule '" + rule_spec.id + "' has unsupported on_error '" + rule_spec.on_error +
+                                     "' (supported: log_and_continue)");
+        }
+        rule.on_error = rule_spec.on_error.empty() ? std::string("log_and_continue") : rule_spec.on_error;
 
         rule.condition = compile_condition_expr(rule_spec.condition, signal_ns, rule_spec.id);
 

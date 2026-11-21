@@ -17,6 +17,11 @@ namespace fluxgraph::server {
 // ============================================================================
 
 FluxGraphServiceImpl::FluxGraphServiceImpl(double dt) : dt_(dt) {
+    // A rule error drops that rule's commands for the tick (on_error
+    // log_and_continue, #141); say so rather than drop them quietly.
+    engine_.set_rule_error_handler([](const std::string &rule_id, const std::string &message) {
+        std::cerr << "[FluxGraph] WARNING: rule '" << rule_id << "': " << message << "\n";
+    });
     std::cout << "[FluxGraph] Service initialized (dt=" << dt_ << "s)\n";
 }
 
