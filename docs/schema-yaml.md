@@ -71,6 +71,12 @@ Model/transform `params` use structured values:
 2. sequence: YAML list of structured values
 3. mapping: YAML map with structured values
 
+A quoted scalar (`"42"`, `'true'`) or one tagged `!!str` is a string. A plain
+scalar is `true`/`false`, an integer, a finite decimal number (`1.5`, `1e3`),
+or else a string: `inf`, `nan` and hex floats such as `0x1p3` are strings. To
+pass a string that looks like a number or a boolean, quote it. Rule action
+`args` are typed the same way.
+
 Loader resource limits are enforced to reject abusive payloads:
 
 1. max nesting depth: `32`

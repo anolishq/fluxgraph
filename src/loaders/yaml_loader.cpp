@@ -5,6 +5,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <cerrno>
+#include <cmath>
 #include <cstdlib>
 #include <format>
 #include <fstream>
@@ -41,18 +42,47 @@ bool parse_int64_strict(const std::string &text, int64_t &out) {
     return true;
 }
 
+// A finite decimal number. strtod alone also accepts inf, nan and hex floats,
+// which would turn a plain string such as `nan` into a double (#139).
 bool parse_double_strict(const std::string &text, double &out) {
-    if (text.empty()) {
+    if (text.empty() || text.find_first_not_of("0123456789+-.eE") != std::string::npos) {
         return false;
     }
     errno = 0;
     char *end = nullptr;
     const double parsed = std::strtod(text.c_str(), &end);
-    if (errno == ERANGE || end != text.c_str() + text.size()) {
+    if (errno == ERANGE || end != text.c_str() + text.size() || !std::isfinite(parsed)) {
         return false;
     }
     out = parsed;
     return true;
+}
+
+// The value of a YAML scalar, for params and rule action args alike. A quoted
+// scalar (tag "!") or one tagged !!str is a string, as the JSON loader keeps a
+// JSON string; only a plain scalar is typed by its text: true/false, an int64,
+// a finite decimal number, else a string (#139).
+ParamScalar yaml_scalar_value(const YAML::Node &node) {
+    std::string scalar = node.as<std::string>();
+    const std::string &tag = node.Tag();
+    if (tag == "!" || tag == "tag:yaml.org,2002:str") {
+        return scalar;
+    }
+    if (scalar == "true") {
+        return true;
+    }
+    if (scalar == "false") {
+        return false;
+    }
+    int64_t int_val = 0;
+    if (parse_int64_strict(scalar, int_val)) {
+        return int_val;
+    }
+    double double_val = 0.0;
+    if (parse_double_strict(scalar, double_val)) {
+        return double_val;
+    }
+    return scalar;
 }
 
 ParamValue yaml_to_param_value(const YAML::Node &node, const std::string &path, detail::ParamParseBudget &budget,
@@ -61,26 +91,8 @@ ParamValue yaml_to_param_value(const YAML::Node &node, const std::string &path, 
     budget.consume_node(path);
 
     if (node.IsScalar()) {
-        std::string scalar = node.as<std::string>();
-        detail::check_string_size(scalar.size(), path);
-        if (scalar == "true") {
-            return true;
-        }
-        if (scalar == "false") {
-            return false;
-        }
-
-        int64_t int_val = 0;
-        if (parse_int64_strict(scalar, int_val)) {
-            return int_val;
-        }
-
-        double double_val = 0.0;
-        if (parse_double_strict(scalar, double_val)) {
-            return double_val;
-        }
-
-        return scalar;
+        detail::check_string_size(node.Scalar().size(), path);
+        return std::visit([](auto &&value) -> ParamValue { return value; }, yaml_scalar_value(node));
     }
 
     if (node.IsSequence()) {
@@ -110,22 +122,9 @@ ParamValue yaml_to_param_value(const YAML::Node &node, const std::string &path, 
 // Convert YAML node to Variant
 Variant yaml_to_variant(const YAML::Node &node, const std::string &path) {
     if (node.IsScalar()) {
-        // Try to determine type from the actual content
-        try {
-            // Try boolean first
-            if (node.as<std::string>() == "true" || node.as<std::string>() == "false") {
-                return node.as<bool>();
-            }
-            // Try integer
-            if (node.as<std::string>().find('.') == std::string::npos) {
-                return node.as<int64_t>();
-            }
-            // Try double
-            return node.as<double>();
-        } catch (...) {
-            // Fall back to string
-            return node.as<std::string>();
-        }
+        // The same typing as params, so one value means one type wherever it
+        // appears (#139).
+        return yaml_scalar_value(node);
     } else {
         throw std::runtime_error("YAML parse error at " + path +
                                  ": Command args must be scalar (double/int64/bool/string)");

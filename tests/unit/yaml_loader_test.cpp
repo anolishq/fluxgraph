@@ -471,3 +471,59 @@ rule:
 TEST(YamlLoaderTest, AcceptsTheFourTopLevelSections) {
     EXPECT_NO_THROW((void)load_yaml_string("signals: []\nmodels: []\nedges: []\nrules: []\n"));
 }
+
+// A quoted or !!str-tagged scalar is a string, as a JSON string is; only a
+// plain scalar is typed by its text, and the same way in params and in rule
+// action args. inf, nan and hex floats are not numbers (#139).
+TEST(YamlLoaderTest, QuotingDecidesTypeTheSameWayInParamsAndActionArgs) {
+    std::string yaml = R"yaml(
+models:
+  - id: m
+    type: thermal_mass
+    params:
+      quoted_int: "42"
+      quoted_bool: "true"
+      quoted_inf: "inf"
+      tagged: !!str 7
+      plain_int: 42
+      plain_double: 1.5
+      plain_exp: 1e3
+      plain_bool: true
+      plain_inf: inf
+      plain_nan: nan
+      plain_hex: 0x1p3
+rules:
+  - id: r
+    condition: m.temp < 1.0
+    actions:
+      - device: d
+        function: f
+        args:
+          quoted_one: "1"
+          plain_one: 1
+          plain_exp: 1e3
+          plain_text: abc
+          tagged: !!str true
+)yaml";
+
+    auto spec = load_yaml_string(yaml);
+    auto &p = spec.models[0].params;
+    EXPECT_EQ(std::get<std::string>(p["quoted_int"]), "42");
+    EXPECT_EQ(std::get<std::string>(p["quoted_bool"]), "true");
+    EXPECT_EQ(std::get<std::string>(p["quoted_inf"]), "inf");
+    EXPECT_EQ(std::get<std::string>(p["tagged"]), "7");
+    EXPECT_EQ(std::get<int64_t>(p["plain_int"]), 42);
+    EXPECT_EQ(std::get<double>(p["plain_double"]), 1.5);
+    EXPECT_EQ(std::get<double>(p["plain_exp"]), 1000.0);
+    EXPECT_EQ(std::get<bool>(p["plain_bool"]), true);
+    EXPECT_EQ(std::get<std::string>(p["plain_inf"]), "inf");
+    EXPECT_EQ(std::get<std::string>(p["plain_nan"]), "nan");
+    EXPECT_EQ(std::get<std::string>(p["plain_hex"]), "0x1p3");
+
+    auto &a = spec.rules[0].actions[0].args;
+    EXPECT_EQ(std::get<std::string>(a["quoted_one"]), "1");
+    EXPECT_EQ(std::get<int64_t>(a["plain_one"]), 1);
+    EXPECT_EQ(std::get<double>(a["plain_exp"]), 1000.0);
+    EXPECT_EQ(std::get<std::string>(a["plain_text"]), "abc");
+    EXPECT_EQ(std::get<std::string>(a["tagged"]), "true");
+}
