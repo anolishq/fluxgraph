@@ -1943,6 +1943,22 @@ TEST(GraphCompilerTest, DuplicateRuleIdsThrowNamingTheIdAndBothIndices) {
     EXPECT_NE(error.find("rules[1]"), std::string::npos) << error;
 }
 
+// Review of #213: emptiness was judged on the trimmed id and uniqueness on
+// the raw one, so "chamber" and "chamber " were both accepted.
+TEST(GraphCompilerTest, IdsThatDifferOnlyByOuterWhitespaceAreDuplicates) {
+    GraphSpec models;
+    models.models.push_back(thermal_mass_model("chamber", "a"));
+    models.models.push_back(thermal_mass_model("chamber ", "b"));
+    const std::string model_error = compile_error(models);
+    EXPECT_NE(model_error.find("models[0] and models[1] share the id 'chamber'"), std::string::npos) << model_error;
+
+    GraphSpec rules;
+    rules.rules.push_back(overheat_rule(" overheat", "a.temperature"));
+    rules.rules.push_back(overheat_rule("overheat", "b.temperature"));
+    const std::string rule_error = compile_error(rules);
+    EXPECT_NE(rule_error.find("rules[0] and rules[1] share the id 'overheat'"), std::string::npos) << rule_error;
+}
+
 TEST(GraphCompilerTest, EmptyModelAndRuleIdsThrow) {
     GraphSpec models;
     models.models.push_back(thermal_mass_model("  ", "a"));

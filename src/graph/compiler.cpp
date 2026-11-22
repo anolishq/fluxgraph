@@ -49,19 +49,21 @@ using compiler_internal::validate_registration_request;
 namespace {
 
 // models[] and rules[] ids name entries in errors, describe() and diagrams, so
-// each must be non-empty and unique within its list (#142).
+// each must be non-empty and unique within its list (#142). Both are judged on
+// the id with outer whitespace trimmed: "a" and "a " read as the same id.
 template <typename Specs>
 void require_unique_ids(const char *list, const Specs &specs) {
     std::unordered_map<std::string, size_t> first_index;
     for (size_t i = 0; i < specs.size(); ++i) {
-        if (trim_copy(specs[i].id).empty()) {
+        const std::string id = trim_copy(specs[i].id);
+        if (id.empty()) {
             throw std::runtime_error(std::format("GraphCompiler: {}[{}].id must be non-empty", list, i));
         }
-        const auto [it, inserted] = first_index.emplace(specs[i].id, i);
+        const auto [it, inserted] = first_index.emplace(id, i);
         if (!inserted) {
             throw std::runtime_error(
                 std::format("GraphCompiler: {}[{}] and {}[{}] share the id '{}'; ids must be unique", list, it->second,
-                            list, i, specs[i].id));
+                            list, i, id));
         }
     }
 }
