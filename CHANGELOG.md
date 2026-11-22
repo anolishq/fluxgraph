@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Upgrade notes: these changes refuse graphs that used to compile or load.
+
+- An unknown top-level key fails to load in JSON and YAML (`... at /<key>:
+  unknown top-level key`). A misspelt `rules` or `edges` section used to load
+  as an empty one, dropping every rule or edge (#214).
+- A `models[]` or `rules[]` id that is empty, or that repeats one before it
+  in its list, fails to compile, naming the id and both indices (#213).
+- `saturation` and `rate_limiter` refuse a parameter given under both its
+  name and its alias (`min` and `min_value`, `max` and `max_value`,
+  `max_rate_per_sec` and `max_rate`). One of the two used to be dropped
+  unchecked (#218).
+- A rule's `on_error` accepts only `log_and_continue` or empty. Any other
+  value used to be accepted and ignored. `log_and_continue` is now
+  implemented: on a command-backlog overflow the engine drops that rule's
+  remaining commands for the tick and carries on, where it used to throw out
+  of `Engine::tick` part-way. `Engine::set_rule_error_handler` hears of each
+  drop and `Engine::dropped_rule_commands()` counts them (#223).
+- In permissive mode, an invalid `state_space_siso_discrete` structured
+  parameter (`A_d`, `B_d`, `C`, `D`, `x0`) is an error, not a warning. The
+  warning said it was tolerated while compiling then failed on the same
+  parameter (#220).
+
 ### Fixed
 
 - The YAML loader types a quoted or `!!str`-tagged scalar as a string, as the
