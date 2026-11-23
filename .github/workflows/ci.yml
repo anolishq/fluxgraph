@@ -216,14 +216,14 @@ jobs:
           sudo apt-get install -y ninja-build g++
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@f4817837f29993c35b5350fbb5dfe2563437fcde # v2.11
+        uses: anolishq/.github/.github/actions/setup-vcpkg@b11cc3033d90ce17a35fdcffae9bff6388542f6a # v3.1
         with:
-          triplet: x64-linux
-          # server-enabled is the sole writer (its closure — grpc+protobuf+json+
-          # yaml+gtest — is the union of every lane). The 4 subset lanes restore
-          # only, so a 1-min subset save can't clobber the shared key and drop
-          # grpc, which forced a ~65min grpc rebuild on the server lane every run.
-          cache-write: ${{ matrix.lane == 'server-enabled' }}
+          r2-endpoint: ${{ vars.VCPKG_R2_ENDPOINT }}
+          r2-bucket: ${{ vars.VCPKG_R2_BUCKET }}
+          r2-read-access-key-id: ${{ secrets.VCPKG_R2_READ_ACCESS_KEY_ID }}
+          r2-read-secret-access-key: ${{ secrets.VCPKG_R2_READ_SECRET_ACCESS_KEY }}
+          r2-write-access-key-id: ${{ secrets.VCPKG_R2_WRITE_ACCESS_KEY_ID }}
+          r2-write-secret-access-key: ${{ secrets.VCPKG_R2_WRITE_SECRET_ACCESS_KEY }}
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         if: ${{ matrix.grpc_integration }}
@@ -288,12 +288,14 @@ jobs:
           sudo apt-get install -y ninja-build g++
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@f4817837f29993c35b5350fbb5dfe2563437fcde # v2.11
+        uses: anolishq/.github/.github/actions/setup-vcpkg@b11cc3033d90ce17a35fdcffae9bff6388542f6a # v3.1
         with:
-          triplet: x64-linux
-          # No dependencies are built (tests off) — read-only so it can't clobber
-          # the shared x64-linux key written by the server-enabled lane.
-          cache-write: "false"
+          r2-endpoint: ${{ vars.VCPKG_R2_ENDPOINT }}
+          r2-bucket: ${{ vars.VCPKG_R2_BUCKET }}
+          r2-read-access-key-id: ${{ secrets.VCPKG_R2_READ_ACCESS_KEY_ID }}
+          r2-read-secret-access-key: ${{ secrets.VCPKG_R2_READ_SECRET_ACCESS_KEY }}
+          r2-write-access-key-id: ${{ secrets.VCPKG_R2_WRITE_ACCESS_KEY_ID }}
+          r2-write-secret-access-key: ${{ secrets.VCPKG_R2_WRITE_SECRET_ACCESS_KEY }}
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
@@ -370,12 +372,14 @@ jobs:
           sudo apt-get install -y ninja-build g++ python3
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@f4817837f29993c35b5350fbb5dfe2563437fcde # v2.11
+        uses: anolishq/.github/.github/actions/setup-vcpkg@b11cc3033d90ce17a35fdcffae9bff6388542f6a # v3.1
         with:
-          triplet: x64-linux
-          # Subset closure (core preset, no grpc) — read-only so it can't clobber
-          # the shared x64-linux key written by the server-enabled lane.
-          cache-write: "false"
+          r2-endpoint: ${{ vars.VCPKG_R2_ENDPOINT }}
+          r2-bucket: ${{ vars.VCPKG_R2_BUCKET }}
+          r2-read-access-key-id: ${{ secrets.VCPKG_R2_READ_ACCESS_KEY_ID }}
+          r2-read-secret-access-key: ${{ secrets.VCPKG_R2_READ_SECRET_ACCESS_KEY }}
+          r2-write-access-key-id: ${{ secrets.VCPKG_R2_WRITE_ACCESS_KEY_ID }}
+          r2-write-secret-access-key: ${{ secrets.VCPKG_R2_WRITE_SECRET_ACCESS_KEY }}
 
       - name: Run strict dimensional validation
         id: dimensional
@@ -407,9 +411,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@f4817837f29993c35b5350fbb5dfe2563437fcde # v2.11
+        uses: anolishq/.github/.github/actions/setup-vcpkg@b11cc3033d90ce17a35fdcffae9bff6388542f6a # v3.1
         with:
-          triplet: x64-windows-v145
+          r2-endpoint: ${{ vars.VCPKG_R2_ENDPOINT }}
+          r2-bucket: ${{ vars.VCPKG_R2_BUCKET }}
+          r2-read-access-key-id: ${{ secrets.VCPKG_R2_READ_ACCESS_KEY_ID }}
+          r2-read-secret-access-key: ${{ secrets.VCPKG_R2_READ_SECRET_ACCESS_KEY }}
+          r2-write-access-key-id: ${{ secrets.VCPKG_R2_WRITE_ACCESS_KEY_ID }}
+          r2-write-secret-access-key: ${{ secrets.VCPKG_R2_WRITE_SECRET_ACCESS_KEY }}
 
       - name: Configure
         run: cmake --preset ci-windows-release
@@ -431,9 +440,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@f4817837f29993c35b5350fbb5dfe2563437fcde # v2.11
+        uses: anolishq/.github/.github/actions/setup-vcpkg@b11cc3033d90ce17a35fdcffae9bff6388542f6a # v3.1
         with:
-          triplet: x64-windows-v145
+          r2-endpoint: ${{ vars.VCPKG_R2_ENDPOINT }}
+          r2-bucket: ${{ vars.VCPKG_R2_BUCKET }}
+          r2-read-access-key-id: ${{ secrets.VCPKG_R2_READ_ACCESS_KEY_ID }}
+          r2-read-secret-access-key: ${{ secrets.VCPKG_R2_READ_SECRET_ACCESS_KEY }}
+          r2-write-access-key-id: ${{ secrets.VCPKG_R2_WRITE_ACCESS_KEY_ID }}
+          r2-write-secret-access-key: ${{ secrets.VCPKG_R2_WRITE_SECRET_ACCESS_KEY }}
 
       - name: Configure
         run: cmake --preset ci-windows-release-diagram
@@ -460,12 +474,14 @@ jobs:
           sudo apt-get install -y ninja-build g++ graphviz
 
       - name: Setup vcpkg
-        uses: anolishq/.github/.github/actions/setup-vcpkg@f4817837f29993c35b5350fbb5dfe2563437fcde # v2.11
+        uses: anolishq/.github/.github/actions/setup-vcpkg@b11cc3033d90ce17a35fdcffae9bff6388542f6a # v3.1
         with:
-          triplet: x64-linux
-          # Subset closure (diagram preset, no grpc) — read-only so it can't
-          # clobber the shared x64-linux key written by the server-enabled lane.
-          cache-write: "false"
+          r2-endpoint: ${{ vars.VCPKG_R2_ENDPOINT }}
+          r2-bucket: ${{ vars.VCPKG_R2_BUCKET }}
+          r2-read-access-key-id: ${{ secrets.VCPKG_R2_READ_ACCESS_KEY_ID }}
+          r2-read-secret-access-key: ${{ secrets.VCPKG_R2_READ_SECRET_ACCESS_KEY }}
+          r2-write-access-key-id: ${{ secrets.VCPKG_R2_WRITE_ACCESS_KEY_ID }}
+          r2-write-secret-access-key: ${{ secrets.VCPKG_R2_WRITE_SECRET_ACCESS_KEY }}
 
       - name: Configure diagram preset
         run: cmake --preset ci-linux-release-diagram
@@ -512,7 +528,8 @@ jobs:
     if: needs.changes.outputs.cpp == 'true'
     permissions:
       contents: read
-    uses: anolishq/.github/.github/workflows/clang-tidy-diff.yml@5d26f03ad4502fdf6537e39daf7ea3864afc911f # clang-tidy-diff
+    uses: anolishq/.github/.github/workflows/clang-tidy-diff.yml@b11cc3033d90ce17a35fdcffae9bff6388542f6a # v3.1
+    secrets: inherit
     with:
       # x64-linux (not the gate's x64-linux-static default) so we reuse the warm
       # vcpkg cache the server-enabled CI lane writes — its closure (grpc+protobuf
